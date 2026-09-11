@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nyxus Suxyn — Horizon desktop</title>
+  <meta name="description" content="Nyxus Suxyn: a Hyprland + Quickshell desktop on Alienware. Starlight sky, living bar, glass lock, one Settings." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --void: #020506;
+      --ink: #e8f4f8;
+      --dim: #8aa4b0;
+      --hair: #4f7fa6;
+      --magma: #ff7847;
+      --ice: #b7e6f2;
+      --panel: rgba(8, 16, 20, 0.72);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--void); color: var(--ink); font-family: Inter, system-ui, sans-serif; }
+    body { line-height: 1.55; }
+    a { color: var(--ice); text-decoration: none; }
+    a:hover { color: #fff; }
+    img, video { max-width: 100%; display: block; }
+    .wrap { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
+    header.hero { position: relative; min-height: 100vh; display: flex; flex-direction: column; justify-content: flex-end; }
+    header.hero img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    header.hero .veil {
+      position: absolute; inset: 0;
+      background: linear-gradient(180deg, rgba(2,5,6,.15) 20%, rgba(2,5,6,.92) 100%);
+    }
+    header.hero .copy { position: relative; padding: 48px 0 64px; }
+    .mark { font-family: Orbitron, Inter, sans-serif; letter-spacing: .18em; font-size: 12px; color: var(--ice); text-transform: uppercase; }
+    h1 { font-family: Orbitron, Inter, sans-serif; font-size: clamp(40px, 7vw, 72px); font-weight: 600; margin: 8px 0 12px; letter-spacing: .04em; }
+    .lede { max-width: 640px; color: var(--dim); font-size: 18px; }
+    .ids { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+    .ids span {
+      border: 1px solid rgba(79,127,166,.45);
+      background: var(--panel);
+      padding: 6px 10px; border-radius: 6px;
+      font-size: 12px; color: var(--ice); letter-spacing: .04em;
+    }
+    nav {
+      position: sticky; top: 0; z-index: 10;
+      backdrop-filter: blur(16px);
+      background: rgba(2,5,6,.72);
+      border-bottom: 1px solid rgba(79,127,166,.25);
+    }
+    nav .wrap { display: flex; gap: 22px; padding: 14px 0; font-size: 13px; color: var(--dim); overflow-x: auto; }
+    nav a { color: var(--dim); }
+    section { padding: 72px 0; border-top: 1px solid rgba(79,127,166,.18); }
+    h2 { font-size: 28px; font-weight: 600; margin: 0 0 10px; }
+    h3 { font-size: 16px; font-weight: 600; margin: 0 0 8px; color: var(--ice); }
+    .sub { color: var(--dim); max-width: 720px; margin-bottom: 28px; }
+    .frame {
+      border: 1px solid rgba(79,127,166,.35);
+      border-radius: 12px; overflow: hidden;
+      background: #000;
+      box-shadow: 0 24px 80px rgba(0,0,0,.45);
+    }
+    .cap { margin-top: 12px; color: var(--dim); font-size: 14px; }
+    .cap strong { color: var(--ink); font-weight: 600; }
+    .grid { display: grid; gap: 28px; }
+    @media (min-width: 860px) {
+      .grid.two { grid-template-columns: 1fr 1fr; }
+    }
+    table.spec { width: 100%; border-collapse: collapse; font-size: 14px; }
+    table.spec th, table.spec td { text-align: left; padding: 10px 12px; border-bottom: 1px solid rgba(79,127,166,.2); }
+    table.spec th { color: var(--dim); font-weight: 500; width: 34%; }
+    .magma { color: var(--magma); }
+    footer { padding: 40px 0 64px; color: var(--dim); font-size: 13px; }
+    video { width: 100%; background: #000; }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <img src="assets/desktop.jpg" alt="Nyxus Suxyn desktop: Starlight sky, glass widgets, living bar" />
+    <div class="veil"></div>
+    <div class="copy wrap">
+      <div class="mark">Nyxus · Suxyn</div>
+      <h1>SUXYN</h1>
+      <p class="lede">A daily-driver desktop for one Alienware. Hyprland compositor. Quickshell chrome. Starlight sky, a living bar, glass lock. Built as one piece — not a theme pack on someone else’s shell.</p>
+      <div class="ids">
+        <span>nyxus-suxyn 2026.09.02</span>
+        <span>Alienware 15 DA15265</span>
+        <span>Hyprland 0.56.2</span>
+        <span>Quickshell 0.3.1</span>
+        <span>1920×1200 @ 165 Hz</span>
+      </div>
+    </div>
+  </header>
+
+  <nav>
+    <div class="wrap">
+      <a href="#horizon">Horizon</a>
+      <a href="#starlight">Starlight</a>
+      <a href="#start">Start</a>
+      <a href="#lock">Lock</a>
+      <a href="#settings">Settings</a>
+      <a href="#tour">Tour</a>
+      <a href="#made">How it’s made</a>
+    </div>
+  </nav>
+
+  <section id="horizon">
+    <div class="wrap">
+      <h2>The Horizon bar</h2>
+      <p class="sub">There is no panel rectangle. The bottom of the screen is a lit seam of living paint. Icons, clock, desks, and vitals sit on that shelf and throw a floor reflection into the swirl.</p>
+      <div class="frame"><img src="assets/bar.jpg" alt="Bottom bar with NYXUS mark, dock, clock, vitals and reflections" /></div>
+      <p class="cap"><strong>What it is.</strong> Top-layer Quickshell window, 84 px exclusive zone, click-through living paint underneath. Magma is reserved for what matters (charging, the no). Glacier ice is chrome, not fill.</p>
+      <p class="cap"><strong>How it’s made.</strong> <code>Bar.qml</code> + <code>BarSeam.qml</code>. Dock gems are crystal identity, not glass furniture. Reflections are a flipped copy with foreshortening — not a live shader grab of the sibling (that class of grab can take the shell down).</p>
+    </div>
+  </section>
+
+  <section id="starlight">
+    <div class="wrap">
+      <h2>Starlight, and the swirl</h2>
+      <p class="sub">The desktop ground is the same black star field as the old GRUB still — denser, and the stars twinkle. The bar seam is a separate shader: filaments that run while the machine is awake.</p>
+      <div class="grid two">
+        <div>
+          <div class="frame">
+            <video src="assets/swirl.webm" autoplay muted loop playsinline></video>
+          </div>
+          <p class="cap"><strong>Seam swirl.</strong> GPU fragment shader on the bar’s living paint, 330-core, pale glacier dye. Not compositor blur — blur stays off for pixel-perfect type.</p>
+        </div>
+        <div>
+          <div class="frame">
+            <video src="assets/visualizer.webm" autoplay muted loop playsinline></video>
+          </div>
+          <p class="cap"><strong>Music visualizer.</strong> Spectrum on the same seam, plum family only. It keeps out of the dock, clock, and vitals so the chrome never fights the music.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="start">
+    <div class="wrap">
+      <h2>Start</h2>
+      <p class="sub">Quiet hours, this machine, pinned apps, Quick toggles. One glass card — not a full-screen launcher that throws the desktop away.</p>
+      <div class="frame"><img src="assets/start.jpg" alt="Start menu over Starlight with widgets still visible" /></div>
+      <p class="cap"><strong>How it’s made.</strong> <code>Launcher.qml</code> as a layer-shell surface. Widgets stay on the sky. Search hits apps, files, and Settings pages from one field.</p>
+    </div>
+  </section>
+
+  <section id="lock">
+    <div class="wrap">
+      <h2>Session lock</h2>
+      <p class="sub">Earth on the left. Time, weather, and a glass login card on the right. Super+L, Start, and the power menu all hit the same lock — not a second greeter.</p>
+      <div class="frame"><img src="assets/lock.jpg" alt="Earth lock screen with glass unlock card" /></div>
+      <p class="cap"><strong>How it’s made.</strong> <code>Lock.qml</code> + PAM via <code>hyprlock</code> as the authenticator, engaged by <code>loginctl lock-session</code>. The card is furniture glass (Pane + swell + a 1 px glacier seam). Magma is the no.</p>
+    </div>
+  </section>
+
+  <section id="settings">
+    <div class="wrap">
+      <h2>Settings, flyout, widgets</h2>
+      <p class="sub">One Settings window. Tree on the left, the page on the right. The old diagnostic log column is gone so the page can breathe. The flyout is Quick, Sound, Network, Bluetooth, and the rest of the rail — nearby Wi-Fi and BT lists, not just radio toggles.</p>
+      <div class="grid two">
+        <div>
+          <div class="frame"><img src="assets/settings.jpg" alt="Nyxus Rack Settings hub" /></div>
+          <p class="cap"><strong>Settings.</strong> <code>Settings.qml</code> — FloatingWindow, catalog pages, live controls. 40 pages in glass.</p>
+        </div>
+        <div>
+          <div class="frame"><img src="assets/flyout.jpg" alt="Quick flyout with Wi-Fi, Bluetooth, Night Light" /></div>
+          <p class="cap"><strong>Flyout.</strong> <code>SidePanel.qml</code>. Night Light, DND, Airplane, Keep Awake, Mute, Mic. Join a network from the list.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tour">
+    <div class="wrap">
+      <h2>A pass across the desktop</h2>
+      <p class="sub">Start opens and closes. The flyout comes up. Settings maps. A terminal states the build. Recorded on this machine, empty workspace, Starlight on.</p>
+      <div class="frame">
+        <video src="assets/tour.webm" controls playsinline></video>
+      </div>
+    </div>
+  </section>
+
+  <section id="made">
+    <div class="wrap">
+      <h2>How this build is put together</h2>
+      <p class="sub">Suxyn is the live ISO on this chassis. The shell in this repository is the daily driver: QML only. GTK Settings is retired for day-to-day use. Login after splash is still the GTK greeter on purpose — the Quickshell greeter is parked until it can fail open to a TTY.</p>
+      <table class="spec">
+        <tr><th>Product</th><td>Nyxus Suxyn · image <code>nyxus-suxyn</code> · <strong>2026.09.02</strong></td></tr>
+        <tr><th>Machine</th><td>Alienware 15 DA15265 · eDP-1 1920×1200 @ 165 Hz · scale 1</td></tr>
+        <tr><th>Compositor</th><td>Hyprland 0.56.2 · blur <span class="magma">off</span> · XWayland scale 1</td></tr>
+        <tr><th>Shell</th><td>Quickshell 0.3.1 · <code>~/.config/quickshell</code> · reload <code>qs ipc call nyxus reload</code></td></tr>
+        <tr><th>Sky</th><td>Starlight headliner (twinkling field). Still pictures stay in Settings ▸ Background (keep-set of six).</td></tr>
+        <tr><th>Language</th><td>Glass = furniture. Crystal = identity icons. Magma = what matters. glacier[0] teal is not a fill.</td></tr>
+        <tr><th>This repo</th><td>Quickshell, Hyprland, walls, font bits. Not Nyxus-Core, not another machine, not personal apps.</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap">
+      Nyxus Suxyn · 2026.09.02 · source on
+      <a href="https://github.com/ikswognereisj-ctrl/Nyxus-Suxyn">GitHub</a>.
+      Photographs and clips from the live Alienware, 2026-09-11.
+    </div>
+  </footer>
+</body>
+</html>
