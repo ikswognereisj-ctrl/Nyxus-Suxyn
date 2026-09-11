@@ -2,7 +2,7 @@
 
 **Daily-driver desktop for one Alienware.** Hyprland compositor. Quickshell chrome. Starlight sky, a living bar, glass session lock.
 
-**Showcase (photos + clips from this machine):** [ikswognereisj-ctrl.github.io/Nyxus-Suxyn](https://ikswognereisj-ctrl.github.io/Nyxus-Suxyn/)
+**Showcase (photos, swirl, analyser, Media, how the materials are built):** [ikswognereisj-ctrl.github.io/Nyxus-Suxyn](https://ikswognereisj-ctrl.github.io/Nyxus-Suxyn/)
 
 [![Horizon desktop](docs/assets/desktop.jpg)](https://ikswognereisj-ctrl.github.io/Nyxus-Suxyn/)
 

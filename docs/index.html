@@ -96,11 +96,14 @@
     <div class="wrap">
       <a href="#horizon">Horizon</a>
       <a href="#starlight">Starlight</a>
+      <a href="#swirl">Swirls</a>
+      <a href="#visualizer">Visualizer</a>
+      <a href="#media">Media</a>
       <a href="#start">Start</a>
       <a href="#lock">Lock</a>
       <a href="#settings">Settings</a>
       <a href="#tour">Tour</a>
-      <a href="#made">How it’s made</a>
+      <a href="#made">How it’s built</a>
     </div>
   </nav>
 
@@ -116,22 +119,41 @@
 
   <section id="starlight">
     <div class="wrap">
-      <h2>Starlight, and the swirl</h2>
-      <p class="sub">The desktop ground is the same black star field as the old GRUB still — denser, and the stars twinkle. The bar seam is a separate shader: filaments that run while the machine is awake.</p>
-      <div class="grid two">
-        <div>
-          <div class="frame">
-            <video src="assets/swirl.webm" autoplay muted loop playsinline></video>
-          </div>
-          <p class="cap"><strong>Seam swirl.</strong> GPU fragment shader on the bar’s living paint, 330-core, pale glacier dye. Not compositor blur — blur stays off for pixel-perfect type.</p>
-        </div>
-        <div>
-          <div class="frame">
-            <video src="assets/visualizer.webm" autoplay muted loop playsinline></video>
-          </div>
-          <p class="cap"><strong>Music visualizer.</strong> Spectrum on the same seam, plum family only. It keeps out of the dock, clock, and vitals so the chrome never fights the music.</p>
-        </div>
+      <h2>Starlight</h2>
+      <p class="sub">The ground is not a JPEG of stars. It is a shader: three incommensurate lattices of hard points on true black, occupancy-hashed and jittered so they never read as a grid. No bloom, no diffraction spikes — a fibre tip, not a photographed star. Twinkle is occupancy over time, not a halo.</p>
+      <div class="frame"><img src="assets/desktop.jpg" alt="Starlight sky with widgets" /></div>
+      <p class="cap"><strong>How it’s made.</strong> <code>shaders/headliner.frag</code> on a Bottom-layer Quickshell window. Compositor blur is off, so type stays pixel-perfect. A still wallpaper can sit underneath; Starlight wins the pixel until you switch sky mode.</p>
+    </div>
+  </section>
+
+  <section id="swirl">
+    <div class="wrap">
+      <h2>Living paint</h2>
+      <p class="sub">The bar’s swirl is not a color wash. It is a fluid. Dye is material in a velocity field. Idle, it rolls and climbs on its own. Pointer and beat can feed it. It is never compositor blur.</p>
+      <div class="frame">
+        <video src="assets/swirl.webm" autoplay muted loop playsinline></video>
       </div>
+      <p class="cap"><strong>How it’s made.</strong> <code>Swirl.qml</code> ports a Navier–Stokes chain on the GPU: splat → curl → vorticity → divergence → pressure ×22 → advect velocity → advect dye → display. Same solver on the bar, flyouts, and window rims. The display pass treats the dye as thickness — black-shadow glass that occludes a faint glow — so you read the swirl by what it hides, not by a tint.</p>
+    </div>
+  </section>
+
+  <section id="visualizer">
+    <div class="wrap">
+      <h2>The analyser</h2>
+      <p class="sub">When music is actually on the sink, the bar turns over. The swirl face flips to a spectrum: thin columns, mirrored in the seam, magma at the peaks. Notes ride the same field. Timed lyrics, when a track has them, launch from that same mirror line so the words are in the music, not a sticker on top of it.</p>
+      <div class="frame">
+        <video src="assets/visualizer.webm" autoplay muted loop playsinline></video>
+      </div>
+      <p class="cap"><strong>How it’s made.</strong> One long-lived <code>nyxus-beat-engine</code>: STFT, mel bands, SuperFlux onset, tempo, a phase-locked loop that predicts the downbeat. <code>BarSpectrum.qml</code> is its own shader, not a Swirl. Keep-out zones so columns never run through the dock, clock, or vitals. Lyrics are LRC lines placed on free spans of that field.</p>
+    </div>
+  </section>
+
+  <section id="media">
+    <div class="wrap">
+      <h2>Media</h2>
+      <p class="sub">The library is a Nyxus app, not a browser tab. Shelf, albums, keeps, tone. The window rim is the same ice glass as the rest of the chrome — and that rim is piped to the beat engine, so the border pulses on the music, not on a timer.</p>
+      <div class="frame"><img src="assets/media.jpg" alt="Nyxus Media app album shelf" /></div>
+      <p class="cap"><strong>How it’s made.</strong> <code>Media.qml</code> + a local library. Album art is the file, not a generated square. <code>BorderPulse.qml</code> writes Hyprland’s active border from <code>Beat.kick</code> — predicted, once per beat, falling between hits. Idle is a still glacier ring. No fake pulse with nothing playing.</p>
     </div>
   </section>
 
@@ -183,15 +205,28 @@
   <section id="made">
     <div class="wrap">
       <h2>How this build is put together</h2>
-      <p class="sub">Suxyn is the live ISO on this chassis. The shell in this repository is the daily driver: QML only. GTK Settings is retired for day-to-day use. Login after splash is still the GTK greeter on purpose — the Quickshell greeter is parked until it can fail open to a TTY.</p>
+      <p class="sub">This is not a tinted GTK theme. Every surface is a material with a shader behind it. The palette is not a list of hex codes to fill rectangles — it is emission ladders sampled from nebula photographs, then used as thickness, etch, and dye.</p>
+
+      <h3>Glass is furniture</h3>
+      <p class="sub">Panels, Start, Settings, flyout: Pane + swell + a 1 px glacier seam. The body is empty. You see the sky through smoked glass that <em>bends</em>. No compositor blur — blur is off so the type stays sharp.</p>
+
+      <h3>Crystal is identity</h3>
+      <p class="sub">Dock gems are not icons on a plate. <code>ocular_crystal.frag</code> ray-marches a 3-D signed distance field baked from the mark. Height is 16-bit so the normals do not band. The glyph is laser-etched in the stone — points of light in ice — never a PNG glued on top.</p>
+
+      <h3>The palette is layers</h3>
+      <p class="sub">Each accent is a five-band emission ladder (haze / deep / body / accent / glow) measured off nebula stills. Grounds sit at true black. Saturation stays high into the darks. Magma (<code>#ff7847</code>) is the only hot corner, and it is reserved for what matters. glacier[0] teal is banned as a fill. Nothing in the shell writes a raw hex; tokens live in one file.</p>
+
+      <h3>Beat is predicted, not guessed</h3>
+      <p class="sub">One process, <code>nyxus-beat-engine</code>, hears the sink. It does not fake a pulse on silence. When music is on, a PLL knows the downbeat ahead of time so rims, swirl, and spectrum land on the hit. Window glow is Hyprland’s own border, rewritten from that kick.</p>
+
       <table class="spec">
         <tr><th>Product</th><td>Nyxus Suxyn · image <code>nyxus-suxyn</code> · <strong>2026.09.02</strong></td></tr>
         <tr><th>Machine</th><td>Alienware 15 DA15265 · eDP-1 1920×1200 @ 165 Hz · scale 1</td></tr>
         <tr><th>Compositor</th><td>Hyprland 0.56.2 · blur <span class="magma">off</span> · XWayland scale 1</td></tr>
-        <tr><th>Shell</th><td>Quickshell 0.3.1 · <code>~/.config/quickshell</code> · reload <code>qs ipc call nyxus reload</code></td></tr>
-        <tr><th>Sky</th><td>Starlight headliner (twinkling field). Still pictures stay in Settings ▸ Background (keep-set of six).</td></tr>
-        <tr><th>Language</th><td>Glass = furniture. Crystal = identity icons. Magma = what matters. glacier[0] teal is not a fill.</td></tr>
-        <tr><th>This repo</th><td>Quickshell, Hyprland, walls, font bits. Not Nyxus-Core, not another machine, not personal apps.</td></tr>
+        <tr><th>Shell</th><td>Quickshell 0.3.1 · QML only for daily chrome</td></tr>
+        <tr><th>Sky</th><td>Starlight headliner shader. Six stills in Settings ▸ Background.</td></tr>
+        <tr><th>Login</th><td>GTK greeter on purpose. Quickshell greeter is parked until it can fail open to a TTY.</td></tr>
+        <tr><th>This repo</th><td>This machine’s shell. Not Nyxus-Core, not another PC, not personal apps.</td></tr>
       </table>
     </div>
   </section>
