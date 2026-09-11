@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Live pin: GTK radial greeter, dead-man off. No initramfs, no Plymouth,
+# no Quickshell login. Run ON this session (you are already on @).
+#
+#   sudo /home/gowski/.local/bin/nyxus-pin-gtk-greeter
+set -euo pipefail
+
+CFG=/etc/greetd/config.toml
+
+if [[ ${EUID} -ne 0 ]]; then
+  echo "Run: sudo $0" >&2
+  exit 1
+fi
+
+cp -a "$CFG" "${CFG}.bak-pin-gtk-$(date +%Y%m%d-%H%M%S)"
+tmp=$(mktemp)
+awk '
+  BEGIN { done=0 }
+  /^command =/ && done==0 {
+    print "command = \"/usr/local/bin/nyxus-greeter\""
+    done=1
+    next
+  }
+  { print }
+' "$CFG" >"$tmp"
+cat "$tmp" >"$CFG"
+rm -f "$tmp"
+
+systemctl disable --now nyxus-greeter-revert.service 2>/dev/null || true
+systemctl disable --now nyxus-greeter-revert.timer 2>/dev/null || true
+rm -f /etc/systemd/system/nyxus-greeter-revert.service
+rm -f /etc/systemd/system/nyxus-greeter-revert.timer
+rm -f /etc/systemd/system/graphical.target.wants/nyxus-greeter-revert.service
+rm -f /etc/systemd/system/timers.target.wants/nyxus-greeter-revert.timer
+rm -f /var/lib/nyxus/greeter-trial
+systemctl daemon-reload
+
+cmd=$(awk '/^command =/{print; exit}' "$CFG")
+if [[ "$cmd" != *'/usr/local/bin/nyxus-greeter"' ]]; then
+  echo "ERROR: greetd still $cmd" >&2
+  exit 3
+fi
+echo "OK. greetd is GTK nyxus-greeter. Dead-man gone."
+echo "No reboot required. Next reboot stays on this login."

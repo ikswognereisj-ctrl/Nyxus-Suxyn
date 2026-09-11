@@ -1,0 +1,6019 @@
+# NYXUS Suxyn — desktop shell (Quickshell) · Spanish (es).
+# Seeded from shell/i18n/nyxus-shell.pot. Refresh after an extraction with
+#     msgmerge --update --backup=none shell/i18n/es.po \
+#         shell/i18n/nyxus-shell.pot
+# Entries carried over from the 2026-05 gettext catalogue are marked.
+#
+# msgctxt is the .qml file's base name, because that is the translation
+# context QML's qsTr() uses. Without it a translation is never found.
+msgid ""
+msgstr ""
+"Project-Id-Version: nyxus-shell\n"
+"Report-Msgid-Bugs-To: \n"
+"PO-Revision-Date: \n"
+"Last-Translator: \n"
+"Language: es\n"
+"Language-Team: NYXUS <i18n@nyxus.os>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: shell/Bar.qml:2068
+msgctxt "Bar"
+msgid "24-hour time"
+msgstr ""
+
+#: shell/Bar.qml:1601
+msgctxt "Bar"
+msgid "BATTERY LOW"
+msgstr ""
+
+#: shell/Bar.qml:2084
+msgctxt "Bar"
+msgid "Battery & power"
+msgstr ""
+
+#: shell/Bar.qml:2092
+msgctxt "Bar"
+msgid "Bluetooth settings…"
+msgstr ""
+
+#: shell/Bar.qml:2073
+msgctxt "Bar"
+msgid "Calendar…"
+msgstr ""
+
+#: shell/Bar.qml:2125
+msgctxt "Bar"
+msgid "Change wallpaper…"
+msgstr ""
+
+#: shell/Bar.qml:2074
+msgctxt "Bar"
+msgid "Date & time settings…"
+msgstr ""
+
+#: shell/Bar.qml:2094
+msgctxt "Bar"
+msgid "Mute"
+msgstr ""
+
+#: shell/Bar.qml:1801
+msgctxt "Bar"
+msgid "NOW PLAYING"
+msgstr ""
+
+#: shell/Bar.qml:2091
+msgctxt "Bar"
+msgid "Network settings…"
+msgstr ""
+
+#: shell/Bar.qml:2107
+msgctxt "Bar"
+msgid "Open Start menu"
+msgstr ""
+
+#: shell/Bar.qml:2111
+msgctxt "Bar"
+msgid "Power…"
+msgstr ""
+
+#: shell/Bar.qml:2082
+msgctxt "Bar"
+msgid "Quick settings"
+msgstr ""
+
+#: shell/Bar.qml:2132
+msgctxt "Bar"
+msgid "Restart shell"
+msgstr ""
+
+#: shell/Bar.qml:2109 shell/Bar.qml:2128
+msgctxt "Bar"
+msgid "Settings…"
+msgstr ""
+
+#: shell/Bar.qml:2118 shell/Bar.qml:2124
+msgctxt "Bar"
+msgid "Shelf settings…"
+msgstr ""
+
+#: shell/Bar.qml:2070
+msgctxt "Bar"
+msgid "Show seconds"
+msgstr ""
+
+#: shell/Bar.qml:2090
+msgctxt "Bar"
+msgid "Sound settings…"
+msgstr ""
+
+#: shell/Bar.qml:2085
+msgctxt "Bar"
+msgid "System monitor…"
+msgstr ""
+
+#: shell/Bar.qml:2110
+msgctxt "Bar"
+msgid "Task Manager"
+msgstr ""
+
+#: shell/Bar.qml:2100 shell/Bar.qml:2116 shell/Bar.qml:2127
+msgctxt "Bar"
+msgid "Task view"
+msgstr ""
+
+#: shell/Bar.qml:1811
+msgctxt "Bar"
+msgid "Unknown track"
+msgstr ""
+
+#: shell/Bar.qml:2094
+msgctxt "Bar"
+msgid "Unmute"
+msgstr ""
+
+#: shell/Bar.qml:2102
+msgctxt "Bar"
+msgid "Workspace settings…"
+msgstr ""
+
+#: shell/Clock.qml:163
+msgctxt "Clock"
+msgid "CLOCK"
+msgstr ""
+
+#: shell/Clock.qml:244
+msgctxt "Clock"
+msgid "COMING UP"
+msgstr ""
+
+#: shell/Clock.qml:256
+msgctxt "Clock"
+msgid "Nothing scheduled"
+msgstr ""
+
+#: shell/Clock.qml:200
+msgctxt "Clock"
+msgid "System time zone"
+msgstr ""
+
+#: shell/Clock.qml:280
+msgctxt "Clock"
+msgid "Time settings  ›"
+msgstr ""
+
+#: shell/ContextMenu.qml:540
+msgctxt "ContextMenu"
+msgid "Auto-arrange"
+msgstr ""
+
+#: shell/ContextMenu.qml:536
+msgctxt "ContextMenu"
+msgid "By date modified"
+msgstr ""
+
+#: shell/ContextMenu.qml:535
+msgctxt "ContextMenu"
+msgid "By kind"
+msgstr ""
+
+#: shell/ContextMenu.qml:534
+msgctxt "ContextMenu"
+msgid "By name"
+msgstr ""
+
+#: shell/ContextMenu.qml:537
+msgctxt "ContextMenu"
+msgid "By size"
+msgstr ""
+
+#: shell/ContextMenu.qml:552
+msgctxt "ContextMenu"
+msgid "Change wallpaper…"
+msgstr ""
+
+#: shell/ContextMenu.qml:559
+msgctxt "ContextMenu"
+msgid "Display settings"
+msgstr ""
+
+#: shell/ContextMenu.qml:573
+msgctxt "ContextMenu"
+msgid "Lock screen"
+msgstr ""
+
+#: shell/ContextMenu.qml:546
+msgctxt "ContextMenu"
+msgid "New folder"
+msgstr ""
+
+#: shell/ContextMenu.qml:547
+msgctxt "ContextMenu"
+msgid "New text file"
+msgstr ""
+
+#: shell/ContextMenu.qml:550
+msgctxt "ContextMenu"
+msgid "Open Files"
+msgstr ""
+
+#: shell/ContextMenu.qml:549
+msgctxt "ContextMenu"
+msgid "Open in terminal"
+msgstr ""
+
+#: shell/ContextMenu.qml:556
+msgctxt "ContextMenu"
+msgid "Personalize…"
+msgstr ""
+
+#: shell/ContextMenu.qml:574
+msgctxt "ContextMenu"
+msgid "Power…"
+msgstr ""
+
+#: shell/ContextMenu.qml:566
+msgctxt "ContextMenu"
+msgid "Refresh desktop"
+msgstr ""
+
+#: shell/ContextMenu.qml:539
+msgctxt "ContextMenu"
+msgid "Snap to grid"
+msgstr ""
+
+#: shell/ContextMenu.qml:562
+msgctxt "ContextMenu"
+msgid "Sort icons…"
+msgstr ""
+
+#: shell/ContextMenu.qml:568
+msgctxt "ContextMenu"
+msgid "System info"
+msgstr ""
+
+#: shell/EmojiPicker.qml:256
+msgctxt "EmojiPicker"
+msgid " result"
+msgstr ""
+
+#: shell/EmojiPicker.qml:256
+msgctxt "EmojiPicker"
+msgid " results"
+msgstr ""
+
+#: shell/EmojiPicker.qml:247
+msgctxt "EmojiPicker"
+msgid "EMOJI & SYMBOLS"
+msgstr ""
+
+#: shell/EmojiPicker.qml:409
+msgctxt "EmojiPicker"
+msgid "Enter copies  ·  Esc closes"
+msgstr ""
+
+#: shell/EmojiPicker.qml:329
+msgctxt "EmojiPicker"
+msgid "RECENT"
+msgstr ""
+
+#: shell/EmojiPicker.qml:312
+msgctxt "EmojiPicker"
+msgid "Search emoji and symbols…"
+msgstr ""
+
+#: shell/Launcher.qml:393
+msgctxt "Launcher"
+msgid " chg"
+msgstr ""
+
+#: shell/Launcher.qml:238
+msgctxt "Launcher"
+msgid "ALL"
+msgstr ""
+
+#: shell/Launcher.qml:239
+msgctxt "Launcher"
+msgid "APPS"
+msgstr ""
+
+#: shell/Launcher.qml:2661
+msgctxt "Launcher"
+msgid "All apps  ›"
+msgstr ""
+
+#: shell/Launcher.qml:439
+msgctxt "Launcher"
+msgid "All settings"
+msgstr ""
+
+#: shell/Launcher.qml:182
+msgctxt "Launcher"
+msgid "Archive"
+msgstr ""
+
+#: shell/Launcher.qml:391
+msgctxt "Launcher"
+msgid "BAT"
+msgstr ""
+
+#: shell/Launcher.qml:391
+msgctxt "Launcher"
+msgid "Battery"
+msgstr ""
+
+#: shell/Launcher.qml:391
+msgctxt "Launcher"
+msgid "CHG"
+msgstr ""
+
+#: shell/Launcher.qml:345
+msgctxt "Launcher"
+msgid "CPU"
+msgstr ""
+
+#: shell/Launcher.qml:181
+msgctxt "Launcher"
+msgid "Calculator"
+msgstr ""
+
+#: shell/Launcher.qml:122
+msgctxt "Launcher"
+msgid "Calendar"
+msgstr ""
+
+#: shell/Launcher.qml:162
+msgctxt "Launcher"
+msgid "Clock"
+msgstr ""
+
+#: shell/Launcher.qml:158
+msgctxt "Launcher"
+msgid "Disks"
+msgstr ""
+
+#: shell/Launcher.qml:424
+msgctxt "Launcher"
+msgid "Do Not Disturb"
+msgstr ""
+
+#: shell/Launcher.qml:383
+msgctxt "Launcher"
+msgid "FANS"
+msgstr ""
+
+#: shell/Launcher.qml:2092
+msgctxt "Launcher"
+msgid "FILE"
+msgstr ""
+
+#: shell/Launcher.qml:383
+msgctxt "Launcher"
+msgid "Fans"
+msgstr ""
+
+#: shell/Launcher.qml:112
+msgctxt "Launcher"
+msgid "Files"
+msgstr ""
+
+#: shell/Launcher.qml:353
+msgctxt "Launcher"
+msgid "GPU"
+msgstr ""
+
+#: shell/Launcher.qml:353
+msgctxt "Launcher"
+msgid "Graphics"
+msgstr ""
+
+#: shell/Launcher.qml:153
+msgctxt "Launcher"
+msgid "Hardware"
+msgstr ""
+
+#: shell/Launcher.qml:152
+msgctxt "Launcher"
+msgid "Help"
+msgstr ""
+
+#. carried over from the 2026-05 nyxus catalogue
+#: shell/Launcher.qml:2355
+msgctxt "Launcher"
+msgid "Lock"
+msgstr "Bloquear"
+
+#: shell/Launcher.qml:240
+msgctxt "Launcher"
+msgid "MEDIA"
+msgstr ""
+
+#: shell/Launcher.qml:114
+msgctxt "Launcher"
+msgid "Mail"
+msgstr ""
+
+#: shell/Launcher.qml:131
+msgctxt "Launcher"
+msgid "Media"
+msgstr ""
+
+#: shell/Launcher.qml:368
+msgctxt "Launcher"
+msgid "Memory"
+msgstr ""
+
+#: shell/Launcher.qml:2998
+msgctxt "Launcher"
+msgid "More  ›"
+msgstr ""
+
+#: shell/Launcher.qml:431
+msgctxt "Launcher"
+msgid "Mute"
+msgstr ""
+
+#: shell/Launcher.qml:432
+msgctxt "Launcher"
+msgid "Muted"
+msgstr ""
+
+#: shell/Launcher.qml:376
+msgctxt "Launcher"
+msgid "NET"
+msgstr ""
+
+#: shell/Launcher.qml:2191 shell/Launcher.qml:3066
+msgctxt "Launcher"
+msgid "NYXUS  ·  SUXYN EDITION"
+msgstr ""
+
+#: shell/Launcher.qml:376
+msgctxt "Launcher"
+msgid "Network"
+msgstr ""
+
+#: shell/Launcher.qml:121
+msgctxt "Launcher"
+msgid "Notes"
+msgstr ""
+
+#: shell/Launcher.qml:3012
+msgctxt "Launcher"
+msgid "Nothing opened yet. Files you work on will show up here."
+msgstr ""
+
+#: shell/Launcher.qml:411 shell/Launcher.qml:418 shell/Launcher.qml:425
+msgctxt "Launcher"
+msgid "Off"
+msgstr ""
+
+#: shell/Launcher.qml:418 shell/Launcher.qml:425 shell/Launcher.qml:432
+msgctxt "Launcher"
+msgid "On"
+msgstr ""
+
+#: shell/Launcher.qml:2091 shell/Launcher.qml:2821
+msgctxt "Launcher"
+msgid "PAGE"
+msgstr ""
+
+#: shell/Launcher.qml:1615 shell/Launcher.qml:2496
+msgctxt "Launcher"
+msgid "PINNED"
+msgstr ""
+
+#: shell/Launcher.qml:2920
+msgctxt "Launcher"
+msgid "PLACES"
+msgstr ""
+
+#: shell/Launcher.qml:2356
+msgctxt "Launcher"
+msgid "Power"
+msgstr ""
+
+#: shell/Launcher.qml:345
+msgctxt "Launcher"
+msgid "Processor"
+msgstr ""
+
+#: shell/Launcher.qml:2905
+msgctxt "Launcher"
+msgid "QUICK"
+msgstr ""
+
+#: shell/Launcher.qml:368
+msgctxt "Launcher"
+msgid "RAM"
+msgstr ""
+
+#: shell/Launcher.qml:2125 shell/Launcher.qml:2988
+msgctxt "Launcher"
+msgid "RECENT"
+msgstr ""
+
+#: shell/Launcher.qml:1870
+msgctxt "Launcher"
+msgid "RESULTS"
+msgstr ""
+
+#: shell/Launcher.qml:134
+msgctxt "Launcher"
+msgid "Reader"
+msgstr ""
+
+#: shell/Launcher.qml:241
+msgctxt "Launcher"
+msgid "SYSTEM"
+msgstr ""
+
+#: shell/Launcher.qml:135
+msgctxt "Launcher"
+msgid "Screenshot"
+msgstr ""
+
+#: shell/Launcher.qml:1587 shell/Launcher.qml:2458
+msgctxt "Launcher"
+msgid "Search applications, files and settings…"
+msgstr ""
+
+#: shell/Launcher.qml:139 shell/Launcher.qml:438
+msgctxt "Launcher"
+msgid "Settings"
+msgstr ""
+
+#: shell/Launcher.qml:124
+msgctxt "Launcher"
+msgid "Store"
+msgstr ""
+
+#: shell/Launcher.qml:163
+msgctxt "Launcher"
+msgid "System Monitor"
+msgstr ""
+
+#: shell/Launcher.qml:361
+msgctxt "Launcher"
+msgid "TEMP"
+msgstr ""
+
+#: shell/Launcher.qml:2892
+msgctxt "Launcher"
+msgid "THIS MACHINE"
+msgstr ""
+
+#: shell/Launcher.qml:242
+msgctxt "Launcher"
+msgid "TOOLS"
+msgstr ""
+
+#: shell/Launcher.qml:361
+msgctxt "Launcher"
+msgid "Temperature"
+msgstr ""
+
+#: shell/Launcher.qml:180
+msgctxt "Launcher"
+msgid "Terminal"
+msgstr ""
+
+#: shell/Launcher.qml:132
+msgctxt "Launcher"
+msgid "Video"
+msgstr ""
+
+#: shell/Launcher.qml:133
+msgctxt "Launcher"
+msgid "Viewer"
+msgstr ""
+
+#: shell/Launcher.qml:123
+msgctxt "Launcher"
+msgid "Weather"
+msgstr ""
+
+#: shell/Launcher.qml:113
+msgctxt "Launcher"
+msgid "Web Browser"
+msgstr ""
+
+#: shell/Lock.qml:727
+msgctxt "Lock"
+msgid "CAPS"
+msgstr ""
+
+#: shell/Lock.qml:703
+msgctxt "Lock"
+msgid "Login"
+msgstr ""
+
+#: shell/Lock.qml:774
+msgctxt "Lock"
+msgid "hide"
+msgstr ""
+
+#: shell/Lock.qml:774
+msgctxt "Lock"
+msgid "show"
+msgstr ""
+
+#: shell/Lock.qml:580
+msgctxt "Lock"
+msgid "weather arrives with the network"
+msgstr ""
+
+#: shell/LockMedia.qml:158
+msgctxt "LockMedia"
+msgid "NOW PLAYING"
+msgstr ""
+
+#: shell/LockNotes.qml:213
+msgctxt "LockNotes"
+msgid "and 1 more"
+msgstr ""
+
+#: shell/MediaCrest.qml:273
+msgctxt "MediaCrest"
+msgid "Media output"
+msgstr ""
+
+#: shell/MediaCrest.qml:301
+msgctxt "MediaCrest"
+msgid "Now playing"
+msgstr ""
+
+#: shell/PowerMenu.qml:444
+msgctxt "PowerMenu"
+msgid "ESC OR CLICK ANYWHERE TO CLOSE"
+msgstr ""
+
+#: shell/PowerMenu.qml:444
+msgctxt "PowerMenu"
+msgid "ESC TO CANCEL"
+msgstr ""
+
+#: shell/PowerMenu.qml:61
+msgctxt "PowerMenu"
+msgid "Hibernate"
+msgstr ""
+
+#: shell/PowerMenu.qml:429
+msgctxt "PowerMenu"
+msgid "Hibernate is unavailable - %1"
+msgstr ""
+
+#: shell/PowerMenu.qml:430
+msgctxt "PowerMenu"
+msgid "Hibernate is unavailable on this machine, and nothing recorded why."
+msgstr ""
+
+#. carried over from the 2026-05 nyxus catalogue
+#: shell/PowerMenu.qml:51
+msgctxt "PowerMenu"
+msgid "Lock"
+msgstr "Bloquear"
+
+#. carried over from the 2026-05 nyxus catalogue
+#: shell/PowerMenu.qml:63
+msgctxt "PowerMenu"
+msgid "Log out"
+msgstr "Cerrar sesión"
+
+#: shell/PowerMenu.qml:264
+msgctxt "PowerMenu"
+msgid "POWER"
+msgstr ""
+
+#. carried over from the 2026-05 nyxus catalogue
+#: shell/PowerMenu.qml:65
+msgctxt "PowerMenu"
+msgid "Restart"
+msgstr "Reiniciar"
+
+#. carried over from the 2026-05 nyxus catalogue
+#: shell/PowerMenu.qml:67
+msgctxt "PowerMenu"
+msgid "Shut down"
+msgstr "Apagar"
+
+#: shell/PowerMenu.qml:53
+msgctxt "PowerMenu"
+msgid "Sleep"
+msgstr ""
+
+#: shell/PowerMenu.qml:105
+msgctxt "PowerMenu"
+msgid "hibernate could not be checked — the check returned something unreadable."
+msgstr ""
+
+#: shell/PowerMenu.qml:97
+msgctxt "PowerMenu"
+msgid "nyxus-hibernate is not installed on this system."
+msgstr ""
+
+#: shell/RecordHud.qml:75
+msgctxt "RecordHud"
+msgid "Recording"
+msgstr ""
+
+#: shell/RecordHud.qml:81
+msgctxt "RecordHud"
+msgid "Stop"
+msgstr ""
+
+#: shell/ReminderFace.qml:154
+msgctxt "ReminderFace"
+msgid "Delete reminder"
+msgstr ""
+
+#: shell/ReminderFace.qml:108
+msgctxt "ReminderFace"
+msgid "Mark done"
+msgstr ""
+
+#: shell/ReminderFace.qml:108
+msgctxt "ReminderFace"
+msgid "Mark not done"
+msgstr ""
+
+#: shell/SetChoice.qml:51
+msgctxt "SetChoice"
+msgid "None found"
+msgstr ""
+
+#: shell/SetPageAbout.qml:43
+msgctxt "SetPageAbout"
+msgid "About this system"
+msgstr ""
+
+#: shell/SetPageAbout.qml:231
+msgctxt "SetPageAbout"
+msgid "Build"
+msgstr ""
+
+#: shell/SetPageAbout.qml:308
+msgctxt "SetPageAbout"
+msgid "Check this system"
+msgstr ""
+
+#: shell/SetPageAbout.qml:262
+msgctxt "SetPageAbout"
+msgid "Compositor"
+msgstr ""
+
+#: shell/SetPageAbout.qml:293
+msgctxt "SetPageAbout"
+msgid "Copy"
+msgstr ""
+
+#: shell/SetPageAbout.qml:289
+msgctxt "SetPageAbout"
+msgid "Copy system report"
+msgstr ""
+
+#: shell/SetPageAbout.qml:290
+msgctxt "SetPageAbout"
+msgid "Everything on this page, as plain text, for a support message"
+msgstr ""
+
+#: shell/SetPageAbout.qml:250
+msgctxt "SetPageAbout"
+msgid "Horizon layout, Nyxus Glass, glacier/ice chrome"
+msgstr ""
+
+#: shell/SetPageAbout.qml:263
+msgctxt "SetPageAbout"
+msgid "Hyprland — windows, workspaces, input and the border"
+msgstr ""
+
+#: shell/SetPageAbout.qml:224
+msgctxt "SetPageAbout"
+msgid "Kernel"
+msgstr ""
+
+#: shell/SetPageAbout.qml:249
+msgctxt "SetPageAbout"
+msgid "Look"
+msgstr ""
+
+#: shell/SetPageAbout.qml:251
+msgctxt "SetPageAbout"
+msgid "Nyxus Suxyn"
+msgstr ""
+
+#: shell/SetPageAbout.qml:44
+msgctxt "SetPageAbout"
+msgid "Nyxus Suxyn — this machine, this installation, Horizon glass, ice accent."
+msgstr ""
+
+#: shell/SetPageAbout.qml:202
+msgctxt "SetPageAbout"
+msgid "Nyxus Suxyn. Horizon layout, Nyxus Glass, glacier/ice accent. "
+msgstr ""
+
+#: shell/SetPageAbout.qml:270
+msgctxt "SetPageAbout"
+msgid "Quickshell — the taskbar, Start menu, panels and this window"
+msgstr ""
+
+#: shell/SetPageAbout.qml:316
+msgctxt "SetPageAbout"
+msgid "Read the system again"
+msgstr ""
+
+#: shell/SetPageAbout.qml:322
+msgctxt "SetPageAbout"
+msgid "Refresh"
+msgstr ""
+
+#: shell/SetPageAbout.qml:282
+msgctxt "SetPageAbout"
+msgid "Report"
+msgstr ""
+
+#: shell/SetPageAbout.qml:256
+msgctxt "SetPageAbout"
+msgid "Session"
+msgstr ""
+
+#: shell/SetPageAbout.qml:269
+msgctxt "SetPageAbout"
+msgid "Shell"
+msgstr ""
+
+#: shell/SetPageAbout.qml:284
+msgctxt "SetPageAbout"
+msgid "The copy goes to the Wayland clipboard through wl-copy, which is "
+msgstr ""
+
+#: shell/SetPageAbout.qml:244
+msgctxt "SetPageAbout"
+msgid "The desktop"
+msgstr ""
+
+#: shell/SetPageAbout.qml:200
+msgctxt "SetPageAbout"
+msgid "This machine"
+msgstr ""
+
+#: shell/SetPageAbout.qml:238
+msgctxt "SetPageAbout"
+msgid "Up for"
+msgstr ""
+
+#: shell/SetPageAbout.qml:276
+msgctxt "SetPageAbout"
+msgid "Wayland display"
+msgstr ""
+
+#: shell/SetPageAbout.qml:232
+msgctxt "SetPageAbout"
+msgid "as of "
+msgstr ""
+
+#: shell/SetPageAbout.qml:309
+msgctxt "SetPageAbout"
+msgid "nyxus doctor — portals, keyring, polkit, audio, network, disk, units — and the off switches"
+msgstr ""
+
+#: shell/SetPageAccess.qml:42
+msgctxt "SetPageAccess"
+msgid "Accessibility"
+msgstr ""
+
+#: shell/SetPageAccess.qml:314
+msgctxt "SetPageAccess"
+msgid "Assistive tools"
+msgstr ""
+
+#: shell/SetPageAccess.qml:296
+msgctxt "SetPageAccess"
+msgid "Contrast"
+msgstr ""
+
+#: shell/SetPageAccess.qml:286
+msgctxt "SetPageAccess"
+msgid "Default"
+msgstr ""
+
+#: shell/SetPageAccess.qml:280
+msgctxt "SetPageAccess"
+msgid "Default 1.00 · Large 1.15 · Larger 1.30"
+msgstr ""
+
+#: shell/SetPageAccess.qml:427
+msgctxt "SetPageAccess"
+msgid "Every control in Settings is reachable without a pointer."
+msgstr ""
+
+#: shell/SetPageAccess.qml:305
+msgctxt "SetPageAccess"
+msgid "High contrast"
+msgstr ""
+
+#: shell/SetPageAccess.qml:425
+msgctxt "SetPageAccess"
+msgid "Keyboard only"
+msgstr ""
+
+#: shell/SetPageAccess.qml:287
+msgctxt "SetPageAccess"
+msgid "Large"
+msgstr ""
+
+#: shell/SetPageAccess.qml:288
+msgctxt "SetPageAccess"
+msgid "Larger"
+msgstr ""
+
+#: shell/SetPageAccess.qml:377
+msgctxt "SetPageAccess"
+msgid "Magnifier"
+msgstr ""
+
+#: shell/SetPageAccess.qml:251
+msgctxt "SetPageAccess"
+msgid "Motion"
+msgstr ""
+
+#: shell/SetPageAccess.qml:43
+msgctxt "SetPageAccess"
+msgid "Motion, text size, contrast, and the assistive tools on this machine."
+msgstr ""
+
+#: shell/SetPageAccess.qml:306
+msgctxt "SetPageAccess"
+msgid "On — apps that honour it switch"
+msgstr ""
+
+#: shell/SetPageAccess.qml:262
+msgctxt "SetPageAccess"
+msgid "On — the shell holds still"
+msgstr ""
+
+#: shell/SetPageAccess.qml:339
+msgctxt "SetPageAccess"
+msgid "On-screen keyboard"
+msgstr ""
+
+#: shell/SetPageAccess.qml:272
+msgctxt "SetPageAccess"
+msgid "Reaches GTK and libadwaita apps through text-scaling-factor. "
+msgstr ""
+
+#: shell/SetPageAccess.qml:261
+msgctxt "SetPageAccess"
+msgid "Reduce motion"
+msgstr ""
+
+#: shell/SetPageAccess.qml:253
+msgctxt "SetPageAccess"
+msgid "Reduce motion stills the shell: no press sink or release bounce, "
+msgstr ""
+
+#: shell/SetPageAccess.qml:414
+msgctxt "SetPageAccess"
+msgid "Reset"
+msgstr ""
+
+#: shell/SetPageAccess.qml:322
+msgctxt "SetPageAccess"
+msgid "Screen reader"
+msgstr ""
+
+#: shell/SetPageAccess.qml:361
+msgctxt "SetPageAccess"
+msgid "Show keyboard now"
+msgstr ""
+
+#: shell/SetPageAccess.qml:431
+msgctxt "SetPageAccess"
+msgid "Super+Ctrl+Alt+L — lock · Super+Shift+E — power menu · Super+1…9 — workspaces"
+msgstr ""
+
+#: shell/SetPageAccess.qml:430
+msgctxt "SetPageAccess"
+msgid "Super+Space — Start · Super+Tab — Task view · Super+Return — terminal"
+msgstr ""
+
+#: shell/SetPageAccess.qml:429
+msgctxt "SetPageAccess"
+msgid "Tab / Shift+Tab — move between controls; Space or Enter flips a switch or presses a button; arrow keys nudge a slider"
+msgstr ""
+
+#: shell/SetPageAccess.qml:270
+msgctxt "SetPageAccess"
+msgid "Text"
+msgstr ""
+
+#: shell/SetPageAccess.qml:279
+msgctxt "SetPageAccess"
+msgid "Text size"
+msgstr ""
+
+#: shell/SetPageAccess.qml:379
+msgctxt "SetPageAccess"
+msgid "The compositor's own zoom, following the pointer. Also "
+msgstr ""
+
+#: shell/SetPageAccess.qml:316
+msgctxt "SetPageAccess"
+msgid "These are the tools this machine actually has. Orca reads the "
+msgstr ""
+
+#: shell/SetPageAccess.qml:298
+msgctxt "SetPageAccess"
+msgid "Writes high_contrast and the a11y high-contrast setting that "
+msgstr ""
+
+#: shell/SetPageAccess.qml:386
+msgctxt "SetPageAccess"
+msgid "Zoom"
+msgstr ""
+
+#: shell/SetPageAccess.qml:400
+msgctxt "SetPageAccess"
+msgid "Zoom in"
+msgstr ""
+
+#: shell/SetPageAccess.qml:407
+msgctxt "SetPageAccess"
+msgid "Zoom out"
+msgstr ""
+
+#: shell/SetPageAccess.qml:327
+msgctxt "SetPageAccess"
+msgid "orca is not installed on this machine (it is in packages.x86_64)"
+msgstr ""
+
+#: shell/SetPageAccess.qml:345
+msgctxt "SetPageAccess"
+msgid "squeekboard is not installed on this machine (it is in packages.x86_64; wvkbd is AUR-only and is not shipped)"
+msgstr ""
+
+#: shell/SetPageAccess.qml:389
+msgctxt "SetPageAccess"
+msgid "~/.config/hypr/scripts/nyxus-lens.sh is missing from this home"
+msgstr ""
+
+#: shell/SetPageAccount.qml:53
+msgctxt "SetPageAccount"
+msgid "No full name on this account"
+msgstr ""
+
+#: shell/SetPageAccount.qml:48
+msgctxt "SetPageAccount"
+msgid "Password and fingerprint enrolment stay on the sign-in and lock surfaces. This page does not open a terminal to change them."
+msgstr ""
+
+#: shell/SetPageAccount.qml:51
+msgctxt "SetPageAccount"
+msgid "SIGNED IN"
+msgstr ""
+
+#: shell/SetPageAccount.qml:46
+msgctxt "SetPageAccount"
+msgid "Signed in"
+msgstr ""
+
+#: shell/SetPageAccount.qml:13
+msgctxt "SetPageAccount"
+msgid "Who is signed in on this machine."
+msgstr ""
+
+#: shell/SetPageAccount.qml:12
+msgctxt "SetPageAccount"
+msgid "Your account"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:149
+msgctxt "SetPageAppearance"
+msgid "A short ice comet behind the pointer. Off until you turn it on — costs nothing while off. Match is the same ice-and-purple dye the bar wears."
+msgstr ""
+
+#: shell/SetPageAppearance.qml:56
+msgctxt "SetPageAppearance"
+msgid "ALWAYS"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:16 shell/SetPageAppearance.qml:287
+msgctxt "SetPageAppearance"
+msgid "Appearance"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:108
+msgctxt "SetPageAppearance"
+msgid "BLACK SHADOW"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:79
+msgctxt "SetPageAppearance"
+msgid "Beat feeds the filaments when something is playing"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:197
+msgctxt "SetPageAppearance"
+msgid "CARD ON THE BAR"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:276
+msgctxt "SetPageAppearance"
+msgid "CLASSIC"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:265
+msgctxt "SetPageAppearance"
+msgid "DAILY"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:137
+msgctxt "SetPageAppearance"
+msgid "DARKEST"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:126
+msgctxt "SetPageAppearance"
+msgid "DIMMER"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:254
+msgctxt "SetPageAppearance"
+msgid "Daily is the shipped layout. Classic keeps the Atrium."
+msgstr ""
+
+#: shell/SetPageAppearance.qml:207
+msgctxt "SetPageAppearance"
+msgid "Desktop sky"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:77
+msgctxt "SetPageAppearance"
+msgid "FOLLOW MUSIC"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:109
+msgctxt "SetPageAppearance"
+msgid "Filaments go black and block a faint glow"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:183
+msgctxt "SetPageAppearance"
+msgid "Glacier only"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:182
+msgctxt "SetPageAppearance"
+msgid "ICE"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:156
+msgctxt "SetPageAppearance"
+msgid "Ice comet behind the pointer"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:277
+msgctxt "SetPageAppearance"
+msgid "Keeps the Atrium"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:35
+msgctxt "SetPageAppearance"
+msgid "LIVING PAINT"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:266
+msgctxt "SetPageAppearance"
+msgid "Launcher, not a cockpit"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:30
+msgctxt "SetPageAppearance"
+msgid "Living paint"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:17
+msgctxt "SetPageAppearance"
+msgid "Living paint, the sky, and how Start opens."
+msgstr ""
+
+#: shell/SetPageAppearance.qml:171
+msgctxt "SetPageAppearance"
+msgid "MATCH"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:57
+msgctxt "SetPageAppearance"
+msgid "Motion even at rest"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:192
+msgctxt "SetPageAppearance"
+msgid "Now playing"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:36 shell/SetPageAppearance.qml:78
+#: shell/SetPageAppearance.qml:155 shell/SetPageAppearance.qml:198
+msgctxt "SetPageAppearance"
+msgid "OFF"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:36 shell/SetPageAppearance.qml:78
+#: shell/SetPageAppearance.qml:155 shell/SetPageAppearance.qml:198
+msgctxt "SetPageAppearance"
+msgid "ON"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:67
+msgctxt "SetPageAppearance"
+msgid "ON HOVER"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:156
+msgctxt "SetPageAppearance"
+msgid "Off — costs nothing"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:68
+msgctxt "SetPageAppearance"
+msgid "Only when the pointer is over the Line"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:97
+msgctxt "SetPageAppearance"
+msgid "PAINT"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:231
+msgctxt "SetPageAppearance"
+msgid "PICTURE"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:154
+msgctxt "SetPageAppearance"
+msgid "POINTER TRAIL"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:199
+msgctxt "SetPageAppearance"
+msgid "Player card above the Line while something is playing"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:147
+msgctxt "SetPageAppearance"
+msgid "Pointer trail"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:220
+msgctxt "SetPageAppearance"
+msgid "STARLIGHT"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:172
+msgctxt "SetPageAppearance"
+msgid "Same ice-and-purple dye as the bar"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:127
+msgctxt "SetPageAppearance"
+msgid "Same look, a little darker"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:221
+msgctxt "SetPageAppearance"
+msgid "Shipped ground"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:98
+msgctxt "SetPageAppearance"
+msgid "Shipped — ice and purple filaments"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:209
+msgctxt "SetPageAppearance"
+msgid "Starlight is the shipped ground. Wallpaper is the still under Background. Voyage is the 3D sky."
+msgstr ""
+
+#: shell/SetPageAppearance.qml:252
+msgctxt "SetPageAppearance"
+msgid "Start menu"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:243
+msgctxt "SetPageAppearance"
+msgid "The 3D sky"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:32
+msgctxt "SetPageAppearance"
+msgid "The bar filaments stay BQ. These keys are the ones Prefs already feeds that chain. One dye: ice plus the wallpaper purple. Rose, magma and violet are not a pick — magma is still destroy/record, violet is still unread/DND. PAINT is shipped. BLACK SHADOW is the optional black-filament look."
+msgstr ""
+
+#: shell/SetPageAppearance.qml:138
+msgctxt "SetPageAppearance"
+msgid "The lowest of the four rungs"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:232
+msgctxt "SetPageAppearance"
+msgid "The still under Background"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:242
+msgctxt "SetPageAppearance"
+msgid "VOYAGE"
+msgstr ""
+
+#: shell/SetPageAppearance.qml:194
+msgctxt "SetPageAppearance"
+msgid "When anything is playing (YouTube Music, Nyxus Media, a browser) a player card sits above the bar. The chevron docks it into the right of the bar, the same slot a notice uses. Click that line to raise the card. The clock stays the clock. Opening Media is a separate app."
+msgstr ""
+
+#: shell/SetPageApps.qml:18
+msgctxt "SetPageApps"
+msgid "Apps & defaults"
+msgstr ""
+
+#: shell/SetPageApps.qml:259
+msgctxt "SetPageApps"
+msgid "Documents"
+msgstr ""
+
+#: shell/SetPageApps.qml:164
+msgctxt "SetPageApps"
+msgid "Everyday"
+msgstr ""
+
+#: shell/SetPageApps.qml:211
+msgctxt "SetPageApps"
+msgid "Install xdg-utils, then reopen this page."
+msgstr ""
+
+#: shell/SetPageApps.qml:198 shell/SetPageApps.qml:249
+#: shell/SetPageApps.qml:291
+msgctxt "SetPageApps"
+msgid "None"
+msgstr ""
+
+#: shell/SetPageApps.qml:216
+msgctxt "SetPageApps"
+msgid "Photos & media"
+msgstr ""
+
+#: shell/SetPageApps.qml:218
+msgctxt "SetPageApps"
+msgid "Pictures, video, and music."
+msgstr ""
+
+#: shell/SetPageApps.qml:19
+msgctxt "SetPageApps"
+msgid "Which app opens the browser, photos, mail, and files."
+msgstr ""
+
+#: shell/SetPageApps.qml:210
+msgctxt "SetPageApps"
+msgid "xdg-mime did not answer"
+msgstr ""
+
+#: shell/SetPageBackground.qml:368
+msgctxt "SetPageBackground"
+msgid "Also shipped"
+msgstr ""
+
+#: shell/SetPageBackground.qml:31 shell/SetPageBackground.qml:390
+msgctxt "SetPageBackground"
+msgid "Background"
+msgstr ""
+
+#: shell/SetPageBackground.qml:361
+msgctxt "SetPageBackground"
+msgid "More from this build"
+msgstr ""
+
+#: shell/SetPageBackground.qml:272
+msgctxt "SetPageBackground"
+msgid "New stills"
+msgstr ""
+
+#: shell/SetPageBackground.qml:376
+msgctxt "SetPageBackground"
+msgid "None found"
+msgstr ""
+
+#: shell/SetPageBackground.qml:266
+msgctxt "SetPageBackground"
+msgid "Nothing applied yet"
+msgstr ""
+
+#: shell/SetPageBackground.qml:264
+msgctxt "SetPageBackground"
+msgid "ON THE DESKTOP"
+msgstr ""
+
+#: shell/SetPageBackground.qml:244
+msgctxt "SetPageBackground"
+msgid "PICTURE"
+msgstr ""
+
+#: shell/SetPageBackground.qml:233
+msgctxt "SetPageBackground"
+msgid "STARLIGHT"
+msgstr ""
+
+#: shell/SetPageBackground.qml:234
+msgctxt "SetPageBackground"
+msgid "Shipped ground"
+msgstr ""
+
+#: shell/SetPageBackground.qml:256
+msgctxt "SetPageBackground"
+msgid "The 3D sky"
+msgstr ""
+
+#: shell/SetPageBackground.qml:32
+msgctxt "SetPageBackground"
+msgid "The picture on the desktop. Pick one, see it."
+msgstr ""
+
+#: shell/SetPageBackground.qml:364
+msgctxt "SetPageBackground"
+msgid "The rest of the rotation, as a list — not another grid."
+msgstr ""
+
+#: shell/SetPageBackground.qml:245
+msgctxt "SetPageBackground"
+msgid "The still you pick below"
+msgstr ""
+
+#: shell/SetPageBackground.qml:255
+msgctxt "SetPageBackground"
+msgid "VOYAGE"
+msgstr ""
+
+#: shell/SetPageBackground.qml:215
+msgctxt "SetPageBackground"
+msgid "What you see"
+msgstr ""
+
+#: shell/SetPageBackup.qml:415
+msgctxt "SetPageBackup"
+msgid "%1 package(s) in the manifest, %2 not installed here."
+msgstr ""
+
+#: shell/SetPageBackup.qml:491
+msgctxt "SetPageBackup"
+msgid "%1 · %2 mode"
+msgstr ""
+
+#: shell/SetPageBackup.qml:565
+msgctxt "SetPageBackup"
+msgid "/run/media/you/Backup"
+msgstr ""
+
+#: shell/SetPageBackup.qml:521
+msgctxt "SetPageBackup"
+msgid "A USB stick, by its label"
+msgstr ""
+
+#: shell/SetPageBackup.qml:626
+msgctxt "SetPageBackup"
+msgid "A day the stick is in a drawer is an ordinary day, not a failure."
+msgstr ""
+
+#: shell/SetPageBackup.qml:522
+msgctxt "SetPageBackup"
+msgid "A folder that is already mounted"
+msgstr ""
+
+#: shell/SetPageBackup.qml:471
+msgctxt "SetPageBackup"
+msgid "A second drive, a network folder, or a USB stick named by its filesystem label. A stick can be read back on any machine, including a fresh install."
+msgstr ""
+
+#: shell/SetPageBackup.qml:544
+msgctxt "SetPageBackup"
+msgid "A short name for this place"
+msgstr ""
+
+#: shell/SetPageBackup.qml:520
+msgctxt "SetPageBackup"
+msgid "ADD A PLACE"
+msgstr ""
+
+#: shell/SetPageBackup.qml:478
+msgctxt "SetPageBackup"
+msgid "Add a place below."
+msgstr ""
+
+#: shell/SetPageBackup.qml:575
+msgctxt "SetPageBackup"
+msgid "Add destination"
+msgstr ""
+
+#: shell/SetPageBackup.qml:249
+msgctxt "SetPageBackup"
+msgid "Added %1 — not reachable right now: %2"
+msgstr ""
+
+#: shell/SetPageBackup.qml:247
+msgctxt "SetPageBackup"
+msgid "Added %1 — reachable now (%2, %3 mode)."
+msgstr ""
+
+#: shell/SetPageBackup.qml:586 shell/SetPageBackup.qml:612
+msgctxt "SetPageBackup"
+msgid "Back up now"
+msgstr ""
+
+#: shell/SetPageBackup.qml:623
+msgctxt "SetPageBackup"
+msgid "Back up once a day when a destination is plugged in"
+msgstr ""
+
+#: shell/SetPageBackup.qml:12
+msgctxt "SetPageBackup"
+msgid "Backup & rollback"
+msgstr ""
+
+#: shell/SetPageBackup.qml:334
+msgctxt "SetPageBackup"
+msgid "Backup finished: %1 file(s) copied."
+msgstr ""
+
+#: shell/SetPageBackup.qml:335
+msgctxt "SetPageBackup"
+msgid "Backup had a problem — see ~/.cache/nyxus/backup.log."
+msgstr ""
+
+#: shell/SetPageBackup.qml:182
+msgctxt "SetPageBackup"
+msgid "Backup status could not be read."
+msgstr ""
+
+#: shell/SetPageBackup.qml:641
+msgctxt "SetPageBackup"
+msgid "Bring files back"
+msgstr ""
+
+#: shell/SetPageBackup.qml:447
+msgctxt "SetPageBackup"
+msgid "Bringing files back…"
+msgstr ""
+
+#: shell/SetPageBackup.qml:693
+msgctxt "SetPageBackup"
+msgid "Click again to put these files back"
+msgstr ""
+
+#: shell/SetPageBackup.qml:510
+msgctxt "SetPageBackup"
+msgid "Click again — the files on it stay"
+msgstr ""
+
+#: shell/SetPageBackup.qml:352
+msgctxt "SetPageBackup"
+msgid "Copying…"
+msgstr ""
+
+#: shell/SetPageBackup.qml:622
+msgctxt "SetPageBackup"
+msgid "DAILY: OFF"
+msgstr ""
+
+#: shell/SetPageBackup.qml:622
+msgctxt "SetPageBackup"
+msgid "DAILY: ON"
+msgstr ""
+
+#: shell/SetPageBackup.qml:649
+msgctxt "SetPageBackup"
+msgid "DESTINATION"
+msgstr ""
+
+#: shell/SetPageBackup.qml:377
+msgctxt "SetPageBackup"
+msgid "Daily backup is off."
+msgstr ""
+
+#: shell/SetPageBackup.qml:376
+msgctxt "SetPageBackup"
+msgid "Daily backup is on."
+msgstr ""
+
+#: shell/SetPageBackup.qml:604
+msgctxt "SetPageBackup"
+msgid "Dry run"
+msgstr ""
+
+#: shell/SetPageBackup.qml:331
+msgctxt "SetPageBackup"
+msgid "Dry run: %1 file(s) would be copied. Nothing was written."
+msgstr ""
+
+#: shell/SetPageBackup.qml:507
+msgctxt "SetPageBackup"
+msgid "Forget %1"
+msgstr ""
+
+#: shell/SetPageBackup.qml:265
+msgctxt "SetPageBackup"
+msgid "Give the destination a name and a place."
+msgstr ""
+
+#: shell/SetPageBackup.qml:717
+msgctxt "SetPageBackup"
+msgid "ITEM"
+msgstr ""
+
+#: shell/SetPageBackup.qml:562
+msgctxt "SetPageBackup"
+msgid "LABEL"
+msgstr ""
+
+#: shell/SetPageBackup.qml:543
+msgctxt "SetPageBackup"
+msgid "NAME"
+msgstr ""
+
+#: shell/SetPageBackup.qml:476
+msgctxt "SetPageBackup"
+msgid "NO DESTINATION"
+msgstr ""
+
+#: shell/SetPageBackup.qml:486
+msgctxt "SetPageBackup"
+msgid "NOT HERE"
+msgstr ""
+
+#: shell/SetPageBackup.qml:461
+msgctxt "SetPageBackup"
+msgid "NOT INSTALLED"
+msgstr ""
+
+#: shell/SetPageBackup.qml:101 shell/SetPageBackup.qml:635
+msgctxt "SetPageBackup"
+msgid "NOTE"
+msgstr ""
+
+#: shell/SetPageBackup.qml:625
+msgctxt "SetPageBackup"
+msgid "Next: %1"
+msgstr ""
+
+#: shell/SetPageBackup.qml:64
+msgctxt "SetPageBackup"
+msgid "No snapshots yet"
+msgstr ""
+
+#: shell/SetPageBackup.qml:477
+msgctxt "SetPageBackup"
+msgid "Nothing is backed up off this disk yet"
+msgstr ""
+
+#: shell/SetPageBackup.qml:463
+msgctxt "SetPageBackup"
+msgid "Nothing on this half of the page can run without it."
+msgstr ""
+
+#: shell/SetPageBackup.qml:328
+msgctxt "SetPageBackup"
+msgid "Nothing ran — %1: %2"
+msgstr ""
+
+#: shell/SetPageBackup.qml:329
+msgctxt "SetPageBackup"
+msgid "Nothing ran — no destination was reachable."
+msgstr ""
+
+#: shell/SetPageBackup.qml:708
+msgctxt "SetPageBackup"
+msgid "Nothing would change — this machine already matches the snapshot."
+msgstr ""
+
+#: shell/SetPageBackup.qml:454
+msgctxt "SetPageBackup"
+msgid "Off this disk"
+msgstr ""
+
+#: shell/SetPageBackup.qml:562
+msgctxt "SetPageBackup"
+msgid "PATH"
+msgstr ""
+
+#: shell/SetPageBackup.qml:81
+msgctxt "SetPageBackup"
+msgid "Polkit will ask. Nothing opens a terminal."
+msgstr ""
+
+#: shell/SetPageBackup.qml:682
+msgctxt "SetPageBackup"
+msgid "Preview restore"
+msgstr ""
+
+#: shell/SetPageBackup.qml:486
+msgctxt "SetPageBackup"
+msgid "REACHABLE"
+msgstr ""
+
+#: shell/SetPageBackup.qml:288
+msgctxt "SetPageBackup"
+msgid "Removed %1. The files already on it are untouched."
+msgstr ""
+
+#: shell/SetPageBackup.qml:690
+msgctxt "SetPageBackup"
+msgid "Restore %1"
+msgstr ""
+
+#: shell/SetPageBackup.qml:430
+msgctxt "SetPageBackup"
+msgid "Restore failed: %1"
+msgstr ""
+
+#: shell/SetPageBackup.qml:644
+msgctxt "SetPageBackup"
+msgid "Restore never deletes a live file. The preview is rsync's own dry run, so what it lists is what would change."
+msgstr ""
+
+#: shell/SetPageBackup.qml:56
+msgctxt "SetPageBackup"
+msgid "Restore points"
+msgstr ""
+
+#: shell/SetPageBackup.qml:428
+msgctxt "SetPageBackup"
+msgid "Restored %1 from snapshot %2. Log out and back in so the desktop re-reads its settings."
+msgstr ""
+
+#: shell/SetPageBackup.qml:658
+msgctxt "SetPageBackup"
+msgid "SET"
+msgstr ""
+
+#: shell/SetPageBackup.qml:72
+msgctxt "SetPageBackup"
+msgid "SNAPSHOT"
+msgstr ""
+
+#: shell/SetPageBackup.qml:63
+msgctxt "SetPageBackup"
+msgid "SNAPSHOTS"
+msgstr ""
+
+#: shell/SetPageBackup.qml:90
+msgctxt "SetPageBackup"
+msgid "Snapshot"
+msgstr ""
+
+#: shell/SetPageBackup.qml:457
+msgctxt "SetPageBackup"
+msgid "Snapshots above live on this drive and die with it. The off-disk backup is a separate tool."
+msgstr ""
+
+#: shell/SetPageBackup.qml:13
+msgctxt "SetPageBackup"
+msgid "Snapshots on this disk, and the backup that lives off it."
+msgstr ""
+
+#: shell/SetPageBackup.qml:79
+msgctxt "SetPageBackup"
+msgid "TAKE ONE"
+msgstr ""
+
+#: shell/SetPageBackup.qml:80
+msgctxt "SetPageBackup"
+msgid "Take a snapshot now"
+msgstr ""
+
+#: shell/SetPageBackup.qml:523
+msgctxt "SetPageBackup"
+msgid "Tap to switch between a stick label and a folder path."
+msgstr ""
+
+#: shell/SetPageBackup.qml:314
+msgctxt "SetPageBackup"
+msgid "The backup produced no readable report."
+msgstr ""
+
+#: shell/SetPageBackup.qml:238
+msgctxt "SetPageBackup"
+msgid "The destination could not be added."
+msgstr ""
+
+#: shell/SetPageBackup.qml:283
+msgctxt "SetPageBackup"
+msgid "The destination could not be removed."
+msgstr ""
+
+#: shell/SetPageBackup.qml:209
+msgctxt "SetPageBackup"
+msgid "The destination's contents could not be read."
+msgstr ""
+
+#: shell/SetPageBackup.qml:401
+msgctxt "SetPageBackup"
+msgid "The restore produced no readable report."
+msgstr ""
+
+#: shell/SetPageBackup.qml:366
+msgctxt "SetPageBackup"
+msgid "The schedule could not be changed."
+msgstr ""
+
+#: shell/SetPageBackup.qml:564
+msgctxt "SetPageBackup"
+msgid "The stick's filesystem label"
+msgstr ""
+
+#: shell/SetPageBackup.qml:58
+msgctxt "SetPageBackup"
+msgid "Updates take a snapshot first. Rolling back a running system is a separate, destructive action — it is not a button on this page."
+msgstr ""
+
+#: shell/SetPageBackup.qml:705
+msgctxt "SetPageBackup"
+msgid "WOULD CHANGE"
+msgstr ""
+
+#: shell/SetPageBackup.qml:468
+msgctxt "SetPageBackup"
+msgid "Where backups go"
+msgstr ""
+
+#: shell/SetPageBackup.qml:446
+msgctxt "SetPageBackup"
+msgid "Working out what would change…"
+msgstr ""
+
+#: shell/SetPageBackup.qml:351
+msgctxt "SetPageBackup"
+msgid "Working out what would copy…"
+msgstr ""
+
+#: shell/SetPageBackup.qml:419
+msgctxt "SetPageBackup"
+msgid "Would restore %1 file(s) from snapshot %2 into %3."
+msgstr ""
+
+#: shell/SetPageBackup.qml:595
+msgctxt "SetPageBackup"
+msgid "Your files, your desktop settings, and a list of the packages you installed on purpose. A dry run writes nothing. What each run copied is recorded, and is not shown on this page."
+msgstr ""
+
+#: shell/SetPageBackup.qml:488
+msgctxt "SetPageBackup"
+msgid "label %1"
+msgstr ""
+
+#: shell/SetPageBackup.qml:662
+msgctxt "SetPageBackup"
+msgid "newest: %1"
+msgstr ""
+
+#: shell/SetPageBackup.qml:663
+msgctxt "SetPageBackup"
+msgid "nothing backed up yet"
+msgstr ""
+
+#: shell/SetPageBackup.qml:462
+msgctxt "SetPageBackup"
+msgid "nyxus-backup is not on this system"
+msgstr ""
+
+#: shell/SetPageBluetooth.qml:222
+msgctxt "SetPageBluetooth"
+msgid "AVAILABLE"
+msgstr ""
+
+#: shell/SetPageBluetooth.qml:95
+msgctxt "SetPageBluetooth"
+msgid "BLUETOOTH"
+msgstr ""
+
+#: shell/SetPageBluetooth.qml:130
+msgctxt "SetPageBluetooth"
+msgid "Bluetooth is off"
+msgstr ""
+
+#: shell/SetPageBluetooth.qml:145
+msgctxt "SetPageBluetooth"
+msgid "CONNECTED"
+msgstr ""
+
+#: shell/SetPageBluetooth.qml:170
+msgctxt "SetPageBluetooth"
+msgid "Connect"
+msgstr ""
+
+#: shell/SetPageBluetooth.qml:170
+msgctxt "SetPageBluetooth"
+msgid "Disconnect"
+msgstr ""
+
+#: shell/SetPageBluetooth.qml:177
+msgctxt "SetPageBluetooth"
+msgid "Forget"
+msgstr ""
+
+#: shell/SetPageBluetooth.qml:112
+msgctxt "SetPageBluetooth"
+msgid "Lets phones nearby find this machine. Turn it off once pairing is done."
+msgstr ""
+
+#: shell/SetPageBluetooth.qml:195
+msgctxt "SetPageBluetooth"
+msgid "Nearby"
+msgstr ""
+
+#: shell/SetPageBluetooth.qml:96
+msgctxt "SetPageBluetooth"
+msgid "None"
+msgstr ""
+
+#: shell/SetPageBluetooth.qml:130
+msgctxt "SetPageBluetooth"
+msgid "Nothing is paired yet"
+msgstr ""
+
+#: shell/SetPageBluetooth.qml:96 shell/SetPageBluetooth.qml:111
+msgctxt "SetPageBluetooth"
+msgid "Off"
+msgstr ""
+
+#: shell/SetPageBluetooth.qml:96 shell/SetPageBluetooth.qml:111
+msgctxt "SetPageBluetooth"
+msgid "On"
+msgstr ""
+
+#: shell/SetPageBluetooth.qml:129 shell/SetPageBluetooth.qml:145
+msgctxt "SetPageBluetooth"
+msgid "PAIRED"
+msgstr ""
+
+#: shell/SetPageBluetooth.qml:231
+msgctxt "SetPageBluetooth"
+msgid "Pair"
+msgstr ""
+
+#: shell/SetPageBluetooth.qml:17
+msgctxt "SetPageBluetooth"
+msgid "Pair, connect and forget devices, and see what is in range."
+msgstr ""
+
+#: shell/SetPageBluetooth.qml:202
+msgctxt "SetPageBluetooth"
+msgid "SCAN"
+msgstr ""
+
+#: shell/SetPageBluetooth.qml:202
+msgctxt "SetPageBluetooth"
+msgid "SCANNING"
+msgstr ""
+
+#: shell/SetPageBluetooth.qml:131
+msgctxt "SetPageBluetooth"
+msgid "Scan below to find a device, then pair it."
+msgstr ""
+
+#: shell/SetPageBluetooth.qml:197
+msgctxt "SetPageBluetooth"
+msgid "Scanning stops on its own after thirty seconds — it costs radio "
+msgstr ""
+
+#: shell/SetPageBluetooth.qml:110
+msgctxt "SetPageBluetooth"
+msgid "VISIBLE"
+msgstr ""
+
+#: shell/SetPageBluetooth.qml:123
+msgctxt "SetPageBluetooth"
+msgid "Your devices"
+msgstr ""
+
+#: shell/SetPageCompositor.qml:48
+msgctxt "SetPageCompositor"
+msgid "COMPOSITOR"
+msgstr ""
+
+#: shell/SetPageCompositor.qml:82
+msgctxt "SetPageCompositor"
+msgid "DISPLAY"
+msgstr ""
+
+#: shell/SetPageCompositor.qml:50
+msgctxt "SetPageCompositor"
+msgid "Floating by default, snap on drag-to-edge"
+msgstr ""
+
+#: shell/SetPageCompositor.qml:14
+msgctxt "SetPageCompositor"
+msgid "Hyprland — floating by default, snap on drag-to-edge."
+msgstr ""
+
+#: shell/SetPageCompositor.qml:57
+msgctxt "SetPageCompositor"
+msgid "Keeps windows. Same as the Updates page live-reload of Hyprland."
+msgstr ""
+
+#: shell/SetPageCompositor.qml:76
+msgctxt "SetPageCompositor"
+msgid "NOTE"
+msgstr ""
+
+#: shell/SetPageCompositor.qml:55
+msgctxt "SetPageCompositor"
+msgid "RELOAD"
+msgstr ""
+
+#: shell/SetPageCompositor.qml:66
+msgctxt "SetPageCompositor"
+msgid "Reload"
+msgstr ""
+
+#: shell/SetPageCompositor.qml:56
+msgctxt "SetPageCompositor"
+msgid "Reload config"
+msgstr ""
+
+#: shell/SetPageCompositor.qml:83
+msgctxt "SetPageCompositor"
+msgid "Resolution, scale, Night Light"
+msgstr ""
+
+#: shell/SetPageCompositor.qml:45
+msgctxt "SetPageCompositor"
+msgid "Tiling is a keybind, not the default. This page does not pretend to be a full compositor control panel."
+msgstr ""
+
+#: shell/SetPageCompositor.qml:13
+msgctxt "SetPageCompositor"
+msgid "Windowing"
+msgstr ""
+
+#: shell/SetPageCursor.qml:177
+msgctxt "SetPageCursor"
+msgid "ACTUAL SIZE"
+msgstr ""
+
+#. carried over from the 2026-05 nyxus catalogue
+#: shell/SetPageCursor.qml:241
+msgctxt "SetPageCursor"
+msgid "Apply"
+msgstr "Aplicar"
+
+#: shell/SetPageCursor.qml:156
+msgctxt "SetPageCursor"
+msgid "Bigger pointers are easier to follow on a large or high-resolution screen"
+msgstr ""
+
+#: shell/SetPageCursor.qml:221
+msgctxt "SetPageCursor"
+msgid "ENLARGE ON SHAKE"
+msgstr ""
+
+#: shell/SetPageCursor.qml:201
+msgctxt "SetPageCursor"
+msgid "Finding the pointer"
+msgstr ""
+
+#: shell/SetPageCursor.qml:212
+msgctxt "SetPageCursor"
+msgid "Gets it out of the way of the line you are writing"
+msgstr ""
+
+#: shell/SetPageCursor.qml:210
+msgctxt "SetPageCursor"
+msgid "HIDE WHILE TYPING"
+msgstr ""
+
+#: shell/SetPageCursor.qml:203
+msgctxt "SetPageCursor"
+msgid "Hide while typing and enlarge on shake are saved, not active. "
+msgstr ""
+
+#: shell/SetPageCursor.qml:35
+msgctxt "SetPageCursor"
+msgid "How the pointer looks, how big it is, and how easy it is to find."
+msgstr ""
+
+#: shell/SetPageCursor.qml:34
+msgctxt "SetPageCursor"
+msgid "Mouse pointer"
+msgstr ""
+
+#: shell/SetPageCursor.qml:211 shell/SetPageCursor.qml:222
+msgctxt "SetPageCursor"
+msgid "OFF"
+msgstr ""
+
+#: shell/SetPageCursor.qml:211 shell/SetPageCursor.qml:222
+msgctxt "SetPageCursor"
+msgid "ON"
+msgstr ""
+
+#: shell/SetPageCursor.qml:128
+msgctxt "SetPageCursor"
+msgid "Pointer theme"
+msgstr ""
+
+#: shell/SetPageCursor.qml:232
+msgctxt "SetPageCursor"
+msgid "Pushes the theme and size to the compositor again"
+msgstr ""
+
+#: shell/SetPageCursor.qml:231
+msgctxt "SetPageCursor"
+msgid "RE-APPLY"
+msgstr ""
+
+#: shell/SetPageCursor.qml:154
+msgctxt "SetPageCursor"
+msgid "SIZE"
+msgstr ""
+
+#: shell/SetPageCursor.qml:223
+msgctxt "SetPageCursor"
+msgid "Shaking the mouse briefly makes the pointer bigger so you can find it"
+msgstr ""
+
+#: shell/SetPageCursor.qml:139 shell/SetPageCursor.qml:150
+msgctxt "SetPageCursor"
+msgid "System default"
+msgstr ""
+
+#: shell/SetPageCursor.qml:137
+msgctxt "SetPageCursor"
+msgid "THEME"
+msgstr ""
+
+#: shell/SetPageCursor.qml:179
+msgctxt "SetPageCursor"
+msgid "The square is exactly how many pixels the pointer will take up"
+msgstr ""
+
+#: shell/SetPageDatetime.qml:33
+msgctxt "SetPageDatetime"
+msgid "24-HOUR"
+msgstr ""
+
+#: shell/SetPageDatetime.qml:20
+msgctxt "SetPageDatetime"
+msgid "Clock"
+msgstr ""
+
+#: shell/SetPageDatetime.qml:12
+msgctxt "SetPageDatetime"
+msgid "Date & time"
+msgstr ""
+
+#: shell/SetPageDatetime.qml:57
+msgctxt "SetPageDatetime"
+msgid "Following the system"
+msgstr ""
+
+#: shell/SetPageDatetime.qml:35
+msgctxt "SetPageDatetime"
+msgid "How the Line writes the hour"
+msgstr ""
+
+#: shell/SetPageDatetime.qml:13
+msgctxt "SetPageDatetime"
+msgid "How the clock on the Line writes the time."
+msgstr ""
+
+#: shell/SetPageDatetime.qml:34 shell/SetPageDatetime.qml:46
+msgctxt "SetPageDatetime"
+msgid "OFF"
+msgstr ""
+
+#: shell/SetPageDatetime.qml:34 shell/SetPageDatetime.qml:46
+msgctxt "SetPageDatetime"
+msgid "ON"
+msgstr ""
+
+#: shell/SetPageDatetime.qml:45
+msgctxt "SetPageDatetime"
+msgid "SECONDS"
+msgstr ""
+
+#: shell/SetPageDatetime.qml:47
+msgctxt "SetPageDatetime"
+msgid "Show the ticking second"
+msgstr ""
+
+#: shell/SetPageDatetime.qml:55
+msgctxt "SetPageDatetime"
+msgid "TIME ZONE"
+msgstr ""
+
+#: shell/SetPageDatetime.qml:22
+msgctxt "SetPageDatetime"
+msgid "The bar clock reads these keys live. No format switch lives on the clock itself."
+msgstr ""
+
+#: shell/SetPageDatetime.qml:66
+msgctxt "SetPageDatetime"
+msgid "Use system"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:788
+msgctxt "SetPageDisplay"
+msgid "A raymarched volume you drift through, with the ringed planet"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:390
+msgctxt "SetPageDisplay"
+msgid "A rotation goes through the same confirm-or-revert as a mode "
+msgstr ""
+
+#: shell/SetPageDisplay.qml:426
+msgctxt "SetPageDisplay"
+msgid "Adaptive sync"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:480
+msgctxt "SetPageDisplay"
+msgid "Brightness"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:470
+msgctxt "SetPageDisplay"
+msgid "Brightness & colour"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:283
+msgctxt "SetPageDisplay"
+msgid "DISPLAY"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:53
+msgctxt "SetPageDisplay"
+msgid "Display"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:274
+msgctxt "SetPageDisplay"
+msgid "Displays"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:812
+msgctxt "SetPageDisplay"
+msgid "Drift speed"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:566
+msgctxt "SetPageDisplay"
+msgid "Evenings"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:554
+msgctxt "SetPageDisplay"
+msgid "Evenings are 8pm–6am. Until sign-out holds the warmth now."
+msgstr ""
+
+#: shell/SetPageDisplay.qml:438
+msgctxt "SetPageDisplay"
+msgid "Fullscreen only"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:794
+msgctxt "SetPageDisplay"
+msgid "How far it tilts with the pointer"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:713
+msgctxt "SetPageDisplay"
+msgid "How much the pointer stirs it"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:284
+msgctxt "SetPageDisplay"
+msgid "Hyprland is not reporting any monitor"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:245
+msgctxt "SetPageDisplay"
+msgid "If you cannot read this, wait — the previous setting comes back "
+msgstr ""
+
+#: shell/SetPageDisplay.qml:257
+msgctxt "SetPageDisplay"
+msgid "Keep"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:242
+msgctxt "SetPageDisplay"
+msgid "Keep this display setting?"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:408
+msgctxt "SetPageDisplay"
+msgid "Landscape"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:410
+msgctxt "SetPageDisplay"
+msgid "Landscape flipped"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:427
+msgctxt "SetPageDisplay"
+msgid "Lets the display match its refresh rate to what is being drawn. "
+msgstr ""
+
+#: shell/SetPageDisplay.qml:698
+msgctxt "SetPageDisplay"
+msgid "Living desktop"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:706
+msgctxt "SetPageDisplay"
+msgid "Living wallpaper"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:715
+msgctxt "SetPageDisplay"
+msgid "Living wallpaper is off"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:531
+msgctxt "SetPageDisplay"
+msgid "Lower is warmer. 6500 K is daylight; 4000 K is a warm room."
+msgstr ""
+
+#: shell/SetPageDisplay.qml:361
+msgctxt "SetPageDisplay"
+msgid "Makes everything larger without changing the resolution. "
+msgstr ""
+
+#: shell/SetPageDisplay.qml:771
+msgctxt "SetPageDisplay"
+msgid "Nebula"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:516
+msgctxt "SetPageDisplay"
+msgid "Night Light"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:534 shell/SetPageDisplay.qml:557
+msgctxt "SetPageDisplay"
+msgid "Night Light is off"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:436
+msgctxt "SetPageDisplay"
+msgid "Off"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:437
+msgctxt "SetPageDisplay"
+msgid "On"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:401
+msgctxt "SetPageDisplay"
+msgid "Orientation"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:388
+msgctxt "SetPageDisplay"
+msgid "Orientation & sync"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:828
+msgctxt "SetPageDisplay"
+msgid "Pause on battery"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:409
+msgctxt "SetPageDisplay"
+msgid "Portrait"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:411
+msgctxt "SetPageDisplay"
+msgid "Portrait flipped"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:727
+msgctxt "SetPageDisplay"
+msgid "React to music"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:336
+msgctxt "SetPageDisplay"
+msgid "Refresh rate"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:311
+msgctxt "SetPageDisplay"
+msgid "Resolution"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:54
+msgctxt "SetPageDisplay"
+msgid "Resolution, refresh, brightness, and the paint behind your windows."
+msgstr ""
+
+#: shell/SetPageDisplay.qml:360
+msgctxt "SetPageDisplay"
+msgid "Scale"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:763
+msgctxt "SetPageDisplay"
+msgid "Shooting stars"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:749
+msgctxt "SetPageDisplay"
+msgid "Star density"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:742
+msgctxt "SetPageDisplay"
+msgid "Starlight"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:751 shell/SetPageDisplay.qml:765
+#: shell/SetPageDisplay.qml:773
+msgctxt "SetPageDisplay"
+msgid "Starlight is off"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:829
+msgctxt "SetPageDisplay"
+msgid "Stops the sky animating when you are unplugged, which is most of "
+msgstr ""
+
+#: shell/SetPageDisplay.qml:285
+msgctxt "SetPageDisplay"
+msgid "That normally means this shell is not running under Hyprland."
+msgstr ""
+
+#: shell/SetPageDisplay.qml:781
+msgctxt "SetPageDisplay"
+msgid "The 3D sky and the flat Starlight ceiling are alternatives, never "
+msgstr ""
+
+#: shell/SetPageDisplay.qml:797 shell/SetPageDisplay.qml:814
+msgctxt "SetPageDisplay"
+msgid "The 3D sky is off"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:779
+msgctxt "SetPageDisplay"
+msgid "The deep-space view"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:743
+msgctxt "SetPageDisplay"
+msgid "The fibre-optic ceiling over the wallpaper"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:731
+msgctxt "SetPageDisplay"
+msgid "The living wallpaper is off"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:728
+msgctxt "SetPageDisplay"
+msgid "The paint moves with whatever is playing. Costs nothing while "
+msgstr ""
+
+#: shell/SetPageDisplay.qml:795
+msgctxt "SetPageDisplay"
+msgid "The parallax as you move the mouse. Zero holds the view still."
+msgstr ""
+
+#: shell/SetPageDisplay.qml:700
+msgctxt "SetPageDisplay"
+msgid "These paint the desktop behind your windows. Each one costs GPU "
+msgstr ""
+
+#: shell/SetPageDisplay.qml:263
+msgctxt "SetPageDisplay"
+msgid "Undo"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:565
+msgctxt "SetPageDisplay"
+msgid "Until sign-out"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:787
+msgctxt "SetPageDisplay"
+msgid "Voyage — the 3D sky"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:517
+msgctxt "SetPageDisplay"
+msgid "Warms the whole screen. Same switch as the flyout — not a second pill."
+msgstr ""
+
+#: shell/SetPageDisplay.qml:530
+msgctxt "SetPageDisplay"
+msgid "Warmth"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:553
+msgctxt "SetPageDisplay"
+msgid "When"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:707
+msgctxt "SetPageDisplay"
+msgid "Your own picture, with the galaxy stirred by the pointer"
+msgstr ""
+
+#: shell/SetPageDisplay.qml:519
+msgctxt "SetPageDisplay"
+msgid "wlsunset is not installed"
+msgstr ""
+
+#: shell/SetPageDock.qml:53
+msgctxt "SetPageDock"
+msgid "24-hour and seconds live under Time ▸ Date & time"
+msgstr ""
+
+#: shell/SetPageDock.qml:42
+msgctxt "SetPageDock"
+msgid "CLASSIC"
+msgstr ""
+
+#: shell/SetPageDock.qml:52
+msgctxt "SetPageDock"
+msgid "CLOCK"
+msgstr ""
+
+#: shell/SetPageDock.qml:31
+msgctxt "SetPageDock"
+msgid "DAILY"
+msgstr ""
+
+#: shell/SetPageDock.qml:59
+msgctxt "SetPageDock"
+msgid "DESKTOP WIDGETS"
+msgstr ""
+
+#: shell/SetPageDock.qml:43
+msgctxt "SetPageDock"
+msgid "Keeps the Atrium"
+msgstr ""
+
+#: shell/SetPageDock.qml:20
+msgctxt "SetPageDock"
+msgid "Right-click a running app on the Line to pin or unpin it. Icon size and dissolve are the bar's own files (BQ)."
+msgstr ""
+
+#: shell/SetPageDock.qml:32
+msgctxt "SetPageDock"
+msgid "Shipped Start — launcher, not a cockpit"
+msgstr ""
+
+#: shell/SetPageDock.qml:60
+msgctxt "SetPageDock"
+msgid "Six chips on the wallpaper — not this Line clock"
+msgstr ""
+
+#: shell/SetPageDock.qml:12
+msgctxt "SetPageDock"
+msgid "Taskbar"
+msgstr ""
+
+#: shell/SetPageDock.qml:18
+msgctxt "SetPageDock"
+msgid "The Line"
+msgstr ""
+
+#: shell/SetPageDock.qml:13
+msgctxt "SetPageDock"
+msgid "The Line along the bottom of the screen."
+msgstr ""
+
+#: shell/SetPageFirewall.qml:70
+msgctxt "SetPageFirewall"
+msgid "App confinement, encrypted DNS, and MAC randomisation live on Security"
+msgstr ""
+
+#: shell/SetPageFirewall.qml:54
+msgctxt "SetPageFirewall"
+msgid "FIREWALL"
+msgstr ""
+
+#: shell/SetPageFirewall.qml:13
+msgctxt "SetPageFirewall"
+msgid "Firewall"
+msgstr ""
+
+#: shell/SetPageFirewall.qml:49
+msgctxt "SetPageFirewall"
+msgid "Incoming"
+msgstr ""
+
+#: shell/SetPageFirewall.qml:69
+msgctxt "SetPageFirewall"
+msgid "MORE"
+msgstr ""
+
+#: shell/SetPageFirewall.qml:78
+msgctxt "SetPageFirewall"
+msgid "NOTE"
+msgstr ""
+
+#: shell/SetPageFirewall.qml:55
+msgctxt "SetPageFirewall"
+msgid "OFF"
+msgstr ""
+
+#: shell/SetPageFirewall.qml:55
+msgctxt "SetPageFirewall"
+msgid "ON"
+msgstr ""
+
+#: shell/SetPageFirewall.qml:56
+msgctxt "SetPageFirewall"
+msgid "Off — inbound is open"
+msgstr ""
+
+#: shell/SetPageFirewall.qml:56
+msgctxt "SetPageFirewall"
+msgid "Protecting this PC"
+msgstr ""
+
+#: shell/SetPageFirewall.qml:14
+msgctxt "SetPageFirewall"
+msgid "Unsolicited inbound stays out unless you opt out."
+msgstr ""
+
+#: shell/SetPageFirewall.qml:51
+msgctxt "SetPageFirewall"
+msgid "firewalld is the packaged backend. The installer leaves it on. Polkit asks; no terminal opens."
+msgstr ""
+
+#: shell/SetPageFonts.qml:322
+msgctxt "SetPageFonts"
+msgid "Almost always right"
+msgstr ""
+
+#. carried over from the 2026-05 nyxus catalogue
+#: shell/SetPageFonts.qml:284
+msgctxt "SetPageFonts"
+msgid "Apply"
+msgstr "Aplicar"
+
+#: shell/SetPageFonts.qml:33
+msgctxt "SetPageFonts"
+msgid "Fonts & text size"
+msgstr ""
+
+#: shell/SetPageFonts.qml:303
+msgctxt "SetPageFonts"
+msgid "HINTING"
+msgstr ""
+
+#: shell/SetPageFonts.qml:177
+msgctxt "SetPageFonts"
+msgid "INTERFACE"
+msgstr ""
+
+#: shell/SetPageFonts.qml:194
+msgctxt "SetPageFonts"
+msgid "MONOSPACE"
+msgstr ""
+
+#: shell/SetPageFonts.qml:179
+msgctxt "SetPageFonts"
+msgid "Menus, labels and buttons across the desktop"
+msgstr ""
+
+#: shell/SetPageFonts.qml:343
+msgctxt "SetPageFonts"
+msgid "No subpixel"
+msgstr ""
+
+#: shell/SetPageFonts.qml:304 shell/SetPageFonts.qml:342
+msgctxt "SetPageFonts"
+msgid "OFF"
+msgstr ""
+
+#: shell/SetPageFonts.qml:304
+msgctxt "SetPageFonts"
+msgid "ON"
+msgstr ""
+
+#: shell/SetPageFonts.qml:257
+msgctxt "SetPageFonts"
+msgid "PREVIEW"
+msgstr ""
+
+#: shell/SetPageFonts.qml:274
+msgctxt "SetPageFonts"
+msgid "RE-APPLY"
+msgstr ""
+
+#: shell/SetPageFonts.qml:295
+msgctxt "SetPageFonts"
+msgid "Rendering"
+msgstr ""
+
+#: shell/SetPageFonts.qml:239
+msgctxt "SetPageFonts"
+msgid "SCALE"
+msgstr ""
+
+#: shell/SetPageFonts.qml:241
+msgctxt "SetPageFonts"
+msgid "Scales text and the space around it together, for readability rather than for taste"
+msgstr ""
+
+#: shell/SetPageFonts.qml:213
+msgctxt "SetPageFonts"
+msgid "Size"
+msgstr ""
+
+#: shell/SetPageFonts.qml:305
+msgctxt "SetPageFonts"
+msgid "Snaps letter shapes to the pixel grid. Sharper on low-resolution screens, slightly less faithful to the typeface."
+msgstr ""
+
+#: shell/SetPageFonts.qml:222
+msgctxt "SetPageFonts"
+msgid "TEXT SIZE"
+msgstr ""
+
+#: shell/SetPageFonts.qml:196
+msgctxt "SetPageFonts"
+msgid "Terminals, code, and anything that lines up in columns"
+msgstr ""
+
+#: shell/SetPageFonts.qml:215
+msgctxt "SetPageFonts"
+msgid "Text size and scale do the same job from two directions: size is "
+msgstr ""
+
+#: shell/SetPageFonts.qml:224
+msgctxt "SetPageFonts"
+msgid "The base point size applications are asked to use"
+msgstr ""
+
+#: shell/SetPageFonts.qml:258 shell/SetPageFonts.qml:265
+msgctxt "SetPageFonts"
+msgid "The quick brown fox jumps"
+msgstr ""
+
+#: shell/SetPageFonts.qml:34
+msgctxt "SetPageFonts"
+msgid "The typeface the desktop uses, how big it is, and how it is rendered."
+msgstr ""
+
+#: shell/SetPageFonts.qml:168
+msgctxt "SetPageFonts"
+msgid "Typeface"
+msgstr ""
+
+#: shell/SetPageFonts.qml:275
+msgctxt "SetPageFonts"
+msgid "Writes the settings out again — useful after installing a new font"
+msgstr ""
+
+#: shell/SetPageFonts.qml:297
+msgctxt "SetPageFonts"
+msgid "Written to ~/.config/fontconfig/fonts.conf, which applies to every "
+msgstr ""
+
+#: shell/SetPageHealth.qml:257
+msgctxt "SetPageHealth"
+msgid "Checks"
+msgstr ""
+
+#: shell/SetPageHealth.qml:365 shell/SetPageHealth.qml:371
+msgctxt "SetPageHealth"
+msgid "Copy report"
+msgstr ""
+
+#: shell/SetPageHealth.qml:231
+msgctxt "SetPageHealth"
+msgid "Every row is computed by `nyxus doctor` on this machine; nothing here calls out. "
+msgstr ""
+
+#: shell/SetPageHealth.qml:235
+msgctxt "SetPageHealth"
+msgid "HEALTH"
+msgstr ""
+
+#: shell/SetPageHealth.qml:40
+msgctxt "SetPageHealth"
+msgid "Health"
+msgstr ""
+
+#: shell/SetPageHealth.qml:382
+msgctxt "SetPageHealth"
+msgid "In a terminal"
+msgstr ""
+
+#: shell/SetPageHealth.qml:244
+msgctxt "SetPageHealth"
+msgid "Last read at "
+msgstr ""
+
+#: shell/SetPageHealth.qml:263
+msgctxt "SetPageHealth"
+msgid "On an installed system `nyxus doctor` lives in /opt/nyxus; in a preview HOME it is ~/.local/bin/nyxus-doctor."
+msgstr ""
+
+#: shell/SetPageHealth.qml:244
+msgctxt "SetPageHealth"
+msgid "Reading…"
+msgstr ""
+
+#: shell/SetPageHealth.qml:247
+msgctxt "SetPageHealth"
+msgid "Refresh"
+msgstr ""
+
+#: shell/SetPageHealth.qml:357
+msgctxt "SetPageHealth"
+msgid "Report"
+msgstr ""
+
+#: shell/SetPageHealth.qml:243
+msgctxt "SetPageHealth"
+msgid "Run the checks again"
+msgstr ""
+
+#: shell/SetPageHealth.qml:335
+msgctxt "SetPageHealth"
+msgid "Session processes"
+msgstr ""
+
+#: shell/SetPageHealth.qml:359
+msgctxt "SetPageHealth"
+msgid "The bundle holds the checks, `nyxus status`, the journal tail for the nyxus units and this boot, "
+msgstr ""
+
+#: shell/SetPageHealth.qml:303
+msgctxt "SetPageHealth"
+msgid "The nyxus-* user units can be switched off here (disable + stop) and back on. "
+msgstr ""
+
+#: shell/SetPageHealth.qml:229
+msgctxt "SetPageHealth"
+msgid "This machine, right now"
+msgstr ""
+
+#: shell/SetPageHealth.qml:301
+msgctxt "SetPageHealth"
+msgid "Units and timers"
+msgstr ""
+
+#: shell/SetPageHealth.qml:309
+msgctxt "SetPageHealth"
+msgid "Waiting for nyxus status…"
+msgstr ""
+
+#: shell/SetPageHealth.qml:262
+msgctxt "SetPageHealth"
+msgid "Waiting for the doctor…"
+msgstr ""
+
+#: shell/SetPageHealth.qml:337
+msgctxt "SetPageHealth"
+msgid "What Hyprland starts at login — the shell and its supervisor, the wallpaper engine, the keyring, "
+msgstr ""
+
+#: shell/SetPageHealth.qml:41
+msgctxt "SetPageHealth"
+msgid "What the desktop leans on, whether it is up, and what to do when it is not."
+msgstr ""
+
+#: shell/SetPageHealth.qml:375
+msgctxt "SetPageHealth"
+msgid "Writing…"
+msgstr ""
+
+#: shell/SetPageHealth.qml:383
+msgctxt "SetPageHealth"
+msgid "`nyxus doctor` (full, with the update check) · `nyxus status` · `nyxus status --off <unit>`"
+msgstr ""
+
+#: shell/SetPageHealth.qml:351
+msgctxt "SetPageHealth"
+msgid "not running"
+msgstr ""
+
+#: shell/SetPageIdle.qml:57
+msgctxt "SetPageIdle"
+msgid "AFTER"
+msgstr ""
+
+#: shell/SetPageIdle.qml:41
+msgctxt "SetPageIdle"
+msgid "Five minutes to the screensaver, ten to the lock, unless you change it. The flyout Keep Awake switch is the inhibit for one session."
+msgstr ""
+
+#: shell/SetPageIdle.qml:39
+msgctxt "SetPageIdle"
+msgid "Idle"
+msgstr ""
+
+#: shell/SetPageIdle.qml:12 shell/SetPageIdle.qml:109
+msgctxt "SetPageIdle"
+msgid "Keep awake"
+msgstr ""
+
+#: shell/SetPageIdle.qml:82
+msgctxt "SetPageIdle"
+msgid "LOCK AFTER"
+msgstr ""
+
+#: shell/SetPageIdle.qml:84
+msgctxt "SetPageIdle"
+msgid "Must be later than the screensaver"
+msgstr ""
+
+#: shell/SetPageIdle.qml:45
+msgctxt "SetPageIdle"
+msgid "OFF"
+msgstr ""
+
+#: shell/SetPageIdle.qml:45
+msgctxt "SetPageIdle"
+msgid "ON"
+msgstr ""
+
+#: shell/SetPageIdle.qml:44
+msgctxt "SetPageIdle"
+msgid "SCREENSAVER"
+msgstr ""
+
+#: shell/SetPageIdle.qml:59
+msgctxt "SetPageIdle"
+msgid "Seconds idle before the screensaver"
+msgstr ""
+
+#: shell/SetPageIdle.qml:46
+msgctxt "SetPageIdle"
+msgid "The idle picture after you step away"
+msgstr ""
+
+#: shell/SetPageIdle.qml:13
+msgctxt "SetPageIdle"
+msgid "When the screensaver and the lock take over."
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:276
+msgctxt "SetPageKeyboard"
+msgid "At login"
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:96
+msgctxt "SetPageKeyboard"
+msgid "Changing this takes effect immediately. If you pick a layout you "
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:205
+msgctxt "SetPageKeyboard"
+msgid "Characters per second once it starts"
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:226
+msgctxt "SetPageKeyboard"
+msgid "Hold a key down here — the two settings above are already live"
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:265
+msgctxt "SetPageKeyboard"
+msgid "Hold a key…"
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:188
+msgctxt "SetPageKeyboard"
+msgid "How long a key must be held before it starts repeating"
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:146
+msgctxt "SetPageKeyboard"
+msgid "International"
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:21
+msgctxt "SetPageKeyboard"
+msgid "Keyboard"
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:101
+msgctxt "SetPageKeyboard"
+msgid "LAYOUT"
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:94
+msgctxt "SetPageKeyboard"
+msgid "Layout"
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:22
+msgctxt "SetPageKeyboard"
+msgid "Layout, how keys repeat when held, and what the keyboard does at login."
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:121
+msgctxt "SetPageKeyboard"
+msgid "Leave Standard unless you want Dvorak, Colemak, or International"
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:283
+msgctxt "SetPageKeyboard"
+msgid "NUMBER LOCK"
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:284
+msgctxt "SetPageKeyboard"
+msgid "OFF"
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:284
+msgctxt "SetPageKeyboard"
+msgid "ON"
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:182
+msgctxt "SetPageKeyboard"
+msgid "Repeat"
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:203
+msgctxt "SetPageKeyboard"
+msgid "SPEED"
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:134
+msgctxt "SetPageKeyboard"
+msgid "STANDARD"
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:120
+msgctxt "SetPageKeyboard"
+msgid "STD"
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:225
+msgctxt "SetPageKeyboard"
+msgid "TRY IT"
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:103
+msgctxt "SetPageKeyboard"
+msgid "The XKB layout Hyprland hands to every application"
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:278
+msgctxt "SetPageKeyboard"
+msgid "The greeter has its own numlock setting under Personalization ▸ "
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:135
+msgctxt "SetPageKeyboard"
+msgid "The usual version of the layout above"
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:285
+msgctxt "SetPageKeyboard"
+msgid "Turns the numeric keypad on when the desktop starts"
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:119
+msgctxt "SetPageKeyboard"
+msgid "VARIANT"
+msgstr ""
+
+#: shell/SetPageKeyboard.qml:186
+msgctxt "SetPageKeyboard"
+msgid "WAIT"
+msgstr ""
+
+#: shell/SetPageMouse.qml:220
+msgctxt "SetPageMouse"
+msgid "A tap counts as a click, without pressing the pad down"
+msgstr ""
+
+#: shell/SetPageMouse.qml:119
+msgctxt "SetPageMouse"
+msgid "ADAPTIVE"
+msgstr ""
+
+#: shell/SetPageMouse.qml:268
+msgctxt "SetPageMouse"
+msgid "Attached devices"
+msgstr ""
+
+#: shell/SetPageMouse.qml:160
+msgctxt "SetPageMouse"
+msgid "Content follows your fingers"
+msgstr ""
+
+#: shell/SetPageMouse.qml:130
+msgctxt "SetPageMouse"
+msgid "FLAT"
+msgstr ""
+
+#: shell/SetPageMouse.qml:198
+msgctxt "SetPageMouse"
+msgid "FOCUS FOLLOWS"
+msgstr ""
+
+#: shell/SetPageMouse.qml:92
+msgctxt "SetPageMouse"
+msgid "How far the pointer travels for the same movement of your hand"
+msgstr ""
+
+#: shell/SetPageMouse.qml:22
+msgctxt "SetPageMouse"
+msgid "How the pointer moves, how it scrolls, and which buttons do what."
+msgstr ""
+
+#: shell/SetPageMouse.qml:276
+msgctxt "SetPageMouse"
+msgid "Hyprland lists nothing under mice. If you are using one right now, "
+msgstr ""
+
+#: shell/SetPageMouse.qml:240
+msgctxt "SetPageMouse"
+msgid "IGNORE WHILE TYPING"
+msgstr ""
+
+#: shell/SetPageMouse.qml:189
+msgctxt "SetPageMouse"
+msgid "Left-handed layout — the right button becomes the primary one"
+msgstr ""
+
+#: shell/SetPageMouse.qml:170
+msgctxt "SetPageMouse"
+msgid "Lines moved per notch of the wheel"
+msgstr ""
+
+#: shell/SetPageMouse.qml:21
+msgctxt "SetPageMouse"
+msgid "Mouse & touchpad"
+msgstr ""
+
+#: shell/SetPageMouse.qml:159
+msgctxt "SetPageMouse"
+msgid "NATURAL"
+msgstr ""
+
+#: shell/SetPageMouse.qml:231
+msgctxt "SetPageMouse"
+msgid "Natural direction — content follows your fingers"
+msgstr ""
+
+#: shell/SetPageMouse.qml:275
+msgctxt "SetPageMouse"
+msgid "No pointing device reported"
+msgstr ""
+
+#: shell/SetPageMouse.qml:188 shell/SetPageMouse.qml:199
+#: shell/SetPageMouse.qml:219 shell/SetPageMouse.qml:230
+#: shell/SetPageMouse.qml:241
+msgctxt "SetPageMouse"
+msgid "OFF"
+msgstr ""
+
+#: shell/SetPageMouse.qml:188 shell/SetPageMouse.qml:199
+#: shell/SetPageMouse.qml:219 shell/SetPageMouse.qml:230
+#: shell/SetPageMouse.qml:241
+msgctxt "SetPageMouse"
+msgid "ON"
+msgstr ""
+
+#: shell/SetPageMouse.qml:131
+msgctxt "SetPageMouse"
+msgid "One-to-one, no acceleration"
+msgstr ""
+
+#: shell/SetPageMouse.qml:249
+msgctxt "SetPageMouse"
+msgid "PAD SCROLL"
+msgstr ""
+
+#: shell/SetPageMouse.qml:274
+msgctxt "SetPageMouse"
+msgid "POINTER"
+msgstr ""
+
+#: shell/SetPageMouse.qml:301
+msgctxt "SetPageMouse"
+msgid "POLLING"
+msgstr ""
+
+#: shell/SetPageMouse.qml:82
+msgctxt "SetPageMouse"
+msgid "Pointer"
+msgstr ""
+
+#: shell/SetPageMouse.qml:287
+msgctxt "SetPageMouse"
+msgid "Pointing device"
+msgstr ""
+
+#: shell/SetPageMouse.qml:168
+msgctxt "SetPageMouse"
+msgid "SCROLL SPEED"
+msgstr ""
+
+#: shell/SetPageMouse.qml:90
+msgctxt "SetPageMouse"
+msgid "SPEED"
+msgstr ""
+
+#: shell/SetPageMouse.qml:148
+msgctxt "SetPageMouse"
+msgid "STANDARD"
+msgstr ""
+
+#: shell/SetPageMouse.qml:187
+msgctxt "SetPageMouse"
+msgid "SWAP BUTTONS"
+msgstr ""
+
+#: shell/SetPageMouse.qml:242
+msgctxt "SetPageMouse"
+msgid "Stops the cursor jumping when your palm brushes the pad mid-sentence"
+msgstr ""
+
+#: shell/SetPageMouse.qml:218
+msgctxt "SetPageMouse"
+msgid "TAP TO CLICK"
+msgstr ""
+
+#: shell/SetPageMouse.qml:229
+msgctxt "SetPageMouse"
+msgid "TWO-FINGER"
+msgstr ""
+
+#: shell/SetPageMouse.qml:209
+msgctxt "SetPageMouse"
+msgid "Touchpad"
+msgstr ""
+
+#: shell/SetPageMouse.qml:251
+msgctxt "SetPageMouse"
+msgid "Touchpad scroll speed"
+msgstr ""
+
+#: shell/SetPageMouse.qml:120
+msgctxt "SetPageMouse"
+msgid "Travels further when you move quickly"
+msgstr ""
+
+#: shell/SetPageMouse.qml:149
+msgctxt "SetPageMouse"
+msgid "Wheel moves the page"
+msgstr ""
+
+#: shell/SetPageMouse.qml:200
+msgctxt "SetPageMouse"
+msgid "Windows become active when the pointer moves over them, without a click"
+msgstr ""
+
+#: shell/SetPageNetwork.qml:168
+msgctxt "SetPageNetwork"
+msgid "Also on this machine"
+msgstr ""
+
+#: shell/SetPageNetwork.qml:92
+msgctxt "SetPageNetwork"
+msgid "CONNECTED"
+msgstr ""
+
+#. carried over from the 2026-05 nyxus catalogue
+#: shell/SetPageNetwork.qml:160
+msgctxt "SetPageNetwork"
+msgid "Cancel"
+msgstr "Cancelar"
+
+#: shell/SetPageNetwork.qml:153
+msgctxt "SetPageNetwork"
+msgid "Connect"
+msgstr ""
+
+#: shell/SetPageNetwork.qml:178
+msgctxt "SetPageNetwork"
+msgid "Encrypted DNS"
+msgstr ""
+
+#: shell/SetPageNetwork.qml:172
+msgctxt "SetPageNetwork"
+msgid "Firewall"
+msgstr ""
+
+#: shell/SetPageNetwork.qml:173
+msgctxt "SetPageNetwork"
+msgid "Inbound policy — same switch as Security and first-run Protection"
+msgstr ""
+
+#: shell/SetPageNetwork.qml:127
+msgctxt "SetPageNetwork"
+msgid "JOIN"
+msgstr ""
+
+#: shell/SetPageNetwork.qml:121
+msgctxt "SetPageNetwork"
+msgid "Join a network"
+msgstr ""
+
+#: shell/SetPageNetwork.qml:116
+msgctxt "SetPageNetwork"
+msgid "Looking for networks…"
+msgstr ""
+
+#: shell/SetPageNetwork.qml:186
+msgctxt "SetPageNetwork"
+msgid "NOTE"
+msgstr ""
+
+#: shell/SetPageNetwork.qml:129
+msgctxt "SetPageNetwork"
+msgid "Network password"
+msgstr ""
+
+#: shell/SetPageNetwork.qml:82
+msgctxt "SetPageNetwork"
+msgid "Networks"
+msgstr ""
+
+#: shell/SetPageNetwork.qml:68
+msgctxt "SetPageNetwork"
+msgid "None"
+msgstr ""
+
+#: shell/SetPageNetwork.qml:68
+msgctxt "SetPageNetwork"
+msgid "Off"
+msgstr ""
+
+#: shell/SetPageNetwork.qml:68
+msgctxt "SetPageNetwork"
+msgid "On"
+msgstr ""
+
+#: shell/SetPageNetwork.qml:96
+msgctxt "SetPageNetwork"
+msgid "On this machine now"
+msgstr ""
+
+#: shell/SetPageNetwork.qml:124
+msgctxt "SetPageNetwork"
+msgid "Password stays in this window. nmcli is the backend, not the UI."
+msgstr ""
+
+#: shell/SetPageNetwork.qml:60
+msgctxt "SetPageNetwork"
+msgid "Radio"
+msgstr ""
+
+#: shell/SetPageNetwork.qml:115
+msgctxt "SetPageNetwork"
+msgid "SCAN"
+msgstr ""
+
+#: shell/SetPageNetwork.qml:85
+msgctxt "SetPageNetwork"
+msgid "Tap a saved plate to connect. A new one asks for the password here."
+msgstr ""
+
+#: shell/SetPageNetwork.qml:67
+msgctxt "SetPageNetwork"
+msgid "WI-FI"
+msgstr ""
+
+#: shell/SetPageNetwork.qml:20
+msgctxt "SetPageNetwork"
+msgid "Wireless networks on this machine."
+msgstr ""
+
+#: shell/SetPageNotifications.qml:176
+msgctxt "SetPageNotifications"
+msgid "A toast when a USB drive is plugged in or removed"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:187
+msgctxt "SetPageNotifications"
+msgid "At 20%, at 10%, and when the charger is unplugged"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:147
+msgctxt "SetPageNotifications"
+msgid "Away from the Line"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:185
+msgctxt "SetPageNotifications"
+msgid "BATTERY"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:195
+msgctxt "SetPageNotifications"
+msgid "BLUETOOTH"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:135
+msgctxt "SetPageNotifications"
+msgid "BOTTOM LEFT"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:124
+msgctxt "SetPageNotifications"
+msgid "BOTTOM RIGHT"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:102
+msgctxt "SetPageNotifications"
+msgid "Before a toast fades on its own. Urgent ones ignore this and wait for you."
+msgstr ""
+
+#: shell/SetPageNotifications.qml:61
+msgctxt "SetPageNotifications"
+msgid "DO NOT DISTURB"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:49
+msgctxt "SetPageNotifications"
+msgid "Do Not Disturb is for right now — it is deliberately not saved, "
+msgstr ""
+
+#: shell/SetPageNotifications.qml:100
+msgctxt "SetPageNotifications"
+msgid "HOW LONG THEY STAY"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:96
+msgctxt "SetPageNotifications"
+msgid "How they appear"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:47
+msgctxt "SetPageNotifications"
+msgid "Interruptions"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:86
+msgctxt "SetPageNotifications"
+msgid "LOCK SCREEN"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:21 shell/SetPageNotifications.qml:216
+msgctxt "SetPageNotifications"
+msgid "Notifications"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:87
+msgctxt "SetPageNotifications"
+msgid "Notifications and media while locked"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:62 shell/SetPageNotifications.qml:157
+#: shell/SetPageNotifications.qml:175 shell/SetPageNotifications.qml:186
+#: shell/SetPageNotifications.qml:196 shell/SetPageNotifications.qml:206
+msgctxt "SetPageNotifications"
+msgid "OFF"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:62 shell/SetPageNotifications.qml:157
+#: shell/SetPageNotifications.qml:175 shell/SetPageNotifications.qml:186
+#: shell/SetPageNotifications.qml:196 shell/SetPageNotifications.qml:206
+msgctxt "SetPageNotifications"
+msgid "ON"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:174
+msgctxt "SetPageNotifications"
+msgid "REMOVABLE DRIVES"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:125
+msgctxt "SetPageNotifications"
+msgid "Rises out of the Line"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:156
+msgctxt "SetPageNotifications"
+msgid "SOUND"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:88
+msgctxt "SetPageNotifications"
+msgid "Same keys as Personalization ▸ Lock screen"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:146
+msgctxt "SetPageNotifications"
+msgid "TOP RIGHT"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:136
+msgctxt "SetPageNotifications"
+msgid "The other Line corner"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:169
+msgctxt "SetPageNotifications"
+msgid "These are the desktop's own announcements. Applications ask the "
+msgstr ""
+
+#: shell/SetPageNotifications.qml:205
+msgctxt "SetPageNotifications"
+msgid "UPDATES"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:158
+msgctxt "SetPageNotifications"
+msgid "Uses the build's own notification sound"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:75
+msgctxt "SetPageNotifications"
+msgid "WAITING"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:22
+msgctxt "SetPageNotifications"
+msgid "What is allowed to interrupt you, where it appears, and for how long."
+msgstr ""
+
+#: shell/SetPageNotifications.qml:167
+msgctxt "SetPageNotifications"
+msgid "What may interrupt you"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:197
+msgctxt "SetPageNotifications"
+msgid "When a paired device connects or disconnects"
+msgstr ""
+
+#: shell/SetPageNotifications.qml:207
+msgctxt "SetPageNotifications"
+msgid "When there are packages waiting to be installed"
+msgstr ""
+
+#: shell/SetPagePending.qml:24
+msgctxt "SetPagePending"
+msgid "Go back to Settings home"
+msgstr ""
+
+#: shell/SetPagePending.qml:22
+msgctxt "SetPagePending"
+msgid "MISSING"
+msgstr ""
+
+#: shell/SetPagePending.qml:17
+msgctxt "SetPagePending"
+msgid "Not in this Settings"
+msgstr ""
+
+#: shell/SetPagePending.qml:13
+msgctxt "SetPagePending"
+msgid "Settings"
+msgstr ""
+
+#: shell/SetPagePending.qml:25
+msgctxt "SetPagePending"
+msgid "This page has no glass file of its own"
+msgstr ""
+
+#: shell/SetPagePending.qml:19
+msgctxt "SetPagePending"
+msgid "This window is the glass control center. A missing page is a catalog gap, not a door into the leftover GTK app."
+msgstr ""
+
+#: shell/SetPagePower.qml:102
+msgctxt "SetPagePower"
+msgid "AC"
+msgstr ""
+
+#: shell/SetPagePower.qml:101
+msgctxt "SetPagePower"
+msgid "BATTERY"
+msgstr ""
+
+#: shell/SetPagePower.qml:27
+msgctxt "SetPagePower"
+msgid "Balanced"
+msgstr ""
+
+#: shell/SetPagePower.qml:96
+msgctxt "SetPagePower"
+msgid "Battery"
+msgstr ""
+
+#: shell/SetPagePower.qml:30
+msgctxt "SetPagePower"
+msgid "Full clocks, more heat"
+msgstr ""
+
+#: shell/SetPagePower.qml:116
+msgctxt "SetPagePower"
+msgid "Keep awake"
+msgstr ""
+
+#: shell/SetPagePower.qml:26
+msgctxt "SetPagePower"
+msgid "Lower clocks, longer battery"
+msgstr ""
+
+#: shell/SetPagePower.qml:101
+msgctxt "SetPagePower"
+msgid "POWER"
+msgstr ""
+
+#: shell/SetPagePower.qml:29
+msgctxt "SetPagePower"
+msgid "Performance"
+msgstr ""
+
+#: shell/SetPagePower.qml:18
+msgctxt "SetPagePower"
+msgid "Power"
+msgstr ""
+
+#: shell/SetPagePower.qml:60
+msgctxt "SetPagePower"
+msgid "Power profile"
+msgstr ""
+
+#: shell/SetPagePower.qml:25
+msgctxt "SetPagePower"
+msgid "Power saver"
+msgstr ""
+
+#: shell/SetPagePower.qml:19
+msgctxt "SetPagePower"
+msgid "Saver, Balanced, Performance — and what the battery is doing."
+msgstr ""
+
+#: shell/SetPagePower.qml:113
+msgctxt "SetPagePower"
+msgid "Screensaver and lock timers live on Keep awake."
+msgstr ""
+
+#: shell/SetPagePower.qml:28
+msgctxt "SetPagePower"
+msgid "The usual default"
+msgstr ""
+
+#: shell/SetPagePower.qml:62
+msgctxt "SetPagePower"
+msgid "These are the three profiles power-profiles-daemon actually ships. "
+msgstr ""
+
+#: shell/SetPagePower.qml:98
+msgctxt "SetPagePower"
+msgid "UPower, the same source as the bar."
+msgstr ""
+
+#: shell/SetPagePower.qml:117
+msgctxt "SetPagePower"
+msgid "When the screen blanks and when it locks"
+msgstr ""
+
+#: shell/SetPagePower.qml:111
+msgctxt "SetPagePower"
+msgid "While away"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:501
+msgctxt "SetPagePrinters"
+msgid "Add"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:452
+msgctxt "SetPagePrinters"
+msgid "Add a printer"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:39
+msgctxt "SetPagePrinters"
+msgid "Add a printer, watch what is printing, and check what it has left."
+msgstr ""
+
+#: shell/SetPagePrinters.qml:454
+msgctxt "SetPagePrinters"
+msgid "Added with the driverless IPP Everywhere profile, which is what "
+msgstr ""
+
+#: shell/SetPagePrinters.qml:263
+msgctxt "SetPagePrinters"
+msgid "Anything found on the network or over USB is listed under Add a printer below."
+msgstr ""
+
+#: shell/SetPagePrinters.qml:633
+msgctxt "SetPagePrinters"
+msgid "BEST"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:582
+msgctxt "SetPagePrinters"
+msgid "BOTH SIDES"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:393
+msgctxt "SetPagePrinters"
+msgid "CLEAR QUEUE"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:254
+msgctxt "SetPagePrinters"
+msgid "CUPS is what discovers printers and holds the queue. Without it "
+msgstr ""
+
+#. carried over from the 2026-05 nyxus catalogue
+#: shell/SetPagePrinters.qml:377
+msgctxt "SetPagePrinters"
+msgid "Cancel"
+msgstr "Cancelar"
+
+#: shell/SetPagePrinters.qml:342
+msgctxt "SetPagePrinters"
+msgid "Cancelling a job cannot un-print pages the printer has already "
+msgstr ""
+
+#: shell/SetPagePrinters.qml:394
+msgctxt "SetPagePrinters"
+msgid "Cancels every job on every printer, including other people's"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:404
+msgctxt "SetPagePrinters"
+msgid "Clear queue"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:605
+msgctxt "SetPagePrinters"
+msgid "DRAFT"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:439
+msgctxt "SetPagePrinters"
+msgid "INK"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:417
+msgctxt "SetPagePrinters"
+msgid "Ink & toner"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:365
+msgctxt "SetPagePrinters"
+msgid "JOB"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:569
+msgctxt "SetPagePrinters"
+msgid "LEGAL"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:543
+msgctxt "SetPagePrinters"
+msgid "LETTER"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:515
+msgctxt "SetPagePrinters"
+msgid "LOOK AGAIN"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:461
+msgctxt "SetPagePrinters"
+msgid "LOOKING"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:462
+msgctxt "SetPagePrinters"
+msgid "Looking…"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:312
+msgctxt "SetPagePrinters"
+msgid "Make default"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:430
+msgctxt "SetPagePrinters"
+msgid "Most USB inkjets do not. Network printers usually do, and the "
+msgstr ""
+
+#: shell/SetPagePrinters.qml:490
+msgctxt "SetPagePrinters"
+msgid "NETWORK"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:461
+msgctxt "SetPagePrinters"
+msgid "NONE NEW"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:619
+msgctxt "SetPagePrinters"
+msgid "NORMAL"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:262
+msgctxt "SetPagePrinters"
+msgid "No printer is set up yet"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:349
+msgctxt "SetPagePrinters"
+msgid "Nothing is waiting"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:462
+msgctxt "SetPagePrinters"
+msgid "Nothing new found"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:583
+msgctxt "SetPagePrinters"
+msgid "OFF"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:583
+msgctxt "SetPagePrinters"
+msgid "ON"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:584
+msgctxt "SetPagePrinters"
+msgid "Only takes effect on printers that can do it"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:279
+msgctxt "SetPagePrinters"
+msgid "PRINTER"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:261
+msgctxt "SetPagePrinters"
+msgid "PRINTERS"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:279
+msgctxt "SetPagePrinters"
+msgid "PRINTING"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:302
+msgctxt "SetPagePrinters"
+msgid "Pause"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:246
+msgctxt "SetPagePrinters"
+msgid "Printers"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:38
+msgctxt "SetPagePrinters"
+msgid "Printers & scanners"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:525
+msgctxt "SetPagePrinters"
+msgid "Printing defaults"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:253
+msgctxt "SetPagePrinters"
+msgid "Printing service is not available"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:348
+msgctxt "SetPagePrinters"
+msgid "QUEUE"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:340
+msgctxt "SetPagePrinters"
+msgid "Queue"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:516
+msgctxt "SetPagePrinters"
+msgid "Re-reads the printers, the queue and the network"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:349
+msgctxt "SetPagePrinters"
+msgid "Reading the queue…"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:442
+msgctxt "SetPagePrinters"
+msgid "Reported, but not as a percentage"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:302
+msgctxt "SetPagePrinters"
+msgid "Resume"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:428
+msgctxt "SetPagePrinters"
+msgid "SUPPLIES"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:322
+msgctxt "SetPagePrinters"
+msgid "Test page"
+msgstr ""
+
+#: shell/SetPagePrinters.qml:350
+msgctxt "SetPagePrinters"
+msgid "The queue is empty on every printer."
+msgstr ""
+
+#: shell/SetPagePrinters.qml:429
+msgctxt "SetPagePrinters"
+msgid "This printer does not report its levels"
+msgstr ""
+
+#: shell/SetPagePrivacy.qml:33
+msgctxt "SetPagePrivacy"
+msgid "CLIPBOARD"
+msgstr ""
+
+#: shell/SetPagePrivacy.qml:44
+msgctxt "SetPagePrivacy"
+msgid "Clear"
+msgstr ""
+
+#: shell/SetPagePrivacy.qml:46
+msgctxt "SetPagePrivacy"
+msgid "Clear all clips"
+msgstr ""
+
+#: shell/SetPagePrivacy.qml:34
+msgctxt "SetPagePrivacy"
+msgid "Clear clipboard history"
+msgstr ""
+
+#: shell/SetPagePrivacy.qml:28
+msgctxt "SetPagePrivacy"
+msgid "Clipboard"
+msgstr ""
+
+#: shell/SetPagePrivacy.qml:62
+msgctxt "SetPagePrivacy"
+msgid "Lock screen"
+msgstr ""
+
+#: shell/SetPagePrivacy.qml:56
+msgctxt "SetPagePrivacy"
+msgid "NOTE"
+msgstr ""
+
+#: shell/SetPagePrivacy.qml:69
+msgctxt "SetPagePrivacy"
+msgid "Notifications while locked"
+msgstr ""
+
+#: shell/SetPagePrivacy.qml:13
+msgctxt "SetPagePrivacy"
+msgid "Privacy"
+msgstr ""
+
+#: shell/SetPagePrivacy.qml:35
+msgctxt "SetPagePrivacy"
+msgid "Removes every cliphist entry on this account"
+msgstr ""
+
+#: shell/SetPagePrivacy.qml:30
+msgctxt "SetPagePrivacy"
+msgid "The flyout already shows this history. Passwords should not be kept — cliphist is the watcher, not a password manager."
+msgstr ""
+
+#: shell/SetPagePrivacy.qml:68
+msgctxt "SetPagePrivacy"
+msgid "WHILE LOCKED"
+msgstr ""
+
+#: shell/SetPagePrivacy.qml:14
+msgctxt "SetPagePrivacy"
+msgid "What this desktop remembers, and clearing it."
+msgstr ""
+
+#: shell/SetPagePrivacy.qml:64
+msgctxt "SetPagePrivacy"
+msgid "Whether toasts show while locked is a privacy choice as much as a lock-screen one."
+msgstr ""
+
+#: shell/SetPageReset.qml:102
+msgctxt "SetPageReset"
+msgid "Appearance"
+msgstr ""
+
+#: shell/SetPageReset.qml:23
+msgctxt "SetPageReset"
+msgid "Back to the shipped defaults — one page at a time, or all of it."
+msgstr ""
+
+#: shell/SetPageReset.qml:109
+msgctxt "SetPageReset"
+msgid "Background"
+msgstr ""
+
+#: shell/SetPageReset.qml:133
+msgctxt "SetPageReset"
+msgid "Backs the file up beside itself, then writes a fresh one. The GTK control center's settings live in the same file and reset with it. Two taps."
+msgstr ""
+
+#: shell/SetPageReset.qml:80
+msgctxt "SetPageReset"
+msgid "Dry run"
+msgstr ""
+
+#: shell/SetPageReset.qml:74
+msgctxt "SetPageReset"
+msgid "Dry-run the migration"
+msgstr ""
+
+#: shell/SetPageReset.qml:91
+msgctxt "SetPageReset"
+msgid "Each of these pages has a Reset row at the bottom that clears only its own keys."
+msgstr ""
+
+#: shell/SetPageReset.qml:131
+msgctxt "SetPageReset"
+msgid "Everything"
+msgstr ""
+
+#: shell/SetPageReset.qml:95
+msgctxt "SetPageReset"
+msgid "Feel"
+msgstr ""
+
+#: shell/SetPageReset.qml:123
+msgctxt "SetPageReset"
+msgid "Keep awake"
+msgstr ""
+
+#: shell/SetPageReset.qml:66
+msgctxt "SetPageReset"
+msgid "Last backup"
+msgstr ""
+
+#: shell/SetPageReset.qml:103
+msgctxt "SetPageReset"
+msgid "Living paint, pointer trail, the sky, Start style"
+msgstr ""
+
+#: shell/SetPageReset.qml:116
+msgctxt "SetPageReset"
+msgid "Notifications"
+msgstr ""
+
+#: shell/SetPageReset.qml:40
+msgctxt "SetPageReset"
+msgid "One file, ~/.config/nyxus/settings.json — the shell and the GTK control center both read and write it. Removing a key puts that setting back to what a fresh install has."
+msgstr ""
+
+#: shell/SetPageReset.qml:89
+msgctxt "SetPageReset"
+msgid "One page at a time"
+msgstr ""
+
+#: shell/SetPageReset.qml:22
+msgctxt "SetPageReset"
+msgid "Reset"
+msgstr ""
+
+#: shell/SetPageReset.qml:144
+msgctxt "SetPageReset"
+msgid "Reset all"
+msgstr ""
+
+#: shell/SetPageReset.qml:137
+msgctxt "SetPageReset"
+msgid "Reset all settings"
+msgstr ""
+
+#: shell/SetPageReset.qml:148
+msgctxt "SetPageReset"
+msgid "Reset everything"
+msgstr ""
+
+#: shell/SetPageReset.qml:55
+msgctxt "SetPageReset"
+msgid "Schema"
+msgstr ""
+
+#: shell/SetPageReset.qml:96
+msgctxt "SetPageReset"
+msgid "Soft press, material, depth, hover give, reduced motion"
+msgstr ""
+
+#: shell/SetPageReset.qml:124
+msgctxt "SetPageReset"
+msgid "The idle chain — screensaver and lock timers"
+msgstr ""
+
+#: shell/SetPageReset.qml:38
+msgctxt "SetPageReset"
+msgid "The settings file"
+msgstr ""
+
+#: shell/SetPageReset.qml:117
+msgctxt "SetPageReset"
+msgid "Toast corner and seconds, sound, the four alert switches"
+msgstr ""
+
+#: shell/SetPageReset.qml:44
+msgctxt "SetPageReset"
+msgid "Where it is"
+msgstr ""
+
+#: shell/SetPageReset.qml:110
+msgctxt "SetPageReset"
+msgid "Which thing owns the ground"
+msgstr ""
+
+#: shell/SetPageScreenlock.qml:45
+msgctxt "SetPageScreenlock"
+msgid "HIDE CONTENTS"
+msgstr ""
+
+#: shell/SetPageScreenlock.qml:16
+msgctxt "SetPageScreenlock"
+msgid "Lock screen"
+msgstr ""
+
+#: shell/SetPageScreenlock.qml:59
+msgctxt "SetPageScreenlock"
+msgid "MEDIA KEYS"
+msgstr ""
+
+#: shell/SetPageScreenlock.qml:34
+msgctxt "SetPageScreenlock"
+msgid "NOTIFICATIONS"
+msgstr ""
+
+#: shell/SetPageScreenlock.qml:35 shell/SetPageScreenlock.qml:46
+#: shell/SetPageScreenlock.qml:60
+msgctxt "SetPageScreenlock"
+msgid "OFF"
+msgstr ""
+
+#: shell/SetPageScreenlock.qml:35 shell/SetPageScreenlock.qml:46
+#: shell/SetPageScreenlock.qml:60
+msgctxt "SetPageScreenlock"
+msgid "ON"
+msgstr ""
+
+#: shell/SetPageScreenlock.qml:61
+msgctxt "SetPageScreenlock"
+msgid "Play, pause and skip from the lock screen"
+msgstr ""
+
+#: shell/SetPageScreenlock.qml:36
+msgctxt "SetPageScreenlock"
+msgid "Show notifications while locked"
+msgstr ""
+
+#: shell/SetPageScreenlock.qml:47
+msgctxt "SetPageScreenlock"
+msgid "Shows that something arrived and which application it came from, without the message itself"
+msgstr ""
+
+#: shell/SetPageScreenlock.qml:26
+msgctxt "SetPageScreenlock"
+msgid "The same toasts as the desktop. Hiding contents still shows that "
+msgstr ""
+
+#: shell/SetPageScreenlock.qml:17
+msgctxt "SetPageScreenlock"
+msgid "What is visible while the machine is locked, and whether media keys still work."
+msgstr ""
+
+#: shell/SetPageScreenlock.qml:24
+msgctxt "SetPageScreenlock"
+msgid "While locked"
+msgstr ""
+
+#: shell/SetPageSecboot.qml:57
+msgctxt "SetPageSecboot"
+msgid "FIRMWARE"
+msgstr ""
+
+#: shell/SetPageSecboot.qml:84
+msgctxt "SetPageSecboot"
+msgid "Firewall, scan, and the protection ring"
+msgstr ""
+
+#: shell/SetPageSecboot.qml:52
+msgctxt "SetPageSecboot"
+msgid "Firmware"
+msgstr ""
+
+#: shell/SetPageSecboot.qml:76
+msgctxt "SetPageSecboot"
+msgid "NO"
+msgstr ""
+
+#: shell/SetPageSecboot.qml:92
+msgctxt "SetPageSecboot"
+msgid "NOTE"
+msgstr ""
+
+#: shell/SetPageSecboot.qml:59
+msgctxt "SetPageSecboot"
+msgid "Not UEFI"
+msgstr ""
+
+#: shell/SetPageSecboot.qml:77
+msgctxt "SetPageSecboot"
+msgid "Not detected"
+msgstr ""
+
+#: shell/SetPageSecboot.qml:64
+msgctxt "SetPageSecboot"
+msgid "OFF"
+msgstr ""
+
+#: shell/SetPageSecboot.qml:64
+msgctxt "SetPageSecboot"
+msgid "ON"
+msgstr ""
+
+#: shell/SetPageSecboot.qml:77
+msgctxt "SetPageSecboot"
+msgid "Present"
+msgstr ""
+
+#: shell/SetPageSecboot.qml:54
+msgctxt "SetPageSecboot"
+msgid "Read from sysfs. Enrolling keys, turning Secure Boot on or off, and MOK live in the firmware setup — not in a terminal from this page."
+msgstr ""
+
+#: shell/SetPageSecboot.qml:63
+msgctxt "SetPageSecboot"
+msgid "SECURE BOOT"
+msgstr ""
+
+#: shell/SetPageSecboot.qml:13
+msgctxt "SetPageSecboot"
+msgid "Secure Boot"
+msgstr ""
+
+#: shell/SetPageSecboot.qml:14
+msgctxt "SetPageSecboot"
+msgid "What the firmware reports. Changing keys is a firmware setup job."
+msgstr ""
+
+#: shell/SetPageSecboot.qml:76
+msgctxt "SetPageSecboot"
+msgid "YES"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:387
+msgctxt "SetPageSecurity"
+msgid "A finding waits here until you Restore, Delete, or Keep it."
+msgstr ""
+
+#: shell/SetPageSecurity.qml:570
+msgctxt "SetPageSecurity"
+msgid "Blocks unsolicited incoming connections. On since install."
+msgstr ""
+
+#: shell/SetPageSecurity.qml:550
+msgctxt "SetPageSecurity"
+msgid "DATA"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:462
+msgctxt "SetPageSecurity"
+msgid "DEFINITIONS"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:541
+msgctxt "SetPageSecurity"
+msgid "DEVICE"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:423
+msgctxt "SetPageSecurity"
+msgid "Delete"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:425
+msgctxt "SetPageSecurity"
+msgid "Delete this file"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:480
+msgctxt "SetPageSecurity"
+msgid "Download"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:443
+msgctxt "SetPageSecurity"
+msgid "Downloads, Desktop, and temp. Findings go to Quarantine."
+msgstr ""
+
+#: shell/SetPageSecurity.qml:587
+msgctxt "SetPageSecurity"
+msgid "ENCRYPTED DNS"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:492
+msgctxt "SetPageSecurity"
+msgid "Each plate is live state. Tap opens the glass page that owns it."
+msgstr ""
+
+#: shell/SetPageSecurity.qml:615
+msgctxt "SetPageSecurity"
+msgid "Every scan and every decision, newest first."
+msgstr ""
+
+#: shell/SetPageSecurity.qml:496 shell/SetPageSecurity.qml:568
+msgctxt "SetPageSecurity"
+msgid "FIREWALL"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:47
+msgctxt "SetPageSecurity"
+msgid "Firewall"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:30
+msgctxt "SetPageSecurity"
+msgid "HEMERA — Day, watching over the system while you are awake."
+msgstr ""
+
+#: shell/SetPageSecurity.qml:620
+msgctxt "SetPageSecurity"
+msgid "HISTORY"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:435
+msgctxt "SetPageSecurity"
+msgid "Hemera Scan"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:621
+msgctxt "SetPageSecurity"
+msgid "History could not be read"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:380
+msgctxt "SetPageSecurity"
+msgid "Isolated, exec permissions stripped. Nothing is deleted unless you choose Delete."
+msgstr ""
+
+#: shell/SetPageSecurity.qml:418
+msgctxt "SetPageSecurity"
+msgid "Keep"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:579
+msgctxt "SetPageSecurity"
+msgid "Keeps a compromised app inside its own lane. On since install."
+msgstr ""
+
+#: shell/SetPageSecurity.qml:534
+msgctxt "SetPageSecurity"
+msgid "LOCK & SIGN-IN"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:589
+msgctxt "SetPageSecurity"
+msgid "Lookups leave the machine encrypted, with DNSSEC."
+msgstr ""
+
+#: shell/SetPageSecurity.qml:596
+msgctxt "SetPageSecurity"
+msgid "MAC RANDOM"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:607
+msgctxt "SetPageSecurity"
+msgid "NOTE"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:303
+msgctxt "SetPageSecurity"
+msgid "Needs attention"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:598
+msgctxt "SetPageSecurity"
+msgid "Networks you walk past cannot recognise this laptop."
+msgstr ""
+
+#: shell/SetPageSecurity.qml:621
+msgctxt "SetPageSecurity"
+msgid "Nothing has happened yet"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:296
+msgctxt "SetPageSecurity"
+msgid "Nyx's daughter — Day, watching over the system while you're awake. "
+msgstr ""
+
+#: shell/SetPageSecurity.qml:370 shell/SetPageSecurity.qml:497
+#: shell/SetPageSecurity.qml:508 shell/SetPageSecurity.qml:551
+#: shell/SetPageSecurity.qml:569 shell/SetPageSecurity.qml:578
+#: shell/SetPageSecurity.qml:588 shell/SetPageSecurity.qml:597
+msgctxt "SetPageSecurity"
+msgid "OFF"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:370 shell/SetPageSecurity.qml:497
+#: shell/SetPageSecurity.qml:508 shell/SetPageSecurity.qml:551
+#: shell/SetPageSecurity.qml:569 shell/SetPageSecurity.qml:578
+#: shell/SetPageSecurity.qml:588 shell/SetPageSecurity.qml:597
+msgctxt "SetPageSecurity"
+msgid "ON"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:490
+msgctxt "SetPageSecurity"
+msgid "Protection at a glance"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:562
+msgctxt "SetPageSecurity"
+msgid "Protection controls"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:613
+msgctxt "SetPageSecurity"
+msgid "Protection history"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:442
+msgctxt "SetPageSecurity"
+msgid "QUICK SCAN"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:52
+msgctxt "SetPageSecurity"
+msgid "Quarantine"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:377
+msgctxt "SetPageSecurity"
+msgid "Quarantine — your decision"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:525
+msgctxt "SetPageSecurity"
+msgid "RESTORE POINTS"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:51
+msgctxt "SetPageSecurity"
+msgid "Recent scan"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:413
+msgctxt "SetPageSecurity"
+msgid "Restore"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:49
+msgctxt "SetPageSecurity"
+msgid "Restore points"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:507
+msgctxt "SetPageSecurity"
+msgid "SYSTEM SHIELD"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:564
+msgctxt "SetPageSecurity"
+msgid "Same four switches as first-run Protection. Firewall and AppArmor arrived ON from the installer. Encrypted DNS and MAC randomisation stay opt-in. Polkit asks; nothing opens a terminal."
+msgstr ""
+
+#: shell/SetPageSecurity.qml:453
+msgctxt "SetPageSecurity"
+msgid "Scan now"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:542
+msgctxt "SetPageSecurity"
+msgid "Secure Boot "
+msgstr ""
+
+#: shell/SetPageSecurity.qml:29
+msgctxt "SetPageSecurity"
+msgid "Security"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:303
+msgctxt "SetPageSecurity"
+msgid "Standing"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:48
+msgctxt "SetPageSecurity"
+msgid "System Shield"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:386
+msgctxt "SetPageSecurity"
+msgid "The vault is empty"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:516
+msgctxt "SetPageSecurity"
+msgid "UPDATES"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:50
+msgctxt "SetPageSecurity"
+msgid "Updates"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:385
+msgctxt "SetPageSecurity"
+msgid "VAULT"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:535
+msgctxt "SetPageSecurity"
+msgid "What shows while locked, and media keys"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:356
+msgctxt "SetPageSecurity"
+msgid "needs attention"
+msgstr ""
+
+#: shell/SetPageSecurity.qml:356
+msgctxt "SetPageSecurity"
+msgid "standing"
+msgstr ""
+
+#: shell/SetPageSound.qml:183
+msgctxt "SetPageSound"
+msgid "Applications"
+msgstr ""
+
+#: shell/SetPageSound.qml:193
+msgctxt "SetPageSound"
+msgid "Applications appear here while they make sound."
+msgstr ""
+
+#: shell/SetPageSound.qml:287
+msgctxt "SetPageSound"
+msgid "DEFAULT MIC"
+msgstr ""
+
+#: shell/SetPageSound.qml:185
+msgctxt "SetPageSound"
+msgid "Each application keeps its own level. PipeWire remembers it, so "
+msgstr ""
+
+#: shell/SetPageSound.qml:252
+msgctxt "SetPageSound"
+msgid "Every microphone, not only the default — the one you are not using is the one that is hissing."
+msgstr ""
+
+#: shell/SetPageSound.qml:250
+msgctxt "SetPageSound"
+msgid "Input"
+msgstr ""
+
+#: shell/SetPageSound.qml:338
+msgctxt "SetPageSound"
+msgid "LISTENING"
+msgstr ""
+
+#: shell/SetPageSound.qml:267 shell/SetPageSound.qml:287
+#: shell/SetPageSound.qml:331
+msgctxt "SetPageSound"
+msgid "MIC"
+msgstr ""
+
+#: shell/SetPageSound.qml:174
+msgctxt "SetPageSound"
+msgid "MUTE"
+msgstr ""
+
+#: shell/SetPageSound.qml:332
+msgctxt "SetPageSound"
+msgid "No microphone or line-in found"
+msgstr ""
+
+#: shell/SetPageSound.qml:145
+msgctxt "SetPageSound"
+msgid "No output device found"
+msgstr ""
+
+#: shell/SetPageSound.qml:192
+msgctxt "SetPageSound"
+msgid "Nothing is playing"
+msgstr ""
+
+#: shell/SetPageSound.qml:362
+msgctxt "SetPageSound"
+msgid "Notifications, errors, device plugged in"
+msgstr ""
+
+#: shell/SetPageSound.qml:132 shell/SetPageSound.qml:144
+msgctxt "SetPageSound"
+msgid "OUTPUT"
+msgstr ""
+
+#: shell/SetPageSound.qml:361
+msgctxt "SetPageSound"
+msgid "Off"
+msgstr ""
+
+#: shell/SetPageSound.qml:361
+msgctxt "SetPageSound"
+msgid "On"
+msgstr ""
+
+#: shell/SetPageSound.qml:175
+msgctxt "SetPageSound"
+msgid "Open"
+msgstr ""
+
+#: shell/SetPageSound.qml:111
+msgctxt "SetPageSound"
+msgid "Output"
+msgstr ""
+
+#: shell/SetPageSound.qml:20
+msgctxt "SetPageSound"
+msgid "Output, input, and per-application volume."
+msgstr ""
+
+#: shell/SetPageSound.qml:370
+msgctxt "SetPageSound"
+msgid "PACK VOLUME"
+msgstr ""
+
+#: shell/SetPageSound.qml:191
+msgctxt "SetPageSound"
+msgid "PLAYING"
+msgstr ""
+
+#: shell/SetPageSound.qml:389
+msgctxt "SetPageSound"
+msgid "Play"
+msgstr ""
+
+#: shell/SetPageSound.qml:360
+msgctxt "SetPageSound"
+msgid "SYSTEM SOUNDS"
+msgstr ""
+
+#: shell/SetPageSound.qml:372
+msgctxt "SetPageSound"
+msgid "Separate from application volume"
+msgstr ""
+
+#: shell/SetPageSound.qml:175
+msgctxt "SetPageSound"
+msgid "Silent"
+msgstr ""
+
+#: shell/SetPageSound.qml:19
+msgctxt "SetPageSound"
+msgid "Sound"
+msgstr ""
+
+#: shell/SetPageSound.qml:353
+msgctxt "SetPageSound"
+msgid "System sounds"
+msgstr ""
+
+#: shell/SetPageSound.qml:355
+msgctxt "SetPageSound"
+msgid "The build's own sound pack. Individual event sounds are chosen "
+msgstr ""
+
+#: shell/SetPageSound.qml:150
+msgctxt "SetPageSound"
+msgid "VOLUME"
+msgstr ""
+
+#: shell/SetPageStorage.qml:19
+msgctxt "SetPageStorage"
+msgid "Disks, free space, and what is mounted."
+msgstr ""
+
+#: shell/SetPageStorage.qml:131
+msgctxt "SetPageStorage"
+msgid "Mount, eject, plug-in notifications"
+msgstr ""
+
+#: shell/SetPageStorage.qml:126
+msgctxt "SetPageStorage"
+msgid "No volumes reported"
+msgstr ""
+
+#: shell/SetPageStorage.qml:92
+msgctxt "SetPageStorage"
+msgid "SYSTEM DISK"
+msgstr ""
+
+#: shell/SetPageStorage.qml:18
+msgctxt "SetPageStorage"
+msgid "Storage"
+msgstr ""
+
+#: shell/SetPageStorage.qml:89
+msgctxt "SetPageStorage"
+msgid "The root filesystem, from df. Refresh by leaving and returning."
+msgstr ""
+
+#: shell/SetPageStorage.qml:87
+msgctxt "SetPageStorage"
+msgid "This system"
+msgstr ""
+
+#: shell/SetPageStorage.qml:130
+msgctxt "SetPageStorage"
+msgid "USB & removable"
+msgstr ""
+
+#: shell/SetPageStorage.qml:125
+msgctxt "SetPageStorage"
+msgid "VOLUMES"
+msgstr ""
+
+#: shell/SetPageStorage.qml:106
+msgctxt "SetPageStorage"
+msgid "Volumes"
+msgstr ""
+
+#: shell/SetPageStorage.qml:108
+msgctxt "SetPageStorage"
+msgid "lsblk. Encrypted volumes show as crypto_LUKS. Removable eject is USB."
+msgstr ""
+
+#: shell/SetPageUpdates.qml:251
+msgctxt "SetPageUpdates"
+msgid "AND MORE"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:272
+msgctxt "SetPageUpdates"
+msgid "After an update"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:188
+msgctxt "SetPageUpdates"
+msgid "Available updates"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:380
+msgctxt "SetPageUpdates"
+msgid "BACKGROUND CHECK"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:197
+msgctxt "SetPageUpdates"
+msgid "CHECKING"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:197
+msgctxt "SetPageUpdates"
+msgid "CURRENT"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:362
+msgctxt "SetPageUpdates"
+msgid "Check"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:218
+msgctxt "SetPageUpdates"
+msgid "Check again"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:382
+msgctxt "SetPageUpdates"
+msgid "Check for updates in the background"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:372
+msgctxt "SetPageUpdates"
+msgid "Checking automatically"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:374
+msgctxt "SetPageUpdates"
+msgid "Checking is safe and quiet. Installing is never automatic — an "
+msgstr ""
+
+#: shell/SetPageUpdates.qml:408
+msgctxt "SetPageUpdates"
+msgid "DAILY"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:280
+msgctxt "SetPageUpdates"
+msgid "Every update takes a snapshot pair and records a verdict afterwards — kernel, initramfs, bootloader, login, shell supervisor. It is written to /var/lib/nyxus/update/last.json and read back by nyxus-selfcheck --status, which also names the way back."
+msgstr ""
+
+#: shell/SetPageUpdates.qml:345
+msgctxt "SetPageUpdates"
+msgid "FIRMWARE"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:339
+msgctxt "SetPageUpdates"
+msgid "Firmware"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:341
+msgctxt "SetPageUpdates"
+msgid "Firmware updates come from the vendor through fwupd. They install "
+msgstr ""
+
+#: shell/SetPageUpdates.qml:398
+msgctxt "SetPageUpdates"
+msgid "HOURLY"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:488
+msgctxt "SetPageUpdates"
+msgid "INPUT"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:227
+msgctxt "SetPageUpdates"
+msgid "Install updates"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:200
+msgctxt "SetPageUpdates"
+msgid "Looking at the mirrors"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:439
+msgctxt "SetPageUpdates"
+msgid "None of these log you out or close your windows. If the desktop "
+msgstr ""
+
+#: shell/SetPageUpdates.qml:381 shell/SetPageUpdates.qml:428
+msgctxt "SetPageUpdates"
+msgid "OFF"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:381 shell/SetPageUpdates.qml:428
+msgctxt "SetPageUpdates"
+msgid "ON"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:285
+msgctxt "SetPageUpdates"
+msgid "Output"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:241
+msgctxt "SetPageUpdates"
+msgid "PACKAGE"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:490
+msgctxt "SetPageUpdates"
+msgid "Pushes pointer speed, key repeat, layout and cursor to the compositor again — the same thing that happens at login"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:278
+msgctxt "SetPageUpdates"
+msgid "RECORDED, NOT SHOWN HERE"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:499
+msgctxt "SetPageUpdates"
+msgid "Re-apply"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:489
+msgctxt "SetPageUpdates"
+msgid "Re-apply your input and cursor settings"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:469
+msgctxt "SetPageUpdates"
+msgid "Re-reads hyprland.conf — window rules, borders, gestures, keybinds. Windows and workspaces stay exactly as they are."
+msgstr ""
+
+#: shell/SetPageUpdates.qml:447
+msgctxt "SetPageUpdates"
+msgid "Rebuilds the taskbar, the Start menu, the panels and this window from their current source. Your windows are untouched."
+msgstr ""
+
+#: shell/SetPageUpdates.qml:478
+msgctxt "SetPageUpdates"
+msgid "Reload Hyprland"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:460
+msgctxt "SetPageUpdates"
+msgid "Reload now — this window will blink"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:456
+msgctxt "SetPageUpdates"
+msgid "Reload shell"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:468
+msgctxt "SetPageUpdates"
+msgid "Reload the compositor's configuration"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:437
+msgctxt "SetPageUpdates"
+msgid "Reload the desktop"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:446
+msgctxt "SetPageUpdates"
+msgid "Reload the shell"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:445
+msgctxt "SetPageUpdates"
+msgid "SHELL"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:427
+msgctxt "SetPageUpdates"
+msgid "SNAPSHOT FIRST"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:429
+msgctxt "SetPageUpdates"
+msgid "So the whole update can be rolled back from Accounts ▸ Backup"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:253
+msgctxt "SetPageUpdates"
+msgid "The full list is in the log below once the update runs"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:279
+msgctxt "SetPageUpdates"
+msgid "The last update's self-check verdict"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:288
+msgctxt "SetPageUpdates"
+msgid "This is pacman's own output, live. Nothing is hidden and no "
+msgstr ""
+
+#: shell/SetPageUpdates.qml:274
+msgctxt "SetPageUpdates"
+msgid "This page is the settings for updating. Whether the last update left this machine able to boot is a reading, not a setting."
+msgstr ""
+
+#: shell/SetPageUpdates.qml:37
+msgctxt "SetPageUpdates"
+msgid "Updates"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:197
+msgctxt "SetPageUpdates"
+msgid "WAITING"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:418
+msgctxt "SetPageUpdates"
+msgid "WEEKLY"
+msgstr ""
+
+#: shell/SetPageUpdates.qml:38
+msgctxt "SetPageUpdates"
+msgid "What's waiting, installing it, and reloading the desktop."
+msgstr ""
+
+#: shell/SetPageUsb.qml:118
+msgctxt "SetPageUsb"
+msgid "A toast naming the drive when it is connected, and again when it is removed"
+msgstr ""
+
+#: shell/SetPageUsb.qml:131
+msgctxt "SetPageUsb"
+msgid "After connecting"
+msgstr ""
+
+#: shell/SetPageUsb.qml:141
+msgctxt "SetPageUsb"
+msgid "Ask"
+msgstr ""
+
+#: shell/SetPageUsb.qml:148
+msgctxt "SetPageUsb"
+msgid "Check again now"
+msgstr ""
+
+#: shell/SetPageUsb.qml:86
+msgctxt "SetPageUsb"
+msgid "Close"
+msgstr ""
+
+#: shell/SetPageUsb.qml:31
+msgctxt "SetPageUsb"
+msgid "Connected now"
+msgstr ""
+
+#: shell/SetPageUsb.qml:163
+msgctxt "SetPageUsb"
+msgid "Drives are mounted through udisks2"
+msgstr ""
+
+#: shell/SetPageUsb.qml:95
+msgctxt "SetPageUsb"
+msgid "Eject"
+msgstr ""
+
+#: shell/SetPageUsb.qml:63
+msgctxt "SetPageUsb"
+msgid "MOUNTED"
+msgstr ""
+
+#: shell/SetPageUsb.qml:125
+msgctxt "SetPageUsb"
+msgid "Mounts the drive as soon as it appears, so it is ready without a click"
+msgstr ""
+
+#: shell/SetPageUsb.qml:139
+msgctxt "SetPageUsb"
+msgid "Nothing"
+msgstr ""
+
+#: shell/SetPageUsb.qml:170
+msgctxt "SetPageUsb"
+msgid "Nothing polls"
+msgstr ""
+
+#: shell/SetPageUsb.qml:42
+msgctxt "SetPageUsb"
+msgid "Nothing removable is connected"
+msgstr ""
+
+#: shell/SetPageUsb.qml:86
+msgctxt "SetPageUsb"
+msgid "Open"
+msgstr ""
+
+#: shell/SetPageUsb.qml:140
+msgctxt "SetPageUsb"
+msgid "Open Files"
+msgstr ""
+
+#: shell/SetPageUsb.qml:124
+msgctxt "SetPageUsb"
+msgid "Open it automatically"
+msgstr ""
+
+#: shell/SetPageUsb.qml:41
+msgctxt "SetPageUsb"
+msgid "REMOVABLE"
+msgstr ""
+
+#: shell/SetPageUsb.qml:154
+msgctxt "SetPageUsb"
+msgid "Rescan"
+msgstr ""
+
+#: shell/SetPageUsb.qml:117
+msgctxt "SetPageUsb"
+msgid "Show a notification"
+msgstr ""
+
+#: shell/SetPageUsb.qml:171
+msgctxt "SetPageUsb"
+msgid "The kernel announces the change over udev and the list is read "
+msgstr ""
+
+#: shell/SetPageUsb.qml:21
+msgctxt "SetPageUsb"
+msgid "USB & removable devices"
+msgstr ""
+
+#: shell/SetPageUsb.qml:164
+msgctxt "SetPageUsb"
+msgid "Under /run/media, owned by you. No administrator password is "
+msgstr ""
+
+#: shell/SetPageUsb.qml:132
+msgctxt "SetPageUsb"
+msgid "What to do once a drive is ready"
+msgstr ""
+
+#: shell/SetPageUsb.qml:22
+msgctxt "SetPageUsb"
+msgid "What's plugged in, and what happens when you connect something."
+msgstr ""
+
+#: shell/SetPageUsb.qml:109
+msgctxt "SetPageUsb"
+msgid "When you plug something in"
+msgstr ""
+
+#: shell/SetPageUsb.qml:111
+msgctxt "SetPageUsb"
+msgid "With both of these off, nothing is watching and no background "
+msgstr ""
+
+#: shell/SetPageWidgets.qml:63
+msgctxt "SetPageWidgets"
+msgid "Battery and volume — the flyout still has them"
+msgstr ""
+
+#: shell/SetPageWidgets.qml:55
+msgctxt "SetPageWidgets"
+msgid "Big time on the wallpaper — not the Line clock"
+msgstr ""
+
+#: shell/SetPageWidgets.qml:77
+msgctxt "SetPageWidgets"
+msgid "CALENDAR"
+msgstr ""
+
+#: shell/SetPageWidgets.qml:53
+msgctxt "SetPageWidgets"
+msgid "CLOCK"
+msgstr ""
+
+#: shell/SetPageWidgets.qml:16
+msgctxt "SetPageWidgets"
+msgid "Chips on the wallpaper. None of them is the bar clock."
+msgstr ""
+
+#: shell/SetPageWidgets.qml:36
+msgctxt "SetPageWidgets"
+msgid "DESKTOP WIDGETS"
+msgstr ""
+
+#: shell/SetPageWidgets.qml:15
+msgctxt "SetPageWidgets"
+msgid "Desktop widgets"
+msgstr ""
+
+#: shell/SetPageWidgets.qml:33
+msgctxt "SetPageWidgets"
+msgid "Master off hides every chip and stops their timers. The Line, Start, and the lock screen keep their own clock, calendar, and weather."
+msgstr ""
+
+#: shell/SetPageWidgets.qml:79
+msgctxt "SetPageWidgets"
+msgid "Month peek — not the Calendar app, not the clock popup"
+msgstr ""
+
+#: shell/SetPageWidgets.qml:93
+msgctxt "SetPageWidgets"
+msgid "NOW PLAYING"
+msgstr ""
+
+#: shell/SetPageWidgets.qml:37 shell/SetPageWidgets.qml:54
+#: shell/SetPageWidgets.qml:62 shell/SetPageWidgets.qml:70
+#: shell/SetPageWidgets.qml:78 shell/SetPageWidgets.qml:86
+#: shell/SetPageWidgets.qml:94
+msgctxt "SetPageWidgets"
+msgid "OFF"
+msgstr ""
+
+#: shell/SetPageWidgets.qml:37 shell/SetPageWidgets.qml:54
+#: shell/SetPageWidgets.qml:62 shell/SetPageWidgets.qml:70
+#: shell/SetPageWidgets.qml:78 shell/SetPageWidgets.qml:86
+#: shell/SetPageWidgets.qml:94
+msgctxt "SetPageWidgets"
+msgid "ON"
+msgstr ""
+
+#: shell/SetPageWidgets.qml:31
+msgctxt "SetPageWidgets"
+msgid "On the desktop"
+msgstr ""
+
+#: shell/SetPageWidgets.qml:87
+msgctxt "SetPageWidgets"
+msgid "Reads the lock-screen cache. Does not fetch"
+msgstr ""
+
+#: shell/SetPageWidgets.qml:69
+msgctxt "SetPageWidgets"
+msgid "STICKY"
+msgstr ""
+
+#: shell/SetPageWidgets.qml:71
+msgctxt "SetPageWidgets"
+msgid "Scratch note. Ships off"
+msgstr ""
+
+#: shell/SetPageWidgets.qml:50
+msgctxt "SetPageWidgets"
+msgid "Sticky and Calendar ship off. Now Playing hides itself when nothing is playing."
+msgstr ""
+
+#: shell/SetPageWidgets.qml:95
+msgctxt "SetPageWidgets"
+msgid "Transport card — the Line dial still flips when a track loads"
+msgstr ""
+
+#: shell/SetPageWidgets.qml:61
+msgctxt "SetPageWidgets"
+msgid "VITALS"
+msgstr ""
+
+#: shell/SetPageWidgets.qml:85
+msgctxt "SetPageWidgets"
+msgid "WEATHER"
+msgstr ""
+
+#: shell/SetPageWidgets.qml:48
+msgctxt "SetPageWidgets"
+msgid "Which chips"
+msgstr ""
+
+#: shell/SetResetRow.qml:60
+msgctxt "SetResetRow"
+msgid "Reset"
+msgstr ""
+
+#: shell/SetResetRow.qml:64
+msgctxt "SetResetRow"
+msgid "Reset 1 setting"
+msgstr ""
+
+#: shell/Settings.qml:380
+msgctxt "Settings"
+msgid "Find a setting"
+msgstr ""
+
+#: shell/Settings.qml:286
+msgctxt "Settings"
+msgid "Search"
+msgstr ""
+
+#: shell/Settings.qml:658
+msgctxt "Settings"
+msgid "Searched the titles, descriptions and keywords of all "
+msgstr ""
+
+#: shell/Settings.qml:51
+msgctxt "Settings"
+msgid "Settings"
+msgstr ""
+
+#: shell/Settings.qml:51
+msgctxt "Settings"
+msgid "Settings — "
+msgstr ""
+
+#: shell/Settings.qml:859
+msgctxt "Settings"
+msgid "This page could not be loaded.\n"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:94
+msgctxt "SettingsCatalog"
+msgid "About this system"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:215
+msgctxt "SettingsCatalog"
+msgid "Accessibility"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:29
+msgctxt "SettingsCatalog"
+msgid "Accounts"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:167
+msgctxt "SettingsCatalog"
+msgid "Appearance"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:61
+msgctxt "SettingsCatalog"
+msgid "Apps & defaults"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:144
+msgctxt "SettingsCatalog"
+msgid "Background"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:24
+msgctxt "SettingsCatalog"
+msgid "Background, colours, fonts, cursor, lock screen, widgets"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:198
+msgctxt "SettingsCatalog"
+msgid "Backup & rollback"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:21
+msgctxt "SettingsCatalog"
+msgid "Bluetooth, printers, mouse, keyboard, USB"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:62
+msgctxt "SettingsCatalog"
+msgid "Browser, photos, mail, files — which app opens what"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:241
+msgctxt "SettingsCatalog"
+msgid "Clipboard history and what shows while locked"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:210
+msgctxt "SettingsCatalog"
+msgid "Clock format on the Line, and following the system zone"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:158
+msgctxt "SettingsCatalog"
+msgid "Cursor theme, cursor size, trail and visibility aids"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:209
+msgctxt "SettingsCatalog"
+msgid "Date & time"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:33
+msgctxt "SettingsCatalog"
+msgid "Date, clock format"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:179
+msgctxt "SettingsCatalog"
+msgid "Desktop widgets"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:20
+msgctxt "SettingsCatalog"
+msgid "Devices"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:138
+msgctxt "SettingsCatalog"
+msgid "Discover printers, watch the queue, check ink and paper"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:72
+msgctxt "SettingsCatalog"
+msgid "Disks, free space, and what is mounted"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:44
+msgctxt "SettingsCatalog"
+msgid "Display"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:18
+msgctxt "SettingsCatalog"
+msgid "Display, Night Light, sound, notifications, apps, health"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:35
+msgctxt "SettingsCatalog"
+msgid "Ease of Access"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:235
+msgctxt "SettingsCatalog"
+msgid "Firewall"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:151
+msgctxt "SettingsCatalog"
+msgid "Fonts & text size"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:231
+msgctxt "SettingsCatalog"
+msgid "HEMERA — protection ring, scan, quarantine, wizard switches"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:39
+msgctxt "SettingsCatalog"
+msgid "HEMERA, firewall, clipboard, firmware"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:86
+msgctxt "SettingsCatalog"
+msgid "Health"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:101
+msgctxt "SettingsCatalog"
+msgid "Hyprland — floating by default, reload the compositor"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:224
+msgctxt "SettingsCatalog"
+msgid "Keep awake"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:121
+msgctxt "SettingsCatalog"
+msgid "Keyboard"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:122
+msgctxt "SettingsCatalog"
+msgid "Layout, repeat rate and delay, shortcuts, numlock at login"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:168
+msgctxt "SettingsCatalog"
+msgid "Living paint, the sky, and how Start opens"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:162
+msgctxt "SettingsCatalog"
+msgid "Lock screen"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:36
+msgctxt "SettingsCatalog"
+msgid "Motion, text size, screen reader, keyboard, magnifier, idle"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:115
+msgctxt "SettingsCatalog"
+msgid "Mouse & touchpad"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:157
+msgctxt "SettingsCatalog"
+msgid "Mouse pointer"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:26
+msgctxt "SettingsCatalog"
+msgid "Network"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:56
+msgctxt "SettingsCatalog"
+msgid "Notifications"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:95
+msgctxt "SettingsCatalog"
+msgid "Nyxus Suxyn — edition, kernel, hardware, Horizon glass, ice accent"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:51
+msgctxt "SettingsCatalog"
+msgid "Output and input devices, per-application volume, routing"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:127
+msgctxt "SettingsCatalog"
+msgid "Pair, connect, forget devices and see battery where reported"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:23
+msgctxt "SettingsCatalog"
+msgid "Personalization"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:116
+msgctxt "SettingsCatalog"
+msgid "Pointer speed, acceleration profile, scrolling, polling rate"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:66
+msgctxt "SettingsCatalog"
+msgid "Power"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:137
+msgctxt "SettingsCatalog"
+msgid "Printers & scanners"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:240
+msgctxt "SettingsCatalog"
+msgid "Privacy"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:38
+msgctxt "SettingsCatalog"
+msgid "Privacy & Security"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:216
+msgctxt "SettingsCatalog"
+msgid "Reduce motion, text size, contrast, screen reader, on-screen keyboard, magnifier"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:108
+msgctxt "SettingsCatalog"
+msgid "Reset"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:45
+msgctxt "SettingsCatalog"
+msgid "Resolution, refresh rate, scale, Night Light, live wallpaper shaders"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:67
+msgctxt "SettingsCatalog"
+msgid "Saver, Balanced, Performance, and the battery"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:245
+msgctxt "SettingsCatalog"
+msgid "Secure Boot"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:230
+msgctxt "SettingsCatalog"
+msgid "Security"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:109
+msgctxt "SettingsCatalog"
+msgid "Shipped defaults — one page's settings, or every setting, after a backup"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:180
+msgctxt "SettingsCatalog"
+msgid "Six chips on the wallpaper — none of them is the bar clock"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:199
+msgctxt "SettingsCatalog"
+msgid "Snapshots on this disk, and the backup that lives off it"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:50
+msgctxt "SettingsCatalog"
+msgid "Sound"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:71
+msgctxt "SettingsCatalog"
+msgid "Storage"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:17
+msgctxt "SettingsCatalog"
+msgid "System"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:152
+msgctxt "SettingsCatalog"
+msgid "System font family, interface text size, weight and rendering"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:77
+msgctxt "SettingsCatalog"
+msgid "System updates, snapshots before updating, live reload of the shell"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:174
+msgctxt "SettingsCatalog"
+msgid "Taskbar"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:175
+msgctxt "SettingsCatalog"
+msgid "The Line — Start style, and pinning from a running app"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:32
+msgctxt "SettingsCatalog"
+msgid "Time & Language"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:131
+msgctxt "SettingsCatalog"
+msgid "USB & removable devices"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:236
+msgctxt "SettingsCatalog"
+msgid "Unsolicited inbound stays out unless you opt out"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:76
+msgctxt "SettingsCatalog"
+msgid "Updates"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:145
+msgctxt "SettingsCatalog"
+msgid "Wallpaper stills — the twelve the owner kept"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:132
+msgctxt "SettingsCatalog"
+msgid "What is plugged in, mount and eject, plug-in notifications"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:57
+msgctxt "SettingsCatalog"
+msgid "What may interrupt you, Do Not Disturb, toast placement"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:163
+msgctxt "SettingsCatalog"
+msgid "What shows while locked, and whether media keys work"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:246
+msgctxt "SettingsCatalog"
+msgid "What the firmware reports"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:225
+msgctxt "SettingsCatalog"
+msgid "When the screensaver and the lock take over"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:194
+msgctxt "SettingsCatalog"
+msgid "Who is signed in on this machine"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:100
+msgctxt "SettingsCatalog"
+msgid "Windowing"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:187
+msgctxt "SettingsCatalog"
+msgid "Wireless networks on this machine"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:193
+msgctxt "SettingsCatalog"
+msgid "Your account"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:30
+msgctxt "SettingsCatalog"
+msgid "Your account, snapshots"
+msgstr ""
+
+#: shell/SettingsCatalog.qml:87
+msgctxt "SettingsCatalog"
+msgid "nyxus doctor and nyxus status as a page — checks, units, a report bundle"
+msgstr ""
+
+#: shell/SidePanel.qml:1799
+msgctxt "SidePanel"
+msgid "1 waiting"
+msgstr ""
+
+#: shell/SidePanel.qml:1316
+msgctxt "SidePanel"
+msgid "APPS"
+msgstr ""
+
+#: shell/SidePanel.qml:2068
+msgctxt "SidePanel"
+msgid "Add a reminder…"
+msgstr ""
+
+#: shell/SidePanel.qml:1051
+msgctxt "SidePanel"
+msgid "Airplane"
+msgstr ""
+
+#: shell/SidePanel.qml:2438
+msgctxt "SidePanel"
+msgid "Balanced"
+msgstr ""
+
+#: shell/SidePanel.qml:1529
+msgctxt "SidePanel"
+msgid "Bluetooth is off"
+msgstr ""
+
+#: shell/SidePanel.qml:138
+msgctxt "SidePanel"
+msgid "Calendar"
+msgstr ""
+
+#: shell/SidePanel.qml:140
+msgctxt "SidePanel"
+msgid "Capture"
+msgstr ""
+
+#: shell/SidePanel.qml:1808
+msgctxt "SidePanel"
+msgid "Clear all"
+msgstr ""
+
+#: shell/SidePanel.qml:2150
+msgctxt "SidePanel"
+msgid "Clear history"
+msgstr ""
+
+#: shell/SidePanel.qml:139
+msgctxt "SidePanel"
+msgid "Clipboard"
+msgstr ""
+
+#: shell/SidePanel.qml:1983
+msgctxt "SidePanel"
+msgid "Close"
+msgstr ""
+
+#: shell/SidePanel.qml:1490
+msgctxt "SidePanel"
+msgid "Connected"
+msgstr ""
+
+#: shell/SidePanel.qml:1074
+msgctxt "SidePanel"
+msgid "Do Not Disturb"
+msgstr ""
+
+#: shell/SidePanel.qml:1784
+msgctxt "SidePanel"
+msgid "Do Not Disturb — they wait here"
+msgstr ""
+
+#: shell/SidePanel.qml:2505
+msgctxt "SidePanel"
+msgid "Eject"
+msgstr ""
+
+#: shell/SidePanel.qml:2330
+msgctxt "SidePanel"
+msgid "Fans"
+msgstr ""
+
+#: shell/SidePanel.qml:2178
+msgctxt "SidePanel"
+msgid "Full screen"
+msgstr ""
+
+#: shell/SidePanel.qml:2300
+msgctxt "SidePanel"
+msgid "Graphics"
+msgstr ""
+
+#: shell/SidePanel.qml:1189
+msgctxt "SidePanel"
+msgid "HEADPHONES"
+msgstr ""
+
+#: shell/SidePanel.qml:2377
+msgctxt "SidePanel"
+msgid "Install"
+msgstr ""
+
+#: shell/SidePanel.qml:1085
+msgctxt "SidePanel"
+msgid "Keep Awake"
+msgstr ""
+
+#: shell/SidePanel.qml:1429
+msgctxt "SidePanel"
+msgid "Looking for networks…"
+msgstr ""
+
+#: shell/SidePanel.qml:1415
+msgctxt "SidePanel"
+msgid "Manage  ›"
+msgstr ""
+
+#: shell/SidePanel.qml:2315
+msgctxt "SidePanel"
+msgid "Memory"
+msgstr ""
+
+#: shell/SidePanel.qml:1095
+msgctxt "SidePanel"
+msgid "Mute"
+msgstr ""
+
+#: shell/SidePanel.qml:1095
+msgctxt "SidePanel"
+msgid "Muted"
+msgstr ""
+
+#: shell/SidePanel.qml:2323
+msgctxt "SidePanel"
+msgid "Network"
+msgstr ""
+
+#: shell/SidePanel.qml:1064
+msgctxt "SidePanel"
+msgid "Night Light"
+msgstr ""
+
+#: shell/SidePanel.qml:1242
+msgctxt "SidePanel"
+msgid "No Bluetooth headphones in range"
+msgstr ""
+
+#: shell/SidePanel.qml:2139
+msgctxt "SidePanel"
+msgid "Nothing copied yet."
+msgstr ""
+
+#: shell/SidePanel.qml:1330
+msgctxt "SidePanel"
+msgid "Nothing is playing right now"
+msgstr ""
+
+#: shell/SidePanel.qml:1663
+msgctxt "SidePanel"
+msgid "Nothing playing"
+msgstr ""
+
+#: shell/SidePanel.qml:2469
+msgctxt "SidePanel"
+msgid "Nothing plugged in."
+msgstr ""
+
+#: shell/SidePanel.qml:1861
+msgctxt "SidePanel"
+msgid "Notification"
+msgstr ""
+
+#: shell/SidePanel.qml:137
+msgctxt "SidePanel"
+msgid "Notifications"
+msgstr ""
+
+#: shell/SidePanel.qml:136
+msgctxt "SidePanel"
+msgid "Now Playing"
+msgstr ""
+
+#: shell/SidePanel.qml:1250
+msgctxt "SidePanel"
+msgid "OUTPUT"
+msgstr ""
+
+#: shell/SidePanel.qml:1041 shell/SidePanel.qml:1046 shell/SidePanel.qml:1051
+#: shell/SidePanel.qml:1064 shell/SidePanel.qml:1074 shell/SidePanel.qml:1085
+msgctxt "SidePanel"
+msgid "Off"
+msgstr ""
+
+#: shell/SidePanel.qml:1046 shell/SidePanel.qml:1051 shell/SidePanel.qml:1064
+#: shell/SidePanel.qml:1074 shell/SidePanel.qml:1085 shell/SidePanel.qml:1095
+msgctxt "SidePanel"
+msgid "On"
+msgstr ""
+
+#: shell/SidePanel.qml:2418
+msgctxt "SidePanel"
+msgid "POWER PROFILE"
+msgstr ""
+
+#: shell/SidePanel.qml:2439
+msgctxt "SidePanel"
+msgid "Performance"
+msgstr ""
+
+#: shell/SidePanel.qml:2292
+msgctxt "SidePanel"
+msgid "Processor"
+msgstr ""
+
+#: shell/SidePanel.qml:132
+msgctxt "SidePanel"
+msgid "Quick"
+msgstr ""
+
+#: shell/SidePanel.qml:2460
+msgctxt "SidePanel"
+msgid "REMOVABLE MEDIA"
+msgstr ""
+
+#: shell/SidePanel.qml:2244
+msgctxt "SidePanel"
+msgid "Record"
+msgstr ""
+
+#: shell/SidePanel.qml:2176
+msgctxt "SidePanel"
+msgid "Region"
+msgstr ""
+
+#: shell/SidePanel.qml:2401
+msgctxt "SidePanel"
+msgid "Rollback"
+msgstr ""
+
+#: shell/SidePanel.qml:2437
+msgctxt "SidePanel"
+msgid "Saver"
+msgstr ""
+
+#: shell/SidePanel.qml:133
+msgctxt "SidePanel"
+msgid "Sound"
+msgstr ""
+
+#: shell/SidePanel.qml:2244
+msgctxt "SidePanel"
+msgid "Stop recording"
+msgstr ""
+
+#: shell/SidePanel.qml:141
+msgctxt "SidePanel"
+msgid "System"
+msgstr ""
+
+#: shell/SidePanel.qml:2308
+msgctxt "SidePanel"
+msgid "Temperature"
+msgstr ""
+
+#: shell/SidePanel.qml:1117
+msgctxt "SidePanel"
+msgid "Volume"
+msgstr ""
+
+#: shell/SidePanel.qml:1408
+msgctxt "SidePanel"
+msgid "Wi-Fi is off"
+msgstr ""
+
+#: shell/SidePanel.qml:2177
+msgctxt "SidePanel"
+msgid "Window"
+msgstr ""
+
+#: shell/SidePanel.qml:769
+msgctxt "SidePanel"
+msgid "   Settings"
+msgstr ""
+
+#: shell/TaskView.qml:225
+msgctxt "TaskView"
+msgid "Esc to close · digit to jump"
+msgstr ""
+
+#: shell/TaskView.qml:216
+msgctxt "TaskView"
+msgid "TASK VIEW"
+msgstr ""
+
+#: shell/Tasks.qml:35
+msgctxt "Tasks"
+msgid "Files"
+msgstr ""
+
+#: shell/Tasks.qml:43
+msgctxt "Tasks"
+msgid "Media"
+msgstr ""
+
+#: shell/Tasks.qml:50
+msgctxt "Tasks"
+msgid "Settings"
+msgstr ""
+
+#: shell/Tasks.qml:37
+msgctxt "Tasks"
+msgid "Terminal"
+msgstr ""
+
+#: shell/Tasks.qml:33
+msgctxt "Tasks"
+msgid "Web"
+msgstr ""
+
+#: shell/Widgets.qml:247
+msgctxt "Widgets"
+msgid "Jot something down…"
+msgstr ""
+
+#: shell/Widgets.qml:416
+msgctxt "Widgets"
+msgid "Nothing playing"
+msgstr ""
+
+#: shell/Widgets.qml:281
+msgctxt "Widgets"
+msgid "nothing scheduled — enjoy it"
+msgstr ""
+
+#: shell/Widgets.qml:352
+msgctxt "Widgets"
+msgid "waiting for weather"
+msgstr ""
+

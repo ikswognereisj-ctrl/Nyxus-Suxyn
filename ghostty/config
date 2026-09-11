@@ -1,0 +1,88 @@
+# NYXUS · ghostty · the 87da09fe bake palette, wired to accent.json `_terminal`
+# Ghostty 1.3 reads ~/.config/ghostty/config.ghostty BEFORE config.
+# An empty config.ghostty wins and leaves Arch defaults (#282c34).
+# Ship both names, byte-identical. THREE copies in the tree, all identical:
+#   artifacts/api-server/nyxus-scripts/ghostty.config  -> wins the skel `config`
+#   slot (build-iso.sh:859, ship-manifest.py); skel ghostty/config (loses, kept
+#   in lockstep); skel ghostty/config.ghostty (ships as committed).
+# Every value below is a theme/accent.json stop, named on the line above it.
+# Ghostty takes no trailing comments, so the token sits on its own line.
+# Ratios are measured on the ground #020506 (void), the ruler of
+# scripts/theme-contrast.py: text floor 4.5:1, dim/comment tier 3.0:1.
+# The 2026-08-21 pass put the periwinkle mix on bright blue and the periwinkle
+# plate on the selection. WITHDRAWN 2026-08-22 (TRK-1460): the owner rejected
+# that colour and ordered the palette of the last baked ISO, 87da09fe. The
+# `_terminal` DERIVATION and its measurements are kept -- they are the wiring,
+# not the colour -- and the blue pair and the selection are the bake's own
+# values again. Rose (#d765a2/#ffb3d9) and teal (#0aa2d6/#5cc6ea) stay out of
+# this file: magenta is violet and cyan is glacier, both bake-legal members.
+# Gate 13t80 forbids the four periwinkle hexes tree-wide.
+
+font-family = JetBrains Mono Nerd Font
+font-size = 12
+freetype-load-flags = hinting,no-force-autohint,no-monochrome,no-autohint
+window-padding-x = 16
+window-padding-y = 12
+window-decoration = false
+cursor-style = block
+confirm-close-surface = false
+
+# NYXUS material (theme/BUILD-ORDER.md PHASE 1b, owner ruling 2026-09-06):
+# the same nine layers as gtk-3.0/gtk.css and shell/shaders/bleed.frag, baked
+# once at 2560x1440 since Ghostty cannot compose gradients. Re-bake it from
+# the CSS if the pools are ever retuned — those files are a set.
+background-image           = ~/.config/ghostty/nyxus-material.png
+background-image-fit       = cover
+background-image-position  = center
+background-image-repeat    = false
+background-image-opacity   = 1
+
+# ⚠ background-opacity and a background image interact: at 0.88 the wallpaper
+# behind shows THROUGH the material and muddies the bleed pools. RULED
+# 2026-09-06: full material, no see-through — the pools are unreadable
+# translucent. Do not lower this back to 0.88.
+background-opacity         = 1.0
+
+# void (_palette_fixed.void) · the ground
+background = #020506
+# text (_palette_fixed.text) · 18.14:1
+foreground = #edf1ff
+# glacier[0] (_paint_layers.glacier[0]) · the peak · the cursor of the ruling
+cursor-color = #7fe8ff
+cursor-text = #020506
+# _tokens.resolved.accent-deep (glacier[3]) · the bake's selection bed,
+# text #edf1ff on it 7.85:1
+selection-background = #274b7a
+selection-foreground = #edf1ff
+
+# 0/8 black · void / _terminal.bright.black (4.67:1 — exempt-but-measured; kept
+# because `elevated` #071318 is 1.09:1 and 8 is the colour of every comment)
+palette = 0=#020506
+palette = 8=#6c76a8
+# 1/9 red · _palette_fixed.red 5.61:1 / _terminal.bright.red 6.88:1
+palette = 1=#ff2d55
+palette = 9=#ff5c7a
+# 2/10 green · _palette_fixed.green 14.23:1 / _terminal.bright.green 15.64:1
+palette = 2=#2cf597
+palette = 10=#77f9bc
+# 3/11 yellow · _terminal.normal.yellow (= _paint_ember.stops.5) 8.32:1 /
+# _palette_fixed.gold_glow 9.17:1
+palette = 3=#e6923f
+palette = 11=#d8a464
+# 4/12 blue · _terminal.normal.blue 4.74:1 / _terminal.bright.blue 5.75:1 —
+# the bake's own pair, restored 2026-08-22 (TRK-1460). `ls` paints directories
+# with slot 4, so normal blue has to clear the 4.5:1 text floor on its own; it
+# does, by 0.24, and bright sits above it (4.74 < 5.75).
+palette = 4=#7a63f0
+palette = 12=#6b7bff
+# 5/13 magenta · violet[0] 6.27:1 / violet[5] 10.35:1 (_paint_layers.violet)
+palette = 5=#b06cff
+palette = 13=#ed9bf7
+# 6/14 cyan · glacier[4] 4.79:1 / glacier[0] 14.50:1 (_paint_layers.glacier).
+# glacier[4] is the seam rung; as TEXT it clears the 4.5:1 floor by 0.29 and it
+# is the only glacier stop between the floor and the peak.
+palette = 6=#4f7fa6
+palette = 14=#7fe8ff
+# 7/15 white · _palette_fixed.text 18.14:1 / _terminal.bright.white 21.00:1
+palette = 7=#edf1ff
+palette = 15=#ffffff

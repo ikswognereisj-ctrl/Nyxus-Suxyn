@@ -1,0 +1,20 @@
+# never ship these
+*.bak
+*.bak-*
+*~
+*.swp
+*.orig
+*.pyc
+__pycache__/
+.qmlcache/
+*.qslog
+crashes/
+*.trk*-backup
+*.cells-bak
+.setpage-bak-*
+.tape-bak-*
+.env
+*token*
+*.pem
+id_rsa*
+github_pat_*

@@ -1,0 +1,268 @@
+# Nyxus Suxyn shell — type manifest.
+#
+# Quickshell auto-discovers `pragma Singleton` files in the config directory at
+# runtime, so the shell ran fine without this. Tooling did not: with no qmldir,
+# qmllint cannot resolve Theme or Bus, so every `Theme.textMuted` came back as
+# "Member not found" and the real problems were buried in dozens of false ones.
+#
+# Declaring the types here makes `qmllint shell/*.qml` a usable gate — which is
+# one of the reasons Quickshell was chosen over eww in the first place
+# (docs/SHELL_FRAMEWORK_EVALUATION_2026-08-02.md §4.3: a headless lint that
+# catches the misspelled-property class of defect without a bake).
+#
+# ADD NEW FILES HERE. ⚠ Once a qmldir exists, Qt turns OFF implicit
+# same-directory type registration — a component missing from this list does
+# NOT load at runtime ("X is not a type" at the use site), and it is invisible
+# to the linter. Proven live 2026-08-03: Swirl.qml loaded fine in a bare test
+# directory and failed in the shell until it was declared here.
+module nyxus
+
+singleton Theme 1.0 Theme.qml
+singleton Bus   1.0 Bus.qml
+singleton Sys   1.0 Sys.qml
+singleton Beat  1.0 Beat.qml
+singleton Prefs 1.0 Prefs.qml
+# TRK-3818 — the tape's armed-ness. Its own file, not a Prefs key, so the
+# bar's toggle never makes the shell a second writer of settings.json.
+singleton TapeState 1.0 TapeState.qml
+singleton Tasks 1.0 Tasks.qml
+singleton Reminders 1.0 Reminders.qml
+singleton Holidays 1.0 Holidays.qml
+singleton Menu  1.0 Menu.qml
+singleton SettingsStore   1.0 SettingsStore.qml
+singleton SettingsCatalog 1.0 SettingsCatalog.qml
+# Live diagnostic bus for the Settings calibration rack (right pane).
+singleton DiagnosticBus   1.0 DiagnosticBus.qml
+# GENERATED — scripts/gen-settings-index.py, gated by audit 13w60.
+singleton SettingsIndex   1.0 SettingsIndex.qml
+singleton UsbWatch        1.0 UsbWatch.qml
+singleton BatteryWatch    1.0 BatteryWatch.qml
+singleton RecordWatch     1.0 RecordWatch.qml
+singleton UpdateWatch     1.0 UpdateWatch.qml
+singleton HyprApply       1.0 HyprApply.qml
+# WIP-700 — what the living paint knows about the machine (load → warmth, a
+# finished Hemera scan → one swell). Swirl.qml defaults its ramp through it.
+singleton PaintMood       1.0 PaintMood.qml
+# WIP-704 — the emoji table. Data only; EmojiPicker.qml is the surface.
+singleton EmojiData       1.0 EmojiData.qml
+# 2026-08-20 — optional pointer trail. Singleton samples hyprctl once;
+# PointerTrail is the Overlay. Off means the Variants model is empty.
+singleton PointerCursor   1.0 PointerCursor.qml
+# TRK-2600..2604 — the media/MPRIS helper. Selection that does not drop an
+# AUDIBLE player just because its Metadata dict is empty (the 2026-08-22
+# chromium defect). MediaCrest and LockMedia read this; Sys.qml is untouched.
+singleton MediaSource     1.0 MediaSource.qml
+
+Bar           1.0 Bar.qml
+BarSeam       1.0 BarSeam.qml
+BarSpectrum   1.0 BarSpectrum.qml
+BorderPulse   1.0 BorderPulse.qml
+ContextMenu   1.0 ContextMenu.qml
+SidePanel     1.0 SidePanel.qml
+FlipPlate     1.0 FlipPlate.qml
+Frame         1.0 Frame.qml
+Frost         1.0 Frost.qml
+Condition     1.0 Condition.qml
+Launcher      1.0 Launcher.qml
+Clock         1.0 Clock.qml
+UsbDock       1.0 UsbDock.qml
+PowerMenu     1.0 PowerMenu.qml
+TaskView      1.0 TaskView.qml
+Toasts        1.0 Toasts.qml
+# B2-c 2026-08-17 — the volume OSD. §4.12 named it, §6 listed it, and it had
+# not existed since the eww excision took it out on 2026-08-03.
+Osd           1.0 Osd.qml
+# TRK-1700..1702 — THE ROOMS. `Rooms` is the singleton that owns the one
+# cell->workspace formula and every piece of state; `RoomGrid` is the one
+# drawing of the grid (the HUD map and the Settings page both use it);
+# `Station` is the HUD itself — map, arrival plate, `house` IPC fast path.
+singleton Rooms 1.0 Rooms.qml
+RoomGrid      1.0 RoomGrid.qml
+Station       1.0 Station.qml
+PointerTrail  1.0 PointerTrail.qml
+MediaCrest    1.0 MediaCrest.qml
+# TRK-2605 — the media icon family. 16-grid geometry, 1.4 stroke, `color`
+# inherited from the call site. Replaces four emoji codepoints on the lock
+# strip and the Nerd Font private-use glyphs on the Crest.
+MediaGlyph    1.0 MediaGlyph.qml
+RecordHud     1.0 RecordHud.qml
+Spill         1.0 Spill.qml
+Starlight     1.0 Starlight.qml
+Starlight3D   1.0 Starlight3D.qml
+Headliner     1.0 Headliner.qml
+# 2026-08-17 — the Starlight as an ITEM, so the desktop window, the lock surface
+# and the screensaver can all wear it. A PanelWindow cannot be parented into an
+# item tree, which is why the drawing half had to come out of Headliner.qml.
+HeadlinerSky  1.0 HeadlinerSky.qml
+# TRK-3082 — overlay popups crop this under the glass so they mix like
+# WidgetChip (Bottom layer over the sky), not like a hole over windows.
+SkyBehind     1.0 SkyBehind.qml
+# 2026-08-17 — the idle screensaver (owner commission). Not a program: the old
+# one was `/usr/local/bin/nyxus-screensaver`, which is not installed on the
+# owner's machine at all. See the header for the two measured reasons it never
+# appeared.
+Screensaver   1.0 Screensaver.qml
+SkyConstellations 1.0 SkyConstellations.qml
+Lock          1.0 Lock.qml
+GlyphTrack    1.0 GlyphTrack.qml
+LockWeather   1.0 LockWeather.qml
+LockEarth     1.0 LockEarth.qml
+LockMoon      1.0 LockMoon.qml
+LockGround    1.0 LockGround.qml
+# The third lock scene (owner ruling 2026-09-05). LockEarth above is NOT
+# replaced by it — scenes are mutually exclusive and both stay selectable.
+LockOcular    1.0 LockOcular.qml
+# GENERATED — tools/ocular/mkconstellation.py, arc-length sampled off the
+# mark's own SVG outline. Do not hand-edit the coordinates.
+singleton ConstellationData 1.0 ConstellationData.qml
+LockMedia     1.0 LockMedia.qml
+LockNotes     1.0 LockNotes.qml
+LiveWall      1.0 LiveWall.qml
+MonthCalendar 1.0 MonthCalendar.qml
+CellMeter     1.0 CellMeter.qml
+CellSpark     1.0 CellSpark.qml
+MeterRow      1.0 MeterRow.qml
+SliderRow     1.0 SliderRow.qml
+TogglePill    1.0 TogglePill.qml
+Swirl         1.0 Swirl.qml
+SwirlChip     1.0 SwirlChip.qml
+Pane          1.0 Pane.qml
+StatusPip     1.0 StatusPip.qml
+LiveMark      1.0 LiveMark.qml
+AppCard       1.0 AppCard.qml
+GlassTile     1.0 GlassTile.qml
+CrystalGem    1.0 CrystalGem.qml
+# The chamfer-aware fill. A card is a STACK (floor / Pane / swell) and
+# only the Pane can cut, so the plain-Rectangle layers need this or the
+# cut corner is painted over. See CutRect.qml's header.
+CutRect       1.0 CutRect.qml
+Vitals        1.0 Vitals.qml
+Pool          1.0 Pool.qml
+Rail          1.0 Rail.qml
+ReactiveEdge  1.0 ReactiveEdge.qml
+Reflection    1.0 Reflection.qml
+Sigil         1.0 Sigil.qml
+GlassEdge     1.0 GlassEdge.qml
+MirrorEdge    1.0 MirrorEdge.qml
+# WIP-787 — the glass material as a SURFACE (filament + focus sweep + decouple),
+# and the five-state edge that carries both edge ladders. `_glass_material` in
+# accent.json is the definition and draws nothing; these two are the consumers.
+GlassMaterial 1.0 GlassMaterial.qml
+StateEdge     1.0 StateEdge.qml
+ScrollRail    1.0 ScrollRail.qml
+Widgets       1.0 Widgets.qml
+EmojiPicker   1.0 EmojiPicker.qml
+
+# ── MASTER SETTINGS ─────────────────────────────────────────────────────
+# The window, the reusable control kit, and the pages.
+#
+# The PAGES (Set Page*.qml, written without the space) are loaded by URL from
+# Settings.qml, not by type name — see the comment on its Loader for why. They
+# are still declared here so `qmllint shell/*.qml` type-checks them; a page
+# missing from this list lints as a pile of "Member not found" against Theme
+# and SettingsStore, which is exactly the noise this file exists to remove.
+Settings        1.0 Settings.qml
+SetPage         1.0 SetPage.qml
+SetCard         1.0 SetCard.qml
+SetRow          1.0 SetRow.qml
+# TRK-1261 — the Reset row every writing page ends with.
+SetResetRow     1.0 SetResetRow.qml
+SetSwitch       1.0 SetSwitch.qml
+SetSlider       1.0 SetSlider.qml
+SetChoice       1.0 SetChoice.qml
+SetButton       1.0 SetButton.qml
+SetIceFace      1.0 SetIceFace.qml
+TaskFace        1.0 TaskFace.qml
+ReminderFace    1.0 ReminderFace.qml
+SetPageAbout    1.0 SetPageAbout.qml
+SetPageHealth   1.0 SetPageHealth.qml
+SetPagePending  1.0 SetPagePending.qml
+SetPageDisplay       1.0 SetPageDisplay.qml
+SetPageSound         1.0 SetPageSound.qml
+SetPageNotifications 1.0 SetPageNotifications.qml
+SetPageUpdates       1.0 SetPageUpdates.qml
+SetPageMouse         1.0 SetPageMouse.qml
+SetPageKeyboard      1.0 SetPageKeyboard.qml
+SetPageShortcuts     1.0 SetPageShortcuts.qml
+SetPageBluetooth     1.0 SetPageBluetooth.qml
+SetPageUsb           1.0 SetPageUsb.qml
+SetPagePrinters      1.0 SetPagePrinters.qml
+SetPageFonts         1.0 SetPageFonts.qml
+SetPageCursor        1.0 SetPageCursor.qml
+SetPageScreenlock    1.0 SetPageScreenlock.qml
+SetPageBackground    1.0 SetPageBackground.qml
+SetPageApps          1.0 SetPageApps.qml
+SetPagePower         1.0 SetPagePower.qml
+SetPageStorage       1.0 SetPageStorage.qml
+SetPageNetwork       1.0 SetPageNetwork.qml
+SetPageFirewall      1.0 SetPageFirewall.qml
+SetPageAppearance    1.0 SetPageAppearance.qml
+SetPageDock          1.0 SetPageDock.qml
+SetPageWidgets       1.0 SetPageWidgets.qml
+SetPageDatetime      1.0 SetPageDatetime.qml
+SetPageIdle          1.0 SetPageIdle.qml
+SetPageAccount       1.0 SetPageAccount.qml
+SetPageAccess        1.0 SetPageAccess.qml
+SetPageBackup        1.0 SetPageBackup.qml
+SetPagePrivacy       1.0 SetPagePrivacy.qml
+SetPageSecurity      1.0 SetPageSecurity.qml
+SetPageSecboot       1.0 SetPageSecboot.qml
+SetPageCompositor    1.0 SetPageCompositor.qml
+# TRK-1261 — Settings ▸ System ▸ Reset (schema state, dry run, reset all).
+SetPageReset         1.0 SetPageReset.qml
+# TRK-1273 — timing-budget watchdog (stall / sampled frame / timed ipc → perf.log).
+Perf          1.0 Perf.qml
+SetPageStation       1.0 SetPageStation.qml
+# TRK-3310 — the one Settings material: an OPAQUE Theme.elevated floor under
+# Start's panelMid paint + swellGround ramp. Not a window; a plain Item.
+SetSlab              1.0 SetSlab.qml
+# TRK-3313 — the Settings utility hub: a DRAWER inside the Settings window
+# (profile, look stones, pinned/active apps, security posture, drives).
+# NOT a layer surface — see TRK-3260.
+SetHubDock           1.0 SetHubDock.qml
+# TRK-3314 — the Settings notifications drawer, inside the same window
+# (global switches, the live tracked entries, per-app allow/sound rules).
+SetNotifyFlyout      1.0 SetNotifyFlyout.qml
+
+# ── THE OTHER LANE'S COMPONENTS ──────────────────────────────────────
+# Written and used on the Alienware, not by this branch. Registered here
+# on 2026-09-06 rather than left out: this file is what makes a component
+# a TYPE (see the file header above), so a `shell/` deploy that carried
+# these .qml files without a qmldir line for each would leave them sitting
+# in the directory as non-types, failing "X is not a type" at whatever use
+# site referenced them — invisible until someone tried.
+#
+# They ARE part of this qmldir for that reason, but they are NOT wired
+# into `shell.qml` or any page from this branch, and Prefs.qml carries
+# only the keys the machine-only files themselves read (companionEnabled,
+# the layered-wall keys). Nothing changes for this build until the other
+# lane's own instantiation code (its shell.qml wiring) lands too.
+Companion     1.0 Companion.qml
+singleton HardwareCaps    1.0 HardwareCaps.qml
+SetPageHardware      1.0 SetPageHardware.qml
+SkyForeground 1.0 SkyForeground.qml
+
+# Next Cut — one FloatingWindow chrome for migrated GTK apps.
+AppWindow     1.0 AppWindow.qml
+Notes         1.0 Notes.qml
+Calculator    1.0 Calculator.qml
+Media         1.0 Media.qml
+Files         1.0 Files.qml
+Store         1.0 Store.qml
+Reader        1.0 Reader.qml
+CalendarApp   1.0 CalendarApp.qml
+Viewer        1.0 Viewer.qml
+Archive       1.0 Archive.qml
+Weather       1.0 Weather.qml
+ClockApp      1.0 ClockApp.qml
+Screenshot    1.0 Screenshot.qml
+Help          1.0 Help.qml
+Hardware      1.0 Hardware.qml
+Sysmon        1.0 Sysmon.qml
+SetPageNotes       1.0 SetPageNotes.qml
+SetPageCalculator  1.0 SetPageCalculator.qml
+SetPageStore       1.0 SetPageStore.qml
+SetPageMedia       1.0 SetPageMedia.qml
+SetPageWeather     1.0 SetPageWeather.qml
+SetPageControl     1.0 SetPageControl.qml
+SetPageMonitor     1.0 SetPageMonitor.qml

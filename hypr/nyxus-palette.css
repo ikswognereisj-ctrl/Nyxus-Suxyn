@@ -1,0 +1,110 @@
+/* ============================================================
+ *  NYXUS PALETTE — CSS mirror of the SUXYN GALAXY palette
+ *
+ *  GENERATED — do not edit. Source: theme/accent.json
+ *  Rebuild:   python3 scripts/render-palette-sources.py
+ *  Gated by:  verify-profile 13q11
+ *
+ *  This file used to carry the line "Mirrors nyxus_palette.py exactly.
+ *  When the visual lock changes, edit BOTH files in lockstep" — and it
+ *  existed in six byte-identical copies. That instruction is now a build
+ *  step instead of a promise, which is what the owner asked for on
+ *  2026-08-09: "why isnt everything under one thing like it should be".
+ *
+ *  Every NYXUS GTK4 / rofi CSS must @import this file and reference the
+ *  @define-color names below — never hard-code hex values inline.
+ *
+ *  The identity is a SWEEP — teal, azure, indigo, violet, plum — and gold
+ *  is sparks and points of light only, never a filled area.
+ *
+ *  © 2026 Joseph A. Sierengowski · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+ * ============================================================ */
+
+/* ── PRIMARY RAMP ─────────────────────────────────────────── */
+@define-color nyx_white        #ffffff;
+@define-color nyx_white_off    #edf1ff;
+@define-color nyx_grey_light   #c9d0e8;
+@define-color nyx_grey_mid     #c9d0e8;
+@define-color nyx_grey_tertiary #a8aecc;
+@define-color nyx_ink_faded    #040b0e;
+@define-color nyx_ink_black    #000000;
+
+/* ── GALAXY FIXED CANON ───────────────────────────────────── */
+@define-color nyx_void         #020506;
+@define-color nyx_orchid       #aa6ece;
+@define-color nyx_cyan         #0aa2d6;
+@define-color nyx_red          #ff2d55;
+@define-color nyx_yellow       #9b621b;
+@define-color nyx_green_ok     #2cf597;
+@define-color nyx_violet       #521e72;
+@define-color nyx_magenta      #ae206c;
+@define-color nyx_orange       #9b621b;
+
+/* ── THE SWEEP ────────────────────────────────────────────── */
+/* teal, azure, indigo, violet, plum. Anything that fills an   */
+/* area runs the ramp; a single stop is a compromise.          */
+@define-color nyx_teal         #0aa2d6;
+@define-color nyx_azure        #064f95;
+@define-color nyx_indigo       #1e03ad;
+@define-color nyx_plum         #ae206c;
+@define-color nyx_gold         #9b621b;
+@define-color nyx_teal_glow    #5cc6ea;
+@define-color nyx_teal_deep    #026282;
+@define-color nyx_indigo_glow  #7a63f0;
+@define-color nyx_indigo_deep  #0e0153;
+@define-color nyx_violet_glow  #aa6ece;
+@define-color nyx_violet_deep  #280c3a;
+@define-color nyx_gold_glow    #d8a464;
+@define-color nyx_gold_deep    #50310b;
+
+/* ── CHROME LADDER (accent.json _chrome) ──────────────────── */
+/* Solid chrome is the mark darkened, not a neutral — every    */
+/* rung hue-locked to plum so depth reads as depth.            */
+@define-color nyx_chrome_deep  #16030d;
+@define-color nyx_chrome_dark  #1b0310;
+@define-color nyx_chrome_shade #250416;
+@define-color nyx_chrome_body  #2e051b;
+@define-color nyx_chrome_edge  #630e3c;
+@define-color nyx_chrome_border #891955;
+@define-color nyx_mark         #ae206c;
+@define-color nyx_mark_soft    #c25891;
+@define-color nyx_mark_glow    #d765a2;
+
+/* ── SURFACE STACK (accent.json _emission.base) ───────────── */
+/* Three grounds by elevation. Not grey — the darks keep their */
+/* chroma, because nothing in the references is grey.          */
+/*   smoke = base/bars/panels (lightest, most blur shows through) */
+/*   ink   = raised cards/pebbles/buttons (mid)                   */
+/*   void  = popovers/tooltips/modals/active (deepest, maximum pop)*/
+@define-color nyx_black_smoke  rgba(7, 19, 24, 0.55);
+@define-color nyx_black_ink    rgba(4, 11, 14, 0.78);
+@define-color nyx_black_void   rgba(2, 5, 6, 0.92);
+
+/* Backward-compat aliases — legacy names map to new tiers.   */
+@define-color nyx_glass_dark   rgba(7, 19, 24, 0.55);
+@define-color nyx_glass_deeper rgba(4, 11, 14, 0.78);
+@define-color nyx_glass_deepest rgba(2, 5, 6, 0.92);
+
+/* ── WHITE GLOW ACCENT (use sparingly on wordmarks/key labels) */
+@define-color nyx_glow_soft    rgba(255, 255, 255, 0.45);
+@define-color nyx_glow_bright  rgba(255, 255, 255, 0.85);
+
+/* ── HAIRLINES ─────────────────────────────────────────────── */
+@define-color nyx_hairline_white rgba(255, 255, 255, 0.10);
+@define-color nyx_hairline_ink rgba(0, 0, 0, 0.45);
+
+/* ── DROP SHADOW INK ───────────────────────────────────────── */
+@define-color nyx_shadow_active rgba(0, 0, 0, 0.65);
+@define-color nyx_shadow_inactive rgba(0, 0, 0, 0.20);
+
+/* ── SEMANTIC ALIASES (preferred in app CSS) ──────────────── */
+@define-color nyx_text         @nyx_white_off;
+@define-color nyx_text_dim     @nyx_grey_light;
+@define-color nyx_text_ghost   @nyx_grey_tertiary;
+@define-color nyx_bg           @nyx_black_smoke;
+@define-color nyx_bg_hover     @nyx_black_ink;
+@define-color nyx_bg_popover   @nyx_black_void;
+@define-color nyx_border       @nyx_hairline_white;
+@define-color nyx_caret        @nyx_white;
+@define-color nyx_select_bg    @nyx_grey_light;
+@define-color nyx_select_fg    @nyx_ink_black;

@@ -1,0 +1,297 @@
+// Nyxus Suxyn — BorderPulse. Hyprland's own border, a slow glacier glow.
+//
+// Owner 11:29: forget music. Keep the glow around the borders. Slow fade
+// lighter glacier → darker glacier. This is NOT a surface. It rewrites
+// `general:col.active_border` and `decoration:shadow` through hyprctl.
+//
+// ── the three workload moods ─────────────────────────────────────────────
+// calm  (< 35% CPU): ice — the same gradient nyxus-cometfire.conf
+//                    declares, so an idle machine looks exactly like the
+//                    static config and a dead shell changes nothing.
+// busy  (35–75%):    the rose leaning violet — the sweep's cool middle.
+// heavy (> 75%):     ember — plum pushed to coral/gold, the palette's only
+//                    hot corner, which is what "working hard" should read as.
+// Bands are entered with hysteresis (±5) so a load hovering at a boundary
+// does not strobe the border between two moods.
+//
+// ── the glow ─────────────────────────────────────────────────────────────
+// Owner 11:29: forget the music wiring. Keep the glow around the borders.
+// Slow fade lighter glacier → darker glacier. No Beat, no angle steps, no
+// 26 s borderangle orbit (`animation borderangle,0`). Rim stays 3 px.
+// Light end is glacier[0]/[5] (calmStops, the cometfire contract). Dark
+// end on the rim is glacier[4] `#4f7fa6` (4.41:1, legal state). Halo may
+// use glacier[3] `#274b7a` (glow, not a 3:1 rim). Throttled ≥ updateMs.
+import Quickshell
+import Quickshell.Io
+import QtQuick
+
+Item {
+    id: root
+
+    // ── palette: three moods, stops as plain hex (no alpha suffix) ──────
+    // calm MUST stay byte-identical to the winning config declaration's
+    // col.active_border stops. The winner is nyxus-cometfire.conf, NOT
+    // nyxus-hyprland-general.conf as this comment used to say: hyprland.conf
+    // sources general first and cometfire afterwards, so cometfire lands.
+    // These stops are written WITHOUT a leading `#`, which is why a repo
+    // scan for hardcoded `"#rrggbb"` came back clean over the whole shell
+    // and still missed this file.
+    //
+    // ⚠ THIS FILE IS THE LAST WORD ON SCREEN. `Component.onCompleted` calls
+    // write() on every shell start, and `hyprctl keyword` overrides the config.
+    // So whatever is here beats all six config copies. Editing only the .conf
+    // files changes nothing you can see while the shell is running — that trap
+    // is exactly how the defect below survived.
+    //
+    // ── WIP-777 · 2026-08-17 — THE FLOOR, AND A DRIFT THIS EXPOSED ─────────
+    // The byte-identity rule above was BROKEN and had been since WIP-531
+    // (2026-08-12). That task took the three near-whites out of the window rim
+    // on the owner's own complaint ("that pink i dont want") — it changed the
+    // six config copies and MISSED this file, which kept the pre-WIP-531
+    // eight-stop palette: 2e0819 ffb3d9 5c0f38 d765a2 3d0a22 ff8fc7 891955
+    // ae206c. Because this file wins, the pink the owner asked to remove was
+    // still on screen for five days with every gate green. Nothing gated it.
+    // Gate 21 in scripts/audit.sh now derives the winning config's stops and
+    // asserts calmStops equals them, so the contract is checked, not promised.
+    //
+    // THE CONTRAST DEFECT, measured on theme/accent.json's ground token
+    // (_tokens.edges.ground = void #020506). All three moods had the identical
+    // shape — FOUR of eight stops under the 3:1 state floor, because the
+    // design alternates dark/bright and every dark rung in this palette fails:
+    //   calm  1.13 12.37 1.54 6.11 1.23 9.74 2.27 3.14   (4 FAIL)
+    //   busy  1.10 10.11 1.42 4.85 1.15 8.22 1.74 3.24   (4 FAIL)
+    //   heavy 1.16 14.29 1.75 8.32 1.28 10.08 2.78 5.29  (4 FAIL)
+    // A focused-window ring is STATE (_tokens.edges.state: solid, hue-coded,
+    // 3:1). The floor is enforced PER STOP, not on the average, because
+    // `borderangle` rotates the sweep — a single edge shows only one band at a
+    // time, so a dark stop means a genuinely invisible edge some of the time.
+    //
+    // ⚠ LADDER GAP. There is no dark rung in accent.json that clears 3:1 in
+    // ANY hue family; the darkest passing colour in the whole palette is
+    // #ae206c at 3.138:1, and nothing sits between 2.991:1 (teal_deep) and it.
+    // So "alternate dark/bright" and ">=3:1" are mutually exclusive — the same
+    // conflict _findings.teal_alpha_bisection proved for the alpha seams. Each
+    // mood therefore alternates the two BRIGHTEST legal rungs of its own ramp
+    // instead of dark against bright. Every mood keeps its hue identity and
+    // every value below is an existing accent.json token — nothing invented.
+    // (7 of the 24 old stops — ff8fc7, all six unique busy darks/brights, and
+    // c46a1f — existed in NO token, ramp or string in accent.json at all.)
+    //
+    // Stop count drops 8 -> 6 so calm can satisfy the byte-identity rule
+    // against the six-stop config declaration; write() maps over `stops` and
+    // only indexes stops[1], which is still a bright rung, so nothing else
+    // depends on the length.
+    //
+    // calm  — ice. Owner 08-19 chrome: glacier[0] focus / glacier[5] hover.
+    //   7fe8ff = glacier[0] (_tokens.resolved.accent-interactive)    14.50:1
+    //   b7e6f2 = glacier[5] (_tokens.resolved.accent-primary)        15.21:1
+    readonly property var calmStops:  ["7fe8ff", "b7e6f2", "7fe8ff", "b7e6f2", "7fe8ff", "b7e6f2"]
+    // busy  — ice leaning violet (load). Not leftover rose: the first stop
+    // is the same glacier[0] as calm; the second is purple[0].
+    //   7fe8ff = glacier[0]                                          14.50:1
+    //   aa6ece = _ramps.purple[0] (_palette_fixed.violet_glow)         5.678:1
+    readonly property var busyStops:  ["7fe8ff", "aa6ece", "7fe8ff", "aa6ece", "7fe8ff", "aa6ece"]
+    // heavy — ember. The only two rungs of _ramps.gold that clear the floor
+    // (gold[0] #50310b is 1.738:1). Luminance 0.158 vs 0.421, the widest
+    // legal alternation any ramp in the palette offers:
+    //   9b621b = _ramps.gold[1] (_palette_fixed.gold)                  4.048:1
+    //   d8a464 = _ramps.gold[2] (_palette_fixed.gold_glow/rich_gold)   9.167:1
+    readonly property var heavyStops: ["9b621b", "d8a464", "9b621b", "d8a464", "9b621b", "d8a464"]
+
+    // Hyprctl floor. 120 ms is enough for a 16 s glacier fade and is not
+    // the old 50 ms beat writer.
+    readonly property int updateMs: 120
+    readonly property int fadeMs: 16000     // one light↔dark glacier cycle
+    property bool _dirty: false
+    property real iceT: 0                   // 0 light glacier … 1 darker
+
+    // ══ THE STRIKE · 2026-08-31, at the owner's request ═══════════════════
+    // The 11:29 ruling ("forget the music, keep the glow") took the beat OFF
+    // this file, and it was the right call at the time: what it removed was a
+    // 50 ms writer driven by a LEVEL, which drifts with loudness and reads as
+    // flicker rather than rhythm. The owner's report on 2026-08-31 -- "ive
+    // played music and i never seen anything really go to the beat" -- is the
+    // other half of that: with the window rim off the beat, the most visible
+    // edge on the screen was the one edge that never moved.
+    //
+    // What is different now: `Beat.kick` is struck by a PREDICTED beat from a
+    // phase-locked tracker, not by whatever crossed a threshold. It fires on
+    // the beat, once per beat, hardest on the downbeat, and it FALLS -- which
+    // is the part an eye reads as rhythm.
+    //
+    // The slow glacier fade underneath is untouched. This rides on top of it,
+    // and when nothing is playing `strike` is 0 and this file behaves exactly
+    // as it did before -- a still ring with a slow glow. Idle stays STILL.
+    //
+    // Cost is unchanged: no new writer and no new timer. The existing 120 ms
+    // fade timer already calls request() ~8x/s and now simply samples a value
+    // that moves. The old 50 ms beat writer is NOT coming back.
+    readonly property real strike: (Beat.enabled && Beat.hot) ? Beat.kick : 0
+
+    // The active window carries the beat; everything else only breathes with
+    // it. Every rim on screen striking at full depth stops reading as rhythm
+    // and starts reading as a strobe -- and it fights you when you are trying
+    // to work in one of those windows.
+    readonly property real strikeInactive: strike * 0.28
+
+    // ── the halo's RESTING state, read from the compositor ──────────────
+    // Not hardcoded on purpose. Three files in this build declare a shadow
+    // range (hyprland.conf says 36, nyxus-hyprland-general.conf says 18) and
+    // the live session was running a fourth value again, so any constant
+    // here would be wrong for somebody and would silently redefine the
+    // resting look the moment the shell started. Read it once, restore to
+    // exactly it. The defaults below are only the fallback for a compositor
+    // that will not answer.
+    property int  _restRange:    36
+    property int  _restAlpha:    0x3a
+    property int  _restAlphaIn:  0x33
+    property string _restHex:    "b7e6f2"
+    property string _restHexIn:  "000000"
+    // Idle halo is glacier[5], not the compositor's leftover #1e03ad
+    // (NYXUS purple). The slow fade mixes this toward glacier[3].
+
+    // One hyprctl at startup, parsed in-process. `-j` gives the colour as a
+    // 32-bit ARGB int, which is why this reads it rather than scraping.
+    Process {
+        id: shadowProbe
+        running: true
+        command: ["hyprctl", "-j", "getoption", "decoration:shadow:color"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    const v = JSON.parse(text).int;
+                    if (typeof v === "number" && v > 0) {
+                        root._restAlpha = (v >>> 24) & 0xff;
+                        // Do not take the compositor's RGB — it has been
+                        // #1e03ad (NYXUS purple). Rest glow is glacier[5].
+                    }
+                } catch (e) { /* keep the fallback */ }
+                rangeProbe.running = true;
+            }
+        }
+    }
+    Process {
+        id: rangeProbe
+        command: ["hyprctl", "-j", "getoption", "decoration:shadow:range"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    const v = JSON.parse(text).int;
+                    if (typeof v === "number" && v > 0) root._restRange = v;
+                } catch (e) { /* keep the fallback */ }
+            }
+        }
+    }
+
+    // ── slow glacier fade (owner 11:29: keep the glow, no music) ─────────
+    Timer {
+        interval: root.updateMs
+        repeat: true
+        running: true
+        onTriggered: {
+            root.iceT = 0.5 + 0.5 * Math.sin(Date.now() * Math.PI * 2 / root.fadeMs);
+            root.request();
+        }
+    }
+
+    // ── the writer: one hyprctl, at most every updateMs ─────────────────
+    function request(): void {
+        if (throttle.running) { _dirty = true; return; }
+        write();
+        throttle.start();
+    }
+    Timer {
+        id: throttle
+        interval: root.updateMs
+        onTriggered: if (root._dirty) { root._dirty = false; root.write(); throttle.start(); }
+    }
+
+    function write(): void {
+        // Light glacier[0]/[5] → darker glacier[4] on the rim. Halo uses
+        // glacier[5] → glacier[3] (glow, not a 3:1 state stop).
+        const t = Math.max(0, Math.min(1, root.iceT));
+        const k = Math.max(0, Math.min(1, root.strike));
+        let a = mixHex("7fe8ff", "4f7fa6", t);
+        let b = mixHex("b7e6f2", "4f7fa6", t);
+
+        // THE STRIKE, on the rim. The glacier pair is pushed toward the
+        // galaxy accent -- violet_glow #aa6ece into plum_glow #d765a2 -- so a
+        // beat reads as the palette's own colour arriving, not as a flash of
+        // some new hue. Capped at 0.72 so the rim never fully leaves glacier:
+        // the WIP-777 focus-contrast floor lives in these stops, and a rim
+        // that abandons them stops saying "this window has focus" on the beat.
+        if (k > 0.001) {
+            a = mixHex(a, "aa6ece", k * 0.72);
+            b = mixHex(b, "d765a2", k * 0.72);
+        }
+
+        let parts = [];
+        for (let i = 0; i < 6; i++)
+            parts.push("rgba(" + (i % 2 === 0 ? a : b) + "ff)");
+
+        const aHi = Math.min(0x55, Math.round(0x33 * (1 + t * 0.35))).toString(16).padStart(2, "0");
+        const aLo = Math.min(0x44, Math.round(0x26 * (1 + t * 0.35))).toString(16).padStart(2, "0");
+        // Unfocused windows breathe rather than strike (see strikeInactive).
+        const ki = Math.max(0, Math.min(1, root.strikeInactive));
+        const inParts = "rgba(" + mixHex(mixHex("4f7fa6", "274b7a", t), "aa6ece", ki) + aHi + ") rgba("
+                      + mixHex(mixHex("274b7a", "4f7fa6", t), "aa6ece", ki) + aLo + ")";
+
+        // THE HALO BLOOM. The shadow is the widest, softest thing the rim
+        // owns, so pushing its range and alpha on the beat is what makes the
+        // edge look like it is breathing rather than just changing colour.
+        // This is the term you see from across the room.
+        const shRange = Math.round(root._restRange * (1 + t * 0.18 + k * 0.55));
+        const shA = Math.min(0xcc, Math.round(root._restAlpha * (1 + t * 0.55 + k * 1.30)))
+                        .toString(16).padStart(2, "0");
+        const shIn = Math.min(0x66, Math.round(root._restAlphaIn * (1 + t * 0.40 + ki * 0.60)))
+                        .toString(16).padStart(2, "0");
+        const shCol = mixHex(mixHex("b7e6f2", "274b7a", t), "d765a2", k * 0.65);
+        const shColIn = mixHex("4f7fa6", "274b7a", t);
+
+        Quickshell.execDetached(["hyprctl", "--batch",
+            "keyword general:col.active_border " + parts.join(" ") + " 45deg ; "
+          + "keyword general:col.inactive_border " + inParts + " 135deg ; "
+          // ── border_size: 1, which is what the profile actually declares ──
+          // WIP-779: this line forced 3 while `nyxus-hyprland-general.conf`
+          // and `hyprland.conf` BOTH declare 1, under a comment in this file
+          // claiming "both say 3". They do not. Because a `hyprctl keyword`
+          // beats a config and this writer runs every `updateMs` (120 ms),
+          // the 3 px rim on screen was this line overriding the profile
+          // roughly eight times a second — which is also why setting the
+          // value live with `hyprctl` appears to work and reads back 3.
+          //
+          // The 3 px had a REASON and the reason has expired: general.conf
+          // records it as "the smallest width where the bands survive the
+          // short edges of a tiled window", which is about the ROTATING
+          // sweep. The owner turned that off on 2026-08-19 ("Idle is STILL
+          // — do not fake a pulse with nothing playing"), and a still ring
+          // has no bands to lose.
+          //
+          // ⚠ This changes WIDTH ONLY. `col.active_border`'s stops are the
+          // WIP-777 focus-contrast floor — glacier[0] 14.50:1, glacier[5]
+          // 15.21:1, enforced PER STOP — and they are untouched above. A
+          // 1 px line at those values still clears the floor by 4x; the
+          // window still says unmistakably that it has focus.
+          + "keyword general:border_size 1 ; "
+          + "keyword decoration:rounding_power 2 ; "
+          + "keyword animation borderangle,0 ; "
+          + "keyword decoration:shadow:range " + shRange + " ; "
+          + "keyword decoration:shadow:color rgba(" + shCol + shA + ") ; "
+          + "keyword decoration:shadow:color_inactive rgba(" + shColIn + shIn + ")"]);
+    }
+
+    // Mix two "rrggbb" hexes by t (0..1). Light glacier t=0; darker t=1.
+    function mixHex(a: string, b: string, t: real): string {
+        const u = Math.max(0, Math.min(1, t));
+        const parse = h => [parseInt(h.substr(0, 2), 16), parseInt(h.substr(2, 2), 16), parseInt(h.substr(4, 2), 16)];
+        const A = parse(a), B = parse(b);
+        const f = i => Math.round(A[i] + (B[i] - A[i]) * u).toString(16).padStart(2, "0");
+        return f(0) + f(1) + f(2);
+    }
+
+    // On shell start: paint the glacier glow once, then the fade timer
+    // keeps it moving. rounding_power 2 so the rim meets at the corners.
+    Component.onCompleted: {
+        write();
+    }
+}
