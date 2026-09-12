@@ -493,6 +493,7 @@ AppWindow {
         id: snap
         running: false
         command: ["python3", win.io(), "snapshot"]
+        onExited: function (code) { if (code !== 0) console.warn("[Hardware] snapshot io exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try {

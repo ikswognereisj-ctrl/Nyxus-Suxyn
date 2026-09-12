@@ -256,6 +256,8 @@ Singleton {
     Process {
         id: tap
         command: ["bash", beat._tapPath, beat._confPath, beat._liveConf]
+        // `tap` is a long-lived feed; any exit is unexpected, so surface it.
+        onExited: function (code) { if (code !== 0) console.warn("[Beat] audio tap exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 const lines = text.trim().split("\n").filter(l => l.length > 0);
@@ -433,6 +435,7 @@ Singleton {
                 beat.locked = false;
                 beat.bpm = 0;
                 beat.spectrum = [];
+                console.warn("[Beat] audio engine stopped");
                 // Died, or never started. Try again rather than hand the
                 // build to cava for the rest of the session.
                 if (beat.enabled)
