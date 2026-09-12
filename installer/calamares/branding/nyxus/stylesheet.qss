@@ -1,0 +1,665 @@
+/*
+ * NYXUS · Calamares stylesheet — NYXUS GLASS, rev 3            rev 2026-08-17 r1
+ *
+ * Loaded automatically by Calamares when the "nyxus" branding component is
+ * active. THE INSTALLER IS THE FIRST SURFACE A NEW USER EVER SEES, and it is
+ * the surface a custom distro most reliably leaves unstyled.
+ *
+ * ── WHICH COPY THIS IS ─────────────────────────────────────────────────────
+ * THIS FILE SHIPS. `python3 scripts/ship-manifest.py --json` resolves:
+ *   /etc/calamares/branding/nyxus/stylesheet.qss
+ *     ← iso-builder/nyx-profile/airootfs/etc/calamares/branding/nyxus/…
+ *       build-iso.sh:134, cp -a, twin_exists: FALSE
+ * The `artifacts/api-server/nyxus-scripts/calamares/` copy is NOT a twin of
+ * this file and does not contend for this destination: the manifest resolves it
+ * to /opt/nyxus-cache/calamares/… (build-iso.sh:1345), the offline install
+ * payload. It still carries the pre-rose violet palette (#521e72, #e2c98a) and
+ * a dozen off-token greys. THE TWO-COPY RULE DOES NOT APPLY HERE — there is no
+ * winner and loser, there are two destinations, and only this one is read by
+ * the running installer. The cache copy is flagged for the owner, not deleted.
+ *
+ * ── WHAT QSS CAN AND CANNOT EXPRESS ────────────────────────────────────────
+ * Calamares is a Qt WIDGETS application styled by QSS. It is not GTK CSS and
+ * it is not QML. Verified against Qt 6.11.1 on this host, not assumed:
+ *   CAN   alpha in any colour — rgba(r,g,b,float) and #AARRGGBB composite
+ *         identically over the widget's own background;
+ *         `selection-background-color` honours alpha (rgba(215,101,162,0.35)
+ *         renders exactly #4e2a42, matching this file's arithmetic);
+ *         `::item:selected { border-left: … }` — the §4.9 left accent bar;
+ *         `placeholder-text-color`; per-state `margin` (the §4.7 thumb width
+ *         ladder); `qlineargradient`.
+ *   CANNOT `outline` / `outline-offset` — IGNORED by Qt QSS (probed: a teal
+ *         outline on :focus produced no teal pixel). §3's focus ring therefore
+ *         has to be carried by `border`, which is why :focus below is a 2px
+ *         border and not an additive ring.
+ *         No `transition`, no `animation` — HORIZON §3.1/§3.2 durations and
+ *         curves are UNREACHABLE from QSS. Every state below is a hard cut.
+ *         No `text-transform`, no `letter-spacing`, no `font-feature-settings`
+ *         — so §2's tracked-uppercase label style and `tnum` cannot be set
+ *         here; JetBrains Mono is monospaced, so figures are tabular by
+ *         construction rather than by feature flag.
+ *         No blur. WIP-61: a Qt window has no compositor behind it, so this
+ *         surface carries the PALETTE, not the glass.
+ *   NO GRADIENT IS USED IN THIS FILE, DELIBERATELY. The ADDENDUM §A4 gradient
+ *         rule is "exactly one per window"; its one home in this installer is
+ *         the slide title rule in show.qml. Do not add a second here.
+ *
+ * ── COLOUR AUTHORITY ───────────────────────────────────────────────────────
+ * Every value is a `theme/accent.json` token, named beside it. No hex is
+ * invented and none is computed into a new literal: the tint rungs are an
+ * ALPHA on a named colour, so the token stays greppable.
+ * REMOVED IN THIS REVISION:
+ *   #891955 ×11 — `_tokens.resolved.accent-hairline`, whose own role reads
+ *     "DEMOTED. 1px dividers only, NEVER a fill", 2.27:1 on the ground. It was
+ *     the fill of the PRIMARY ACTION BUTTON, both item-view selection
+ *     backgrounds, both scrollbar thumbs, a menu separator and five borders.
+ *   #505987 ×4 — NOT A TOKEN. It exists in accent.json only INSIDE a prose
+ *     `_contrast_note` string discussing what bright.black "is now"; the actual
+ *     `_terminal.bright.black` value is #6c76a8. It was the resting border on
+ *     every button, every input, the combo popup and the progress track.
+ *   #03040c / #07091a / #0b102a — the `_swirl._emission.base` mirror, not
+ *     `_palette_fixed`. Replaced by void/surface so that every contrast figure
+ *     accent.json publishes is true of this surface verbatim.
+ *   #ffffff ×2 as a text colour — `_terminal.bright.white`, a terminal role.
+ * ONE NOTE FOR WHOEVER WIDENS 13q11 TO `.qss`, WHICH IS OWED (WIP-745): the
+ * removed values above are named IN THIS COMMENT on purpose — it is the only
+ * place a future reader can learn what was wrong here. 13q11's comment stripper
+ * understands the hash form for conf-family files and the double-slash form for
+ * .qml, and the C-style block form only for .css and .rasi. Widening the
+ * extension list WITHOUT extending `comment_start()` to the block form will fail
+ * the build on this header rather than on any shipped colour. Proven, not
+ * predicted: an earlier draft of show.qml quoted three withdrawn hexes inside a
+ * block-comment header and 13q11 — which does already walk .qml — failed the
+ * build on exactly those three.
+ *
+ * ── THE FILL LADDER · THREE LEVELS AND ONE HOVER STEP (rev 3 §1.1) ─────────
+ *   glass-panel          #020506  _palette_fixed.void    = _tokens.edges.ground
+ *                                 the window, menus, tooltips, combo popups
+ *   glass-control        #040b0e  _palette_fixed.surface
+ *                                 buttons, inputs, views, progress track
+ *   glass-control-hover  plum_glow @ 0.09   = 0.18 / 2, per
+ *                                 _tokens.edges.hover_is_a_delta._rule
+ *                                 ("hover LIFTS HALFWAY TOWARD THE NEXT FILL
+ *                                 LEVEL rather than occupying a level of its
+ *                                 own") — computed from the rung, not invented
+ *   glass-control-active plum_glow @ 0.18   rev 3 §4.4
+ *   selection            plum_glow @ 0.35   rev 3 §4.8
+ *   pressed              plum_glow @ 0.56   _tokens.edges.hover_is_a_delta
+ *                                 .missing_middle ("control at 0.56")
+ * ONE HUE (plum_glow = accent-primary), FOUR ORDERED ALPHAS. Because they are
+ * one hue at increasing alpha they cannot collide and cannot reorder.
+ * WHY void IS THE PANEL AND surface IS THE CONTROL, and not the other way, and
+ * not `elevated` #071318: MEASURED. `_tokens.edges.state.hover` #ff7847 has the
+ * thinnest margin in the palette (4.6% over 3:1, and only because the ground is
+ * near-black). It measures 3.14:1 on void and 3.04:1 on surface — both pass —
+ * and 2.89:1 on elevated #071318, WHICH FAILS. `elevated` cannot be a bed for
+ * any control whose hover edge is a state stop, so it is not used in this file.
+ *
+ * ── THE TWO-LADDER EDGE MODEL (`_tokens.edges`, owner ruling 2026-08-17) ────
+ * SEAMS — ladder A. Alpha teal. Structural boundaries. WCAG 1.4.11 EXEMPT:
+ *   seams.structural  rgba(10, 162, 214, 0.07)  dividers, non-interactive
+ *                     borders, panel/menu/tooltip edges, header and table rules
+ *   seams.idle        rgba(10, 162, 214, 0.22)  THE RESTING EDGE OF AN
+ *                     INTERACTIVE CONTROL. Read seams.idle._role: "a switch,
+ *                     check, radio, entry or button that is doing nothing.
+ *                     STILL A SEAM." A resting button border is ladder A.
+ *   DO NOT "FIX" 1.06 AND 1.32 UPWARD. seams._do_not_fix has costed and
+ *   REJECTED that change; lifting teal to 3:1 needs alpha ≥ 0.593
+ *   (_findings.teal_alpha_bisection) which draws a bright line around
+ *   everything in the build.
+ * STATE — ladder B. Solid palette stops, hue-coded, 3:1 floor, NO exemption:
+ *   state.hover    #ff7847  plum        :hover
+ *   state.active   #ff7847  plum_glow   :pressed · :checked · :selected · the
+ *                                       default action's resting edge
+ *   state.focus    #b7e6f2  teal        :focus — A DIFFERENT HUE from hover,
+ *                                       not a brighter one. state._why_hue_coded
+ *                                       is explicit that a brightness step does
+ *                                       not satisfy rev 3 §3 for anyone who
+ *                                       cannot compare two intensities of one
+ *                                       colour side by side. This is the
+ *                                       accessibility floor, not a preference.
+ *   state.disabled → drops to seams.structural and NEVER glows. Not a fourth
+ *                    colour: a control that cannot be operated has no state.
+ * HOW A SOLID STATE EDGE IS MEASURED HERE, said out loud because the two
+ * neighbours disagree: an opaque 1px border has a surface on each side. It is
+ * measured against the PARENT it is drawn on — the bed the element sits on —
+ * because that is the boundary that identifies the control. Measured inward
+ * against a lifted hover fill, #ff7847 falls to 2.81:1; that is a computed
+ * consequence of its 4.6% headroom and it is the same shape of conflict as
+ * _findings.teal_alpha_bisection. On this surface hover is carried by the FILL
+ * AND the EDGE together, and the edge is read outward.
+ *
+ * ── RADII AND SPACING ARE HORIZON'S ────────────────────────────────────────
+ * Radius ladder r0 0 · r1 8 · r2 14 · r3 22 · rFull. HORIZON retires the
+ * freehand 4/8/12/17/18 by name, so the 3/4/5/6/7 in the previous revision are
+ * all off-ladder and are gone. Nesting rule (rev 3 §1.7): inner = outer −
+ * padding — a menu at r2 14 with padding 6 gives items exactly r1 8.
+ * Spacing grid 2·4·6·8·12·16·20·24·32·40. The previous 7px and 10px paddings
+ * are off-grid and are gone. The one exception is the 1px padding compensation
+ * on :focus, which exists so a 2px focus border does not move the label — the
+ * BOX stays on-grid, which is what the grid governs.
+ * MOTION: HORIZON owns durations and curves and QSS can express none of them.
+ *
+ * ── CONTRAST, MEASURED PER ELEMENT AGAINST ITS OWN BED ─────────────────────
+ * Floors: 4.5:1 text · 3:1 UI and border · seams exempt · WCAG 1.4.3 exempts
+ * text in an inactive component. Figures inline below. Nothing here is stated
+ * in prose without the pair it was measured on.
+ *
+ * © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+ */
+
+/* ── The window · glass-panel ───────────────────────────────────────────────
+ * A scoped #mainApp rule is not enough: the partition page and several module
+ * panes paint their own viewport, and a white QLabel colour over a white pane
+ * made the Erase-disk / Manual options invisible (seen live 2026-08-13).
+ * Styling QWidget wholesale is what the Arch-family themes do for this reason.
+ * font-family: rev 3 §2 requires ONE fallback chain across GTK, Qt, terminal
+ * and Quickshell or the same string renders at two widths in two apps. The
+ * build's chain is Inter — gtk-3.0/settings.ini `gtk-font-name=Inter 11` and
+ * shell/Theme.qml `fUi`. Rev 3 §2 asks for Rajdhani; RAJDHANI IS NOT PACKAGED
+ * (absent from packages.x86_64, and fc-match resolves it to Noto Sans), while
+ * `inter-font` ships both Inter and Inter Display. The repository is the
+ * authority, so the chain is Inter. No font-size is set: Qt's default point
+ * size keeps Calamares' own layout arithmetic intact. */
+QWidget {
+    background-color: #020506;               /* void · glass-panel · ground   */
+    color:            #edf1ff;               /* text · 18.14:1 on void        */
+    font-family:      "Inter";
+}
+
+QLabel {
+    background: transparent;
+    color:      #edf1ff;                     /* text · 18.14:1 on void        */
+}
+
+QLabel:disabled {
+    color: #6c76a8;                          /* rim_dim · 4.67:1 on void      */
+}
+
+/* ── Buttons · all five states ──────────────────────────────────────────────
+ * r1 8, padding 8×16, min-height 32 (rev 3 §4.1). Rest is glass-control with a
+ * SEAM edge, because seams.idle._role says a resting interactive control's
+ * border is still a seam. Hover lifts the fill by the delta and takes the plum
+ * state stop. Pressed goes to the 0.56 middle and the active stop. Focus is a
+ * 2px TEAL border — a different hue, since `outline` is ignored by Qt. */
+QPushButton {
+    background-color: #040b0e;               /* surface · glass-control       */
+    color:            #edf1ff;               /* text · 17.58:1 on surface     */
+    border:           1px solid rgba(10, 162, 214, 0.22);   /* seams.idle      */
+    border-radius:    8px;                   /* HORIZON r1                    */
+    padding:          8px 16px;
+    min-height:       32px;
+    font-weight:      500;                   /* rev 3 §2 control label        */
+}
+
+QPushButton:hover {
+    background-color: rgba(255, 120, 71), 0.09);  /* glass-control-hover      */
+    border-color:     #ff7847;               /* state.hover · 3.14:1 outward  */
+}
+
+QPushButton:pressed {
+    background-color: rgba(255, 120, 71), 0.56);  /* missing_middle           */
+    border-color:     #ff7847;               /* state.active · 6.11:1 outward */
+}
+
+/* :focus LAST of the live states so keyboard focus wins over pointer hover —
+ * rev 3 §7 requires focus be visibly distinct from hover. 2px at #b7e6f2 is
+ * 6.96:1 on void; padding is trimmed 1px so the label does not jump. */
+QPushButton:focus {
+    border:  2px solid #b7e6f2;              /* state.focus                   */
+    padding: 7px 15px;
+}
+
+QPushButton:disabled {
+    background-color: #020506;               /* drops BELOW resting, per §3   */
+    color:            #6c76a8;               /* rim_dim · 4.67:1 · 1.4.3      */
+    border:           1px solid rgba(10, 162, 214, 0.07);   /* structural      */
+}
+
+/* The default action — Next / Install. It was a solid #891955 slab: the
+ * DULLEST RUNG IN THE RAMP (2.27:1) as the fill of the most-clicked control in
+ * the product, and a role its own token forbids ("NEVER a fill"). It is now the
+ * on-state of rev 3 §3 — accent TINT plus a 2px state.active edge at 6.11:1 —
+ * because §1.1 and ADDENDUM §A5 both refuse a solid opaque accent block ("they
+ * read as pasted in"). The identity lives in the fill and the weight, so the
+ * teal focus edge can still override the border without the button losing it. */
+QPushButton:default,
+QPushButton[default="true"] {
+    background-color: rgba(255, 120, 71), 0.18);  /* glass-control-active     */
+    color:            #edf1ff;               /* text · 14.47:1 on the tint    */
+    border:           2px solid #ff7847;     /* state.active · 6.11:1 outward */
+    padding:          7px 15px;              /* 2px-border compensation       */
+    font-weight:      600;
+}
+
+QPushButton:default:hover {
+    background-color: rgba(255, 120, 71), 0.35);  /* one rung up              */
+}
+
+QPushButton:default:pressed {
+    background-color: rgba(255, 120, 71), 0.56);  /* missing_middle           */
+}
+
+QPushButton:default:focus {
+    border:  2px solid #b7e6f2;              /* state.focus · different hue   */
+    padding: 7px 15px;
+}
+
+QPushButton:default:disabled {
+    background-color: #020506;
+    color:            #6c76a8;
+    border:           1px solid rgba(10, 162, 214, 0.07);
+    padding:          8px 16px;
+}
+
+/* ── Inputs ─────────────────────────────────────────────────────────────────
+ * r1 8, min-height 32, padding 6×12 (rev 3 §4.8). §4.8 puts inputs at the
+ * STRUCTURAL seam at rest rather than idle — "inputs are quieter than buttons
+ * at idle" — and that is the one place this file distinguishes the two seam
+ * rungs by element class rather than by state.
+ * Text selection inside a field is `selection` (plum_glow @ 0.35): #edf1ff on
+ * the composited #4e2a42 is 10.74:1. */
+QLineEdit, QComboBox, QSpinBox, QPlainTextEdit, QTextEdit {
+    background:    #040b0e;                  /* surface · glass-control       */
+    color:         #edf1ff;                  /* 17.58:1 on surface            */
+    border:        1px solid rgba(10, 162, 214, 0.07);  /* seams.structural   */
+    border-radius: 8px;                      /* HORIZON r1                    */
+    padding:       6px 12px;
+    min-height:    32px;
+    selection-background-color: rgba(255, 120, 71), 0.35);
+    selection-color:            #edf1ff;     /* 10.74:1 on #4e2a42            */
+    placeholder-text-color:     #a8aecc;     /* text_dim · 9.05:1 · §4.8      */
+}
+
+QSpinBox {
+    font-family: "JetBrainsMono Nerd Font";  /* law 6 · numbers are mono      */
+}
+
+QLineEdit:hover, QComboBox:hover, QSpinBox:hover,
+QPlainTextEdit:hover, QTextEdit:hover {
+    border-color: #ff7847;                   /* state.hover · 3.04:1 on bed   */
+}
+
+/* A dropdown's "pressed" is its popup being OPEN, which Qt spells `:on`. There
+ * is no `:pressed` on a text input at all — Qt exposes none — so QLineEdit and
+ * friends have four meaningful states, not five, and that is a toolkit fact
+ * rather than an omission. Stated rather than quietly left out. */
+QComboBox:on {
+    border-color: #ff7847;                   /* state.active · 5.92:1         */
+}
+
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus,
+QPlainTextEdit:focus, QTextEdit:focus {
+    border:  2px solid #b7e6f2;              /* state.focus · 6.75:1          */
+    padding: 5px 11px;
+}
+
+QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled,
+QPlainTextEdit:disabled, QTextEdit:disabled {
+    background: #020506;
+    color:      #6c76a8;                     /* 4.67:1 · 1.4.3 exempt         */
+    border:     1px solid rgba(10, 162, 214, 0.07);
+}
+
+/* The combo popup is a panel (rev 3 §1.1 lists popovers at panel level), so it
+ * takes the panel fill and a structural seam — NOT a state stop. r2 14 with
+ * padding 6 gives items r1 8 by the nesting rule.
+ * NOTE: ::drop-down and ::down-arrow are deliberately UNSTYLED. Qt blanks the
+ * stock arrow as soon as the sub-control is given a box, and replacing it needs
+ * a chevron SVG this branding directory does not ship. Styling it without the
+ * asset would leave the installer's combo boxes with no visible arrow. Recorded
+ * as an asset gap, not fixed by inventing one. */
+QComboBox QAbstractItemView {
+    background:       #020506;               /* void · glass-panel            */
+    color:            #edf1ff;
+    border:           1px solid rgba(10, 162, 214, 0.07);   /* structural      */
+    border-radius:    14px;                  /* HORIZON r2                    */
+    padding:          6px;
+    selection-color:  #edf1ff;               /* the FILL comes from ::item:selected
+                                              * below — the popup's view is a
+                                              * QListView, so one rule serves both
+                                              * and there is no second paint     */
+}
+
+/* ── The partition module's custom views ────────────────────────────────────
+ * THIS RULE COMES BEFORE THE VIEW RULES BELOW, AND THE ORDER IS LOAD-BEARING.
+ * `QAbstractItemView` and `QListView` are both single type selectors, so they
+ * have EQUAL specificity and Qt's cascade gives it to the LAST one. In the
+ * previous revision this rule sat AFTER the QListView block, so the list
+ * background it declared (#07091a) was dead text and every list in the
+ * installer was actually painted the canvas colour. Measured on Qt 6.11.1 with
+ * the old ordering: the QListWidget viewport came back #020506, not the fill the
+ * file declared. Moving the base-class rule above the derived-class rules is
+ * what makes both land.
+ *
+ * WIP-586, AND THE PREVIOUS REVISION'S COMMENT HERE WAS WRONG. It claimed this
+ * rule fixed the legend text; it does not. PartitionLabelsView paints its
+ * legend with a pen pinned to #222222 IN C++, not from the palette, so QSS
+ * CANNOT REACH IT — verified live: QWidget, QAbstractItemView and type-selector
+ * rules all applied and the pen never moved. The rule is kept because the
+ * BACKGROUND half of it does land; the colour half is inert and is now labelled
+ * as inert rather than as a fix.
+ * The recorded QSS workaround is a light inset background on these two views
+ * with #c9d0e8. NOT TAKEN, and the reason is computed: #c9d0e8 has relative
+ * luminance 0.6336 against `_tokens.ambient.peak_luminance_max` 0.45 — 41% over
+ * the clamp — and _findings.peak_luminance_breach rules a value over that clamp
+ * "safe as a GLYPH, or a 1px core … UNSAFE AS ANY FILLED AREA". A near-white
+ * panel is also the single loudest thing §1.1 and ADDENDUM §A5 forbid. The
+ * legend's information is duplicated by the partition table beneath it, so the
+ * right answer is an upstream patch carried in the package, not a white box. */
+QAbstractItemView,
+PartitionBarsView, PartitionLabelsView {
+    background-color: #020506;               /* void — this half DOES apply   */
+    color:            #edf1ff;               /* INERT on PartitionLabelsView  */
+}
+
+/* ── Views · the layout, keyboard, locale and package lists ─────────────────
+ * THIS IS THE ELEMENT THE 2026-08-15 AUDIT COULD NOT PHOTOGRAPH, because a
+ * diskless VM fails Calamares' requirements check before a list is ever drawn.
+ * The Qt selection highlight on this surface had never been seen by anyone.
+ * Rev 3 §4.9: rows are quiet — "Idle transparent. Hover glass-control-hover,
+ * NO BORDER, NO GLOW — only the fill moves. Selected: fill glass-control-active
+ * + a 2px left bar in accent-primary." The left bar is implementable in QSS and
+ * is verified rendering on this host: ::item:selected { border-left: 2px } put
+ * #ff7847 in the first two pixel columns with the row body at #4e2a42.
+ * `alternate-background-color` is set EQUAL to the view background on purpose:
+ * a stripe is a fourth fill level, which §1.1 calls a defect, but leaving it
+ * unset lets Qt fall back to a palette AlternateBase that can be light.
+ * NO `selection-background-color` ON THE VIEW, DELIBERATELY: ::item:selected is
+ * the only one of the two that can also draw the §4.9 left bar, so the row rule
+ * owns the fill and there is no second declaration to disagree with it.
+ * ONE MEASURED QT BEHAVIOUR, RECORDED RATHER THAN GLOSSED. A row that is both
+ * CURRENT and SELECTED — which is every row the user just clicked — has its
+ * background painted more than once by Qt, so an ALPHA fill composites 2× and 3×
+ * over the text rect while the row's padding stays at 1×. Isolated on Qt 6.11.1
+ * by putting `current` on one row and `selected` on another: the selected-only
+ * row is a uniform #4e2a42, so the banding is Qt's current-item rect and not
+ * these rules. It is NOT suppressible from QSS — `selection-background-color:
+ * transparent`, dropping border-left and dropping border-radius were each tried
+ * and none of them changes it. The bands measure #4e2a42 → #623b54 → #73405e,
+ * 1.20:1 apart, and EVERY FLOOR STILL PASSES AT THE WORST OF THEM:
+ *     #edf1ff on #73405e = 7.10:1   (text floor 4.5)
+ *     left bar #ff7847 vs #4e2a42 at the row edge = 3.62:1, and vs the view
+ *     bed #040b0e = 5.92:1          (component floor 3.0)
+ * So this is a cosmetic 1.2:1 mottle inside a selected row, disclosed, and not
+ * a legibility defect. A solid fill would remove it and cannot be used: the only
+ * solid stop bright enough to read as a selection is #ff7847, and #edf1ff on it
+ * is 2.97:1. */
+QListView, QTreeView, QListWidget, QTableView {
+    background:    #040b0e;                  /* surface · glass-control       */
+    color:         #edf1ff;
+    border:        1px solid rgba(10, 162, 214, 0.07);      /* structural      */
+    border-radius: 14px;                     /* HORIZON r2                    */
+    padding:       6px;
+    alternate-background-color: #040b0e;     /* no fourth fill level          */
+}
+
+QListView:focus, QTreeView:focus, QListWidget:focus, QTableView:focus {
+    border:  2px solid #b7e6f2;              /* state.focus · 6.75:1          */
+    padding: 5px;
+}
+
+QListView::item, QTreeView::item, QListWidget::item, QTableView::item {
+    border-radius: 8px;                      /* r2 14 − padding 6 = r1 8      */
+    padding:       0px 12px;                 /* rev 3 §4.9 · height 32, pad 0×12 */
+    min-height:    32px;
+    border-left:   2px solid transparent;    /* reserved, so rows never shift */
+}
+
+QListView::item:hover, QTreeView::item:hover,
+QListWidget::item:hover, QTableView::item:hover {
+    background: rgba(255, 120, 71), 0.09);   /* glass-control-hover, no border */
+}
+
+QListView::item:selected, QTreeView::item:selected,
+QListWidget::item:selected, QTableView::item:selected {
+    background:  rgba(255, 120, 71), 0.35);  /* selection · #4e2a42           */
+    color:       #edf1ff;                    /* 10.74:1                       */
+    border-left: 2px solid #ff7847;          /* state.active · 3.62:1 on bed  */
+}
+
+QCheckBox, QRadioButton {
+    color:   #edf1ff;
+    spacing: 8px;                            /* rev 3 §4.1 icon+label gap     */
+}
+
+QCheckBox:disabled, QRadioButton:disabled {
+    color: #6c76a8;                          /* 4.67:1 · 1.4.3 exempt         */
+}
+
+/* ── Progress · the one moving part ─────────────────────────────────────────
+ * Rev 3 §4.6 wants the fill in accent-primary #ff7847. IT CANNOT BE, AND THE
+ * REASON IS MEASURED. QProgressBar draws its own centred text and
+ * `isTextVisible()` is TRUE by default (probed on Qt 6.11.1 — #edf1ff pixels
+ * confirmed inside the bar), so one text colour has to clear 4.5:1 on BOTH the
+ * track and the fill:
+ *     #edf1ff on #ff7847 = 2.97:1  ← would ship unreadable text on the only
+ *                                    screen that says how far the install got
+ *     #edf1ff on #ff7847 = 5.78:1  ← passes
+ *     #edf1ff on #040b0e = 17.58:1 (track, either way)
+ * So the fill is accent-pinned #ff7847, which `pinned._pinned_contrast_rule`
+ * blesses for exactly this use ("edge and fill sites keep it"). #ff7847 is also
+ * state.hover, and that is not a collision: a progress bar is not interactive,
+ * so it has no hover state to be confused with. Fill vs track is 3.04:1, which
+ * clears the 3:1 component floor. */
+QProgressBar {
+    background:    #040b0e;                  /* surface · glass-control       */
+    color:         #edf1ff;                  /* 5.78:1 on the fill            */
+    border:        1px solid rgba(10, 162, 214, 0.07);      /* structural      */
+    border-radius: 8px;                      /* HORIZON r1                    */
+    text-align:    center;
+    font-family:   "JetBrainsMono Nerd Font";               /* law 6           */
+}
+
+QProgressBar::chunk {
+    background-color: #ff7847;                /* accent-pinned · 3.04:1 vs track */
+    border-radius:    8px;
+}
+
+/* ── Tooltip · rev 3 §4.11 · panel fill, structural seam, no glow ───────────
+ * The previous revision bordered the tooltip in #ff7847 — a ladder-B STATE stop
+ * on a surface that has no state and is not interactive. */
+QToolTip {
+    background:    #020506;                  /* void · glass-panel            */
+    color:         #c9d0e8;                  /* text_muted · 13.31:1 · §4.11  */
+    border:        1px solid rgba(10, 162, 214, 0.07);      /* structural      */
+    border-radius: 8px;                      /* HORIZON r1                    */
+    padding:       6px 12px;
+}
+
+/* ══ Controls ported from skel/.config/qt6ct/qss/nyxus-galaxy.qss ═══════════
+ * So that an installer checkbox and a desktop Qt checkbox are the same object.
+ * The port is kept; the values move onto the two ladders. */
+
+/* checkbox + radio · rev 3 §4.4, 16px. RADIUS: HORIZON publishes r0 0 and r1 8
+ * and nothing between, so a 16px box cannot be a rounded square — r1 on a 16px
+ * box IS a circle. The checkbox therefore takes r0 (a true square) and the
+ * radio rFull (a true circle), which keeps them on the ladder AND makes the two
+ * unmistakable from each other. The previous 4px was one of the freehand radii
+ * HORIZON retires by name. Recorded as a HORIZON gap, not papered over.
+ * NO TICK GLYPH: Qt draws ::indicator content from an `image:`, and this
+ * branding directory ships no check SVG. §4.4's "glyph in accent-primary" needs
+ * that asset; the checked state is a filled box until it exists. */
+QCheckBox::indicator, QRadioButton::indicator {
+    width:  16px;
+    height: 16px;
+    background-color: #040b0e;               /* surface · glass-control       */
+    border: 1px solid rgba(10, 162, 214, 0.22);             /* seams.idle      */
+}
+QCheckBox::indicator    { border-radius: 0px; }             /* HORIZON r0      */
+QRadioButton::indicator { border-radius: 8px; }             /* HORIZON rFull   */
+
+QCheckBox::indicator:hover, QRadioButton::indicator:hover {
+    border-color: #ff7847;                   /* state.hover · 3.04:1          */
+}
+
+QCheckBox::indicator:pressed, QRadioButton::indicator:pressed {
+    border-color: #ff7847;                   /* state.active · 5.92:1         */
+}
+
+QCheckBox::indicator:checked, QRadioButton::indicator:checked {
+    background-color: #ff7847;               /* state.active · 5.92:1 vs bed  */
+    border-color:     #ff7847;
+}
+
+QCheckBox::indicator:focus, QRadioButton::indicator:focus {
+    border: 2px solid #b7e6f2;               /* state.focus · different hue   */
+}
+
+QCheckBox::indicator:disabled, QRadioButton::indicator:disabled {
+    background-color: #020506;
+    border-color:     rgba(10, 162, 214, 0.07);             /* structural      */
+}
+
+/* scrollbars · rev 3 §4.7, the one everyone forgets. Overlay, no gutter, no
+ * stepper arrows. §4.7's width ladder — 4px idle, 6px hover, 8px drag — is
+ * expressible in pure QSS as a per-state MARGIN inside a fixed 12px hit box,
+ * which is what the three margins below are. Radii are rFull at each width.
+ * The idle thumb was #891955, a retired rung used as a fill. It is teal at the
+ * seams.idle alpha: the palette publishes no separate "quiet fill" rung, and
+ * `_deleted_vocabulary._substitution` is the precedent that a quiet neutral
+ * here becomes teal at its existing alpha rather than a grey. Recorded as a
+ * token gap. Hover and drag take the state ladder, which is what makes the
+ * thumb legible exactly when it is being aimed at. */
+QScrollBar:vertical   { background: transparent; width:  12px; margin: 0px; }
+QScrollBar:horizontal { background: transparent; height: 12px; margin: 0px; }
+QScrollBar::groove:vertical,
+QScrollBar::groove:horizontal { background: transparent; border: none; }
+
+QScrollBar::handle:vertical {
+    background:    rgba(10, 162, 214, 0.22); /* seams.idle · 4px visible      */
+    min-height:    32px;
+    border-radius: 2px;                      /* rFull at 4px                  */
+    margin:        4px;
+}
+QScrollBar::handle:horizontal {
+    background:    rgba(10, 162, 214, 0.22);
+    min-width:     32px;
+    border-radius: 2px;
+    margin:        4px;
+}
+QScrollBar::handle:hover {
+    background:    #ff7847;                  /* state.hover · 3.14:1 · 6px    */
+    border-radius: 3px;
+    margin:        3px;
+}
+QScrollBar::handle:pressed {
+    background:    #ff7847;                  /* state.active · 6.11:1 · 8px   */
+    border-radius: 4px;
+    margin:        2px;
+}
+QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; border: none; }
+QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
+
+/* sliders · rev 3 §4.5. Track 4px rFull, fill accent-primary, thumb 14px on
+ * glass-control with a state.active edge — a lit ring, not a solid dot, which
+ * is what lets the thumb carry hover, focus and disabled at all. */
+QSlider::groove:horizontal {
+    height:        4px;
+    background:    #040b0e;                  /* surface · glass-control       */
+    border-radius: 2px;                      /* rFull at 4px                  */
+}
+QSlider::sub-page:horizontal {
+    background:    #ff7847;                  /* accent-primary · 6.11:1       */
+    border-radius: 2px;
+}
+QSlider::handle:horizontal {
+    background:    #040b0e;
+    border:        1px solid #ff7847;        /* state.active · 5.92:1         */
+    width:         14px;                     /* rev 3 §4.5 · thumb 14px       */
+    height:        14px;
+    border-radius: 8px;                      /* rFull                         */
+    margin:        -5px 0;
+}
+QSlider::handle:horizontal:hover    { border-color: #ff7847; }   /* state.hover  */
+QSlider::handle:horizontal:pressed  { background:   #ff7847; }   /* state.active */
+QSlider::handle:horizontal:focus    { border: 2px solid #b7e6f2; } /* state.focus */
+QSlider::handle:horizontal:disabled {
+    border-color: rgba(10, 162, 214, 0.07);  /* structural · never glows      */
+    background:   #020506;
+}
+QSlider::sub-page:horizontal:disabled { background: rgba(10, 162, 214, 0.07); }
+
+/* tabs · rev 3 §4.15 is explicit: "Underline style, not boxed." The previous
+ * revision filled the selected tab with a solid #ff7847 block and put #ffffff
+ * on it. Inactive labels are text-secondary, active is text-primary with a 2px
+ * accent-primary underline. The pane is a non-interactive container, so its
+ * border is a structural seam and not the retired rung. */
+QTabWidget::pane {
+    border:        1px solid rgba(10, 162, 214, 0.07);      /* structural      */
+    border-radius: 14px;                     /* HORIZON r2                    */
+    top:           -1px;
+}
+QTabBar::tab {
+    background:    transparent;
+    color:         #c9d0e8;                  /* text_muted · 13.31:1 · §4.15  */
+    padding:       6px 16px;
+    margin-right:  4px;
+    border-bottom: 2px solid transparent;    /* reserved, so tabs never shift */
+}
+QTabBar::tab:hover {
+    color: #edf1ff;                          /* text · 18.14:1                */
+}
+QTabBar::tab:selected {
+    color:         #edf1ff;
+    border-bottom: 2px solid #ff7847;        /* accent-primary · 6.11:1       */
+}
+QTabBar::tab:focus {
+    border-bottom: 2px solid #b7e6f2;        /* state.focus · different hue   */
+}
+QTabBar::tab:disabled {
+    color: #6c76a8;                          /* 4.67:1 · 1.4.3 exempt         */
+}
+
+/* menus · rev 3 §4.10 — panel fill, structural seam, r2 14, padding 6, items
+ * at r1 8 by the nesting rule. Rows follow §4.9: only the fill moves. */
+QMenu {
+    background-color: #020506;               /* void · glass-panel            */
+    color:            #edf1ff;
+    border:           1px solid rgba(10, 162, 214, 0.07);   /* structural      */
+    border-radius:    14px;                  /* HORIZON r2                    */
+    padding:          6px;
+}
+QMenu::item {
+    padding:       0px 12px;                 /* rev 3 §4.9 · height 32, pad 0×12 */
+    min-height:    32px;
+    border-radius: 8px;                      /* 14 − 6 = r1 8                 */
+}
+QMenu::item:selected {
+    background-color: rgba(255, 120, 71), 0.35);   /* selection · #4e2a42     */
+    color:            #edf1ff;               /* 10.74:1                       */
+}
+QMenu::item:disabled {
+    color: #6c76a8;                          /* 4.67:1 · 1.4.3 exempt         */
+}
+QMenu::separator {
+    height:     1px;
+    background: rgba(10, 162, 214, 0.07);    /* structural — a divider IS a seam */
+    margin:     4px 8px;
+}
+
+/* table headers · seams.structural._role names "table and header rules"
+ * explicitly, so the header rule is ladder A by the ruling's own words. */
+QHeaderView::section {
+    background-color: #040b0e;               /* surface · glass-control       */
+    color:            #edf1ff;
+    border:           none;
+    border-bottom:    1px solid rgba(10, 162, 214, 0.07);   /* structural      */
+    padding:          6px 12px;
+}
+
+QGroupBox {
+    border:        1px solid rgba(10, 162, 214, 0.07);      /* structural      */
+    border-radius: 14px;                     /* HORIZON r2                    */
+    margin-top:    12px;
+    padding-top:   8px;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left:    12px;
+    padding: 0 4px;
+    color:   #edf1ff;
+    /* rev 3 §2 wants this uppercase and tracked. QSS has neither
+     * text-transform nor letter-spacing, so the label style cannot be built
+     * here — recorded as a QSS limit, not silently approximated. */
+}

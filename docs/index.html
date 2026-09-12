@@ -138,6 +138,7 @@
       <a href="#lock">Lock</a>
       <a href="#settings">Settings</a>
       <a href="#tour">Tour</a>
+      <a href="#get">Get it</a>
       <a href="#made">How it’s built</a>
     </div>
   </nav>
@@ -241,6 +242,21 @@
       <p class="sub">A longer pass on this machine: Starlight, Start, flyout, Settings, Notes, Media, then a terminal that states the build. Empty workspace. No compositor blur.</p>
       <div class="frame">
         <video src="assets/tour.webm" controls playsinline preload="metadata"></video>
+      </div>
+    </div>
+  </section>
+
+  <section id="get">
+    <div class="wrap">
+      <h2>Get it</h2>
+      <p class="sub">From a terminal, on a machine that already has git:</p>
+      <div class="frame" style="padding:18px 20px;background:#040b0e;font-family:ui-monospace,monospace;font-size:14px;color:#b7e6f2;">
+        curl -fsSL https://ikswognereisj-ctrl.github.io/Nyxus-Suxyn/get.sh | bash
+      </div>
+      <p class="cap">That clones the desktop (Quickshell, Hyprland, walls) into <code>~/src/Nyxus-Suxyn</code>. It does not flash a full OS. The complete system is still the Nyxus Suxyn ISO; the installer slideshow and Calamares theme in this repo go on the next bake.</p>
+      <p class="cap">Then, if you want this chrome on the current user (it backs up first):</p>
+      <div class="frame" style="padding:18px 20px;background:#040b0e;font-family:ui-monospace,monospace;font-size:14px;color:#b7e6f2;">
+        ~/src/Nyxus-Suxyn/tools/apply-shell.sh
       </div>
     </div>
   </section>

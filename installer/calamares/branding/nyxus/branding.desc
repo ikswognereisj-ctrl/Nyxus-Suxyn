@@ -1,0 +1,120 @@
+# NYXUS · Calamares branding descriptor · Suxyn edition
+---
+componentName: nyxus
+
+welcomeStyleCalamares: true
+welcomeExpandingLogo:  false
+windowExpanding:       normal
+windowSize:            900px,560px
+windowPlacement:       center
+
+# ── strings · VOICE_AND_COPY §1, the naming law ─────────────────────────────
+# "Casing is fixed and never varies. Write these exactly: NYXUS · Nyxus Suxyn ·
+# jeTT · Bifrost · Meli · Arsenal · PRISM · Kage Ryu … One canonical spelling in
+# a lookup table, referenced by every surface — including the About screen, THE
+# INSTALLER, GRUB, and every log line."
+# `Suxyn` alone and `NYXUS Suxyn` are neither of the two canonical forms. The
+# product is `NYXUS`; the edition is `Nyxus Suxyn`. Fixed here (2026-08-17).
+#
+# NO KERNEL NAME IN THESE STRINGS. VOICE_AND_COPY §5's installer deck shows
+# "NYXUS 2026.08 · Kage Ryu 6.14.2", but the ISO does NOT ship that kernel by
+# default: WIP-80 closed with build-iso.sh defaulting NYX_WITH_KAGE_RYU to 0, and
+# HANDOFF's settled decision is stock Arch for v1. Printing a kernel the default
+# bake does not install would put a fabricated fact on the first screen a new
+# user reads, so the version line stays edition-only. If the kernel default ever
+# flips, this is the line that follows it.
+#
+# ⚠ THE VERSION IS NOT WRITTEN HERE. IT IS STAMPED AT BAKE. (TRK-3687)
+# Observed on real hardware 2026-09-01: the welcome page read "Welcome to the
+# Calamares installer for Nyxus Suxyn · 2026.08" while the stick it was running
+# from was `nyxus-suxyn-2026.09.01`. The string had been correct when it was
+# typed and had been a lie on every bake since — which is what a hand-pinned
+# version always becomes, because nothing recomputes it and no gate could tell
+# a stale month from a current one.
+# So the three version strings carry the literal token `2026.09.02`, and
+# `build-iso.sh` substitutes `${ISO_DATE}` — the SAME variable that names the
+# ISO file and stamps profiledef.sh's iso_version and os-release's BUILD_ID —
+# into the /var/tmp working copy at bake time. One source for the date, four
+# consumers, and the bake ABORTS if any token survives the substitution, so a
+# broken stamp is loud on the build box instead of quiet on a user's screen.
+# `productName`/`shortProductName` stay literal: the product name is not dated.
+strings:
+    productName:         "Nyxus Suxyn"
+    shortProductName:    "Nyxus Suxyn"
+    version:             "Nyxus Suxyn · 2026.09.02"
+    shortVersion:        "2026.09.02"
+    versionedName:       "Nyxus Suxyn · 2026.09.02"
+    shortVersionedName:  "Nyxus Suxyn"
+    bootloaderEntryName: "Nyxus Suxyn"
+    productUrl:          "https://ikswognereisj-ctrl.github.io/Nyxus-Suxyn/"
+    supportUrl:          "https://github.com/ikswognereisj-ctrl/Nyxus-Suxyn"
+    knownIssuesUrl:      "https://github.com/ikswognereisj-ctrl/Nyxus-Suxyn/issues"
+    releaseNotesUrl:     "https://ikswognereisj-ctrl.github.io/Nyxus-Suxyn/"
+    donateUrl:           ""
+
+images:
+    productLogo:    "logo.png"
+    productIcon:    "logo.png"
+    productWelcome: "welcome.png"
+
+slideshow:           "show.qml"
+slideshowAPI:        2
+
+# ── the style keys this Calamares actually reads (2026-08-13) ───────────────
+# The old lowercase names (sidebarBackground, sidebarTextSelect,
+# sidebarTextHighlight, sidebarBackgroundSelected) are a pre-3.3 schema. The
+# shipped 3.3.15 logs "Unknown branding *style* entry" for every one of them
+# and falls back to unset colors — which painted the non-current step names
+# near-black on the near-black sidebar. That is why the installer appeared to
+# show only the current step: Welcome, Location, Partitions, Users, Summary,
+# Install were all there, invisible. Verified against the binary itself:
+# `strings /usr/lib/libcalamares*` lists exactly these four Sidebar keys.
+#
+# ── THE STEP LIST · rev 3 §A3, and the four keys are the whole vocabulary ────
+# THIS IS THE PROGRESS LIST. Calamares gives branding exactly four sidebar
+# colours — no alpha, no left bar, no per-state hooks — so §A3's selected nav
+# item ("glass-control-active fill (cyan at 0.13) + 2px left bar in cyan +
+# glow-sm … NOT a solid magenta pill") cannot be built as specified. What IS
+# available is the hue and the inversion, so the chip takes §A3's cyan.
+#
+# WHAT CHANGED AND WHY, measured:
+#   SidebarBackground        #03040c → #020506  `_swirl._emission.base.void`
+#     was a MIRROR of void, not `_palette_fixed.void`. #020506 is the value
+#     `_tokens.edges.ground.token` names as THE GROUND, which is the bed every
+#     contrast figure in accent.json is measured against — so the sidebar now
+#     sits on the bed the authority assumes. Luminance moves 0.00133 → 0.00135:
+#     visually identical, and now on-token.
+#   SidebarBackgroundCurrent #edf1ff → #0aa2d6  A NEAR-WHITE SLAB was the
+#     loudest break on the first screen a new user sees: `_palette_fixed.text`
+#     used as a large filled area, luminance 0.881 against
+#     `_tokens.ambient.peak_luminance_max` 0.45 — 96% over the clamp, and
+#     _findings.peak_luminance_breach rules anything over it "UNSAFE AS ANY
+#     FILLED AREA". Teal is `_palette_fixed.teal` = `accent-interactive`, which
+#     is §A3's cyan, and it is a SELECTED state, i.e. ladder B, so it is subject
+#     to the 3:1 component floor and clears it at 6.96:1 on the ground.
+#   SidebarTextCurrent       #03040c → #020506  the ground, on the teal chip:
+#     6.96:1, over the 4.5:1 text floor.
+#   SidebarText              unchanged. #edf1ff on the ground is 18.14:1.
+#
+# NOT A TINT, AND SAID OUT LOUD: §1.1 wants control-active to be "a tint, never
+# an opaque fill". These keys take a bare colour and the sidebar is an opaque
+# widget with nothing behind it, so a tint would have to be pre-composited into
+# a new hex — which is exactly the invention this palette forbids. A solid stop
+# at the right hue is the honest option the schema leaves.
+#
+# UNSEEN: no photograph of this sidebar with a teal current-step chip exists.
+# The 08-13 evidence is of the near-white chip.
+#
+# 2026-08-21 (PF) took SidebarBackgroundCurrent to the periwinkle mix of
+# that morning's PERIWINKLE + GLACIER ruling. WITHDRAWN 2026-08-22 (TRK-1460):
+# the owner rejected that colour on tty1 and ordered the build to ship the
+# palette of the last baked ISO, 87da09fe, and nothing else. The current step
+# is back to teal `_palette_fixed.teal` = accent-interactive, the value the
+# bake carries and the reasoning above already measures: ladder B, 6.96:1 on
+# the ground, and SidebarTextCurrent #020506 on it at the same 6.96:1.
+# The four periwinkle hexes are forbidden tree-wide by gate 13t80.
+style:
+    SidebarBackground:        "#020506"
+    SidebarText:              "#b7e6f2"
+    SidebarBackgroundCurrent: "#ff7847"
+    SidebarTextCurrent:       "#020506"
