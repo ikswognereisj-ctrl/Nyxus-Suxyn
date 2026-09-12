@@ -219,6 +219,7 @@ Singleton {
     property string _tap: ""
     property string _audioRouteState: "paused"
     property bool _liveReady: false
+    property bool _routeRefreshPending: false
 
     function _zeroReactiveState(clearSpectrum) {
         beat.bass = 0;
@@ -240,6 +241,7 @@ Singleton {
     function _restartAudioFeed(reason) {
         if (reason && reason.length > 0)
             console.log("[Beat] " + reason);
+        beat._routeRefreshPending = true;
         feedRestartTap.restart();
     }
 
@@ -264,6 +266,11 @@ Singleton {
                 beat._liveReady = true;
                 beat._tap = s;
                 beat._audioRouteState = routeState;
+                if (beat._routeRefreshPending) {
+                    beat._routeRefreshPending = false;
+                    if (routeState === "ok")
+                        feedRestartReaders.restart();
+                }
                 if (playing !== beat.havePlayback) {
                     beat.havePlayback = playing;
                     if (!playing)
@@ -319,14 +326,12 @@ Singleton {
             tap.running = false;
             tapStart.stop();
             tapStart.start();
-            feedRestartReaders.restart();
         }
     }
     Timer {
         id: feedRestartReaders
         interval: 80
         onTriggered: {
-            beat._liveReady = true;
             if (beat.enabled) {
                 if (engineProc.running)
                     engineProc.running = false;
