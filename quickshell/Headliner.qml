@@ -155,9 +155,7 @@ PanelWindow {
         target: Hyprland
         function onRawEvent(event) {
             const n = event.name;
-            if (n === "fullscreen" || n === "activewindow" || n === "activewindowv2"
-                || n === "openwindow" || n === "closewindow"
-                || n === "workspace" || n === "workspacev2" || n === "monitorfocus")
+            if (n === "fullscreen" || n === "openwindow" || n === "closewindow")
                 Hyprland.refreshToplevels();
         }
     }

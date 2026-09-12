@@ -278,11 +278,13 @@ Singleton {
                     if (routeState !== "ok")
                         beat._zeroReactiveState(true);
                 }
-                if (sinkChanged) {
+                if (sinkChanged && routeState === "ok") {
                     console.log("[Beat] monitor source -> " + s);
                     beat._restartAudioFeed("reconnecting audio monitor after sink change");
                 } else if (routeChanged && routeState === "ok") {
                     beat._restartAudioFeed("reconnecting audio monitor after route state change");
+                } else if (sinkChanged) {
+                    console.log("[Beat] monitor source -> " + s + " (" + routeState + ")");
                 }
             }
         }
