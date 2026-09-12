@@ -137,12 +137,20 @@ PanelWindow {
                                             + (coveredByViewport
                                                ? "viewport covered — pausing wallpaper"
                                                : "viewport exposed — resuming wallpaper"))
+    Timer {
+        id: livewallRefresh
+        interval: 40
+        repeat: false
+        onTriggered: Hyprland.refreshToplevels()
+    }
     Connections {
         target: Hyprland
         function onRawEvent(event) {
             const n = event.name;
-            if (n === "fullscreen" || n === "openwindow" || n === "closewindow")
-                Hyprland.refreshToplevels();
+            if (n === "fullscreen" || n === "openwindow" || n === "closewindow"
+                || n === "activewindow" || n === "activewindowv2"
+                || n === "workspace" || n === "workspacev2" || n === "monitorfocus")
+                livewallRefresh.restart();
         }
     }
 

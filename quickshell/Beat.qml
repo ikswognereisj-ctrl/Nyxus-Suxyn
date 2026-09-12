@@ -240,11 +240,7 @@ Singleton {
     function _restartAudioFeed(reason) {
         if (reason && reason.length > 0)
             console.log("[Beat] " + reason);
-        if (engineProc.running) {
-            engineProc.running = false;
-            engineRestart.restart();
-        }
-        restartCava.restart();
+        feedRestartTap.restart();
     }
 
     // ── one ear: the sink that is PLAYING (not the default, not the mic)
@@ -313,6 +309,29 @@ Singleton {
             proc.running = false;
             if (beat.enabled && beat.havePlayback && beat._liveReady && !beat.engineOk)
                 proc.running = true;
+        }
+    }
+    Timer {
+        id: feedRestartTap
+        interval: 20
+        onTriggered: {
+            beat._liveReady = false;
+            tap.running = false;
+            tapStart.start();
+            feedRestartReaders.restart();
+        }
+    }
+    Timer {
+        id: feedRestartReaders
+        interval: 80
+        onTriggered: {
+            beat._liveReady = true;
+            if (beat.enabled) {
+                if (engineProc.running)
+                    engineProc.running = false;
+                engineRestart.restart();
+            }
+            restartCava.restart();
         }
     }
     Timer {

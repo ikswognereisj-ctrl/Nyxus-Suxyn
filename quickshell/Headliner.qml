@@ -151,12 +151,20 @@ PanelWindow {
                                               + (coveredByFullscreen
                                                  ? "fullscreen cover detected — pausing twinkle"
                                                  : "fullscreen cover cleared — resuming twinkle"))
+    Timer {
+        id: headlinerRefresh
+        interval: 40
+        repeat: false
+        onTriggered: Hyprland.refreshToplevels()
+    }
     Connections {
         target: Hyprland
         function onRawEvent(event) {
             const n = event.name;
-            if (n === "fullscreen" || n === "openwindow" || n === "closewindow")
-                Hyprland.refreshToplevels();
+            if (n === "fullscreen" || n === "openwindow" || n === "closewindow"
+                || n === "activewindow" || n === "activewindowv2"
+                || n === "workspace" || n === "workspacev2" || n === "monitorfocus")
+                headlinerRefresh.restart();
         }
     }
 
