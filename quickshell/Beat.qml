@@ -244,8 +244,7 @@ Singleton {
             engineProc.running = false;
             engineRestart.restart();
         }
-        if (proc.running)
-            restartCava.restart();
+        restartCava.restart();
     }
 
     // ── one ear: the sink that is PLAYING (not the default, not the mic)
@@ -310,7 +309,8 @@ Singleton {
         interval: 40
         onTriggered: {
             proc.running = false;
-            proc.running = true;
+            if (beat.enabled && beat.havePlayback && beat._liveReady && !beat.engineOk)
+                proc.running = true;
         }
     }
     Timer {

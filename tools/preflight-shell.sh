@@ -146,7 +146,7 @@ check_resolution() {
   baseline_h=1200
 
   if have hyprctl; then
-    report="$(hyprctl -j monitors 2>/dev/null | python3 - <<'PY'
+    report="$(hyprctl -j monitors 2>/dev/null | python3 -c '
 import json, sys
 try:
     data = json.load(sys.stdin)
@@ -158,9 +158,8 @@ for mon in data:
     rr = mon.get("refreshRate") or 0
     name = mon.get("name") or "unknown"
     focused = "focused" if mon.get("focused") else "idle"
-    print(f"{name}\t{width}\t{height}\t{rr:.2f}\t{focused}")
-PY
-)" || report=""
+    print(f"{name}\\t{width}\\t{height}\\t{rr:.2f}\\t{focused}")
+')" || report=""
   else
     report=""
   fi

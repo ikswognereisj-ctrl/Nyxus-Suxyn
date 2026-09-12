@@ -733,7 +733,7 @@ Item {
         // never-again. Each delegate filters the signal on its own index.
         root.noteFly(slot,
                      Math.max(root._edgePad,
-                              Math.min(root.width - root._edgePad * 2, cx)),
+                              Math.min(root.width - root._edgePad, cx)),
                      root._glyphs[Math.floor(Math.random() * root._glyphs.length)],
                      down ? Theme.spectrumTip : Theme.paintLayers.glacier[5],
                      down ? 20 : 14 + Math.round(6 * bv),
