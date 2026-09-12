@@ -22,10 +22,18 @@
       --panel: rgba(8, 16, 20, 0.72);
     }
     * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: 56px; }
     html, body { margin: 0; background: var(--void); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; }
     body { line-height: 1.55; }
     a { color: var(--ice); text-decoration: none; }
     a:hover { color: #fff; }
+    a:focus-visible { outline: 2px solid var(--magma); outline-offset: 2px; border-radius: 2px; }
+    .skip {
+      position: absolute; left: -9999px; top: 0;
+      background: var(--magma); color: #020506;
+      padding: 10px 16px; font-weight: 600; z-index: 100;
+    }
+    .skip:focus { left: 0; }
     img, video { max-width: 100%; display: block; }
     .wrap { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
     header.hero { position: relative; min-height: 100vh; display: flex; flex-direction: column; justify-content: flex-end; }
@@ -110,6 +118,7 @@
   </style>
 </head>
 <body>
+  <a class="skip" href="#overview">Skip to content</a>
   <header class="hero">
     <img src="assets/desktop.jpg" alt="Nyxus Suxyn desktop: Starlight sky, glass widgets, living bar" />
     <div class="veil"></div>
@@ -140,7 +149,9 @@
       <a href="#settings">Settings</a>
       <a href="#tour">Tour</a>
       <a href="#get">Get it</a>
+      <a href="#update">Update</a>
       <a href="#made">How it’s built</a>
+      <a href="#scope">Scope</a>
     </div>
   </nav>
 
@@ -281,6 +292,18 @@
     </div>
   </section>
 
+  <section id="update">
+    <div class="wrap">
+      <h2>Update it</h2>
+      <p class="sub">The shell is updatable from the terminal at any time. One command pulls the latest commit and re-runs the deploy — pre-flight checks and a fresh rollback snapshot included. Local edits in the clone are never discarded: a dirty tree stops the pull and is reported instead.</p>
+      <div class="frame" style="padding:18px 20px;background:#040b0e;font-family:ui-monospace,monospace;font-size:14px;color:#b7e6f2;">
+        ~/src/Nyxus-Suxyn/tools/update-shell.sh
+      </div>
+      <p class="cap"><strong>Check first, change nothing.</strong> <code>tools/update-shell.sh --check</code> reports how far behind the clone is and exits. Re-running the <code>get.sh</code> one-liner from the section above also fast-forwards an existing clone without deploying.</p>
+      <p class="cap"><strong>Rollback.</strong> Every deploy snapshots the previous <code>~/.config/quickshell</code> and <code>~/.config/hypr</code> to <code>~/.local/share/nyxus/shell-bak-&lt;timestamp&gt;/</code> with a <code>RESTORE.txt</code> beside them. Restoring is copying the snapshot back over <code>~/.config</code> — the exact commands are written into that file at deploy time.</p>
+    </div>
+  </section>
+
   <section id="made">
     <div class="wrap">
       <h2>How this build is put together</h2>
@@ -331,10 +354,26 @@
     </div>
   </section>
 
+  <section id="scope">
+    <div class="wrap">
+      <h2>Scope &amp; disclaimer</h2>
+      <p class="sub">Nyxus Suxyn is built for one machine, on purpose. It is a personal build shared as-is under the <a href="https://github.com/ikswognereisj-ctrl/Nyxus-Suxyn/blob/main/LICENSE">MIT license</a> — a showcase and dotfiles source, not a distribution, ISO, or drop-in theme. Layouts, keybinds, and the audio pipeline are opinions, and those opinions are this laptop's. Where a value is machine-specific it ships commented out with a generic fallback.</p>
+      <p class="sub">Nothing here installs an operating system or modifies the boot chain. The deploy replaces <strong>user-level</strong> shell configuration on a machine that already runs the stack, after taking a backup. Review a script before running it with <code>curl | bash</code> — that advice applies to every project, including this one.</p>
+      <div class="stack">
+        <div><b>Fork to adapt</b><span>Want it on your own hardware? Fork it. <code>DEPENDENCIES.md</code> lists the expected stack; <code>tools/apply-shell.sh --preflight-only</code> checks a machine against it.</span></div>
+        <div><b>Security</b><span>Locking authenticates through PAM; no credentials are stored or transmitted. Report vulnerabilities privately per <code>SECURITY.md</code>, not in a public issue.</span></div>
+        <div><b>Not in this repo</b><span>ISO builder, other machines, personal apps, local AI, and security-stack tools.</span></div>
+      </div>
+    </div>
+  </section>
+
   <footer>
     <div class="wrap">
-      Nyxus Suxyn · 2026.09.02 · source on
-      <a href="https://github.com/ikswognereisj-ctrl/Nyxus-Suxyn">GitHub</a>.
+      Nyxus Suxyn · 2026.09.02 ·
+      <a href="https://github.com/ikswognereisj-ctrl/Nyxus-Suxyn">source</a> ·
+      <a href="https://github.com/ikswognereisj-ctrl/Nyxus-Suxyn/blob/main/LICENSE">MIT license</a> ·
+      <a href="https://github.com/ikswognereisj-ctrl/Nyxus-Suxyn/blob/main/SECURITY.md">security</a> ·
+      <a href="https://github.com/ikswognereisj-ctrl/Nyxus-Suxyn/issues">issues</a><br />
       Photographs and clips from the live Alienware, 2026-09-11.
     </div>
   </footer>
