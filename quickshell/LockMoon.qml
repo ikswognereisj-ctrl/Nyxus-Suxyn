@@ -41,7 +41,6 @@
 // size or side. Below the horizon it is not drawn at all, because it is not
 // there.
 //
-// © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
 
 import Quickshell
 import QtQuick

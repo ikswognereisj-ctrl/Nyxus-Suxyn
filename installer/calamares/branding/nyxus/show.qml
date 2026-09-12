@@ -69,7 +69,6 @@
  *   §1 calls the "Bar". `NYXUS · Suxyn` is neither canonical form (§1: `NYXUS`
  *   and `Nyxus Suxyn`).
  *
- * © 2026 JOSEPH SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
  */
 import QtQuick 2.15
 

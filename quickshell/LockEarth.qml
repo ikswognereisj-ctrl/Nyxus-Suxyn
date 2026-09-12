@@ -40,7 +40,6 @@
 //                            starfield it is today.
 //   · shader fails to load -> Qt draws nothing; the Image underneath is intact.
 //
-// © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
 
 import Quickshell
 import Quickshell.Io

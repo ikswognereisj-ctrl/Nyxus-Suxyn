@@ -40,7 +40,6 @@
 //
 // ⛔ Draws on a timer, never per frame. See LockMoon.qml.
 //
-// © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
 
 layout(location = 0) in  vec2 qt_TexCoord0;
 layout(location = 0) out vec4 fragColor;

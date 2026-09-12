@@ -122,7 +122,6 @@
 //     Settings-owned numbers, and the `Prefs.widget_*` schema is untouched
 //     by this pass (`SetPageWidgets.qml` reads it).
 //
-// © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland

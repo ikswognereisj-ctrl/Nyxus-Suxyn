@@ -1,6 +1,5 @@
 // ╔══════════════════════════════════════════════════════════════════════╗
 // ║  SkyConstellations — a few real constellations on the idle screen     ║
-// ║  © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED     ║
 // ╚══════════════════════════════════════════════════════════════════════╝
 //
 // Owner, 2026-09-07: "when the screen goes idle and it shows that screen and
