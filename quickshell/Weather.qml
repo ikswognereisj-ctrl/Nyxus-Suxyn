@@ -213,6 +213,7 @@ AppWindow {
         id: wxProc
         running: false
         command: ["python3", win.io(), "show"]
+        onExited: function (code) { if (code !== 0) { win.fetching = false; win.status = qsTr("Could not update."); console.warn("[Weather] io exited code " + code); } }
         stdout: StdioCollector {
             onStreamFinished: {
                 win.fetching = false;

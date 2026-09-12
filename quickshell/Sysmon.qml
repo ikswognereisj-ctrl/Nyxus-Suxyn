@@ -139,6 +139,7 @@ AppWindow {
         id: snap
         running: false
         command: ["python3", win.io()]
+        onExited: function (code) { if (code !== 0) console.warn("[Sysmon] stats probe exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -170,6 +171,7 @@ AppWindow {
         id: killProc
         running: false
         command: ["python3", win.io(), "kill", "0"]
+        onExited: function (code) { if (code !== 0) console.warn("[Sysmon] process kill exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: win.refresh()
         }

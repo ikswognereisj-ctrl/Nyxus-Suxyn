@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -uo pipefail
 # NYXUS LENS — smooth compositor magnifier (rev r1 · 2026-07-07).
 # Bound in nyxus-hyprland-flair.conf: SUPER+ALT+scroll in/out,
 # SUPER+ALT+middle-click or SUPER+ALT+0 to reset.

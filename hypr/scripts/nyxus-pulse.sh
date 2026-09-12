@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -uo pipefail
 # ============================================================
 #  NYXUS PULSE — audio-reactive prism halo (rev r1 · 2026-07-07)
 #
@@ -16,7 +17,6 @@
 #  SUPER+ALT+P toggles (nyxus-hyprland-flair.conf); autostarted
 #  from hyprland.conf. Stock halo is restored on any exit.
 #
-#  © 2026 JOSEPH SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
 # ============================================================
 
 # Runtime state policy (WIP-544): short-lived daemon state belongs under

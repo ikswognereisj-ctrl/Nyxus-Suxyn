@@ -32,7 +32,7 @@ AppWindow {
 
     readonly property color ice: Theme.tokenAccentPrimary
     readonly property color iceHair: Theme.tokenAccentHairline
-    readonly property string homePath: Quickshell.env("HOME") || "/home/gowski"
+    readonly property string homePath: Quickshell.env("HOME") || "/"
 
     readonly property var shown: {
         var q = win.filter.trim().toLowerCase();
@@ -127,6 +127,7 @@ AppWindow {
         id: placeProc
         running: false
         command: ["python3", win.io(), "places"]
+        onExited: function (code) { if (code !== 0) console.warn("[Files] places list exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -140,6 +141,7 @@ AppWindow {
         id: listProc
         running: false
         command: ["python3", win.io(), "list", win.homePath]
+        onExited: function (code) { if (code !== 0) console.warn("[Files] folder list exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 win.listing = false;
@@ -159,11 +161,13 @@ AppWindow {
         id: openProc
         running: false
         command: ["python3", win.io(), "places"]
+        onExited: function (code) { if (code !== 0) console.warn("[Files] open exited code " + code); }
     }
     Process {
         id: mkdirProc
         running: false
         command: ["python3", win.io(), "places"]
+        onExited: function (code) { if (code !== 0) console.warn("[Files] mkdir exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: win.go(win.currentPath, false)
         }

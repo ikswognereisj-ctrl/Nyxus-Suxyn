@@ -139,6 +139,7 @@ AppWindow {
         id: evalProc
         running: false
         command: ["python3", win.io(), "{\"expr\":\"\"}"]
+        onExited: function (code) { if (code !== 0) { win.result = qsTr("Error"); console.warn("[Calculator] io exited code " + code); } }
         stdout: StdioCollector {
             onStreamFinished: {
                 var j;

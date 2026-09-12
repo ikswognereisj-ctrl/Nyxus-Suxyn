@@ -14,7 +14,6 @@
 // across the lunar sky at half a degree an hour; nothing here needs a frame
 // clock, and the lock screen has one job.
 //
-// © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
 
 import QtQuick
 

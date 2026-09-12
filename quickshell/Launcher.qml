@@ -960,6 +960,7 @@ PanelWindow {
             + "    seen.add(f)\n"
             + "    print('%s\\t%s\\t%d\\t%s' % (os.path.basename(f), os.path.basename(os.path.dirname(f)), os.path.getmtime(f), f))\n"
             + "    if len(seen)>=4: break\n"]
+        onExited: function (code) { if (code !== 0) console.warn("[Launcher] recents scan exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 var out = [];
@@ -993,6 +994,7 @@ PanelWindow {
             + "for label,sub in want:\n"
             + "    p=os.path.join(h,sub) if sub else h\n"
             + "    if os.path.isdir(p): print('%s\\t%s' % (label,p))\n"]
+        onExited: function (code) { if (code !== 0) console.warn("[Launcher] places scan exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 var out = [];

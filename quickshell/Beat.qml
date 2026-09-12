@@ -24,6 +24,9 @@ import QtQuick
 Singleton {
     id: beat
 
+    // Set NYXUS_BEAT_DEBUG=1 to trace audio route/source changes.
+    readonly property bool debugLog: Quickshell.env("NYXUS_BEAT_DEBUG") === "1"
+
     // ── what consumers read ──────────────────────────────────────────
     // ── TRK-3495 · the FULL visual spectrum ─────────────────────────────
     // `nyxus-beat-engine` has always emitted FIVE visual bands — its own
@@ -239,7 +242,7 @@ Singleton {
     }
 
     function _restartAudioFeed(reason) {
-        if (reason && reason.length > 0)
+        if (debugLog && reason && reason.length > 0)
             console.log("[Beat] " + reason);
         beat._routeRefreshPending = true;
         feedRestartTap.restart();
@@ -253,6 +256,8 @@ Singleton {
     Process {
         id: tap
         command: ["bash", beat._tapPath, beat._confPath, beat._liveConf]
+        // `tap` is a long-lived feed; any exit is unexpected, so surface it.
+        onExited: function (code) { if (code !== 0) console.warn("[Beat] audio tap exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 const lines = text.trim().split("\n").filter(l => l.length > 0);
@@ -277,17 +282,20 @@ Singleton {
                         beat._zeroReactiveState(true);
                 }
                 if (routeChanged) {
-                    console.log("[Beat] route state -> " + routeState);
+                    if (debugLog)
+                        console.log("[Beat] route state -> " + routeState);
                     if (routeState !== "ok")
                         beat._zeroReactiveState(true);
                 }
                 if (sinkChanged && routeState === "ok") {
-                    console.log("[Beat] monitor source -> " + s);
+                    if (debugLog)
+                        console.log("[Beat] monitor source -> " + s);
                     beat._restartAudioFeed("reconnecting audio monitor after sink change");
                 } else if (routeChanged && routeState === "ok") {
                     beat._restartAudioFeed("reconnecting audio monitor after route state change");
                 } else if (sinkChanged) {
-                    console.log("[Beat] monitor source -> " + s + " (" + routeState + ")");
+                    if (debugLog)
+                        console.log("[Beat] monitor source -> " + s + " (" + routeState + ")");
                 }
             }
         }
@@ -427,6 +435,7 @@ Singleton {
                 beat.locked = false;
                 beat.bpm = 0;
                 beat.spectrum = [];
+                console.warn("[Beat] audio engine stopped");
                 // Died, or never started. Try again rather than hand the
                 // build to cava for the rest of the session.
                 if (beat.enabled)

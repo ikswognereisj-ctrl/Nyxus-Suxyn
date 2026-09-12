@@ -613,15 +613,6 @@ Item {
     readonly property int _pressureIterations: (powerAwareSolver && _saving)
         ? Math.max(8, Math.min(pressureIterations, batteryPressureIterations))
         : pressureIterations
-    on_SavingChanged: console.log("[Swirl] power mode -> "
-                                  + (_saving ? "battery/eco" : "ac/performance")
-                                  + " (pressure iterations " + _pressureIterations + ")")
-    onViewportCoveredChanged: {
-        if (pauseWhenCovered)
-            console.log("[Swirl] viewport "
-                        + (viewportCovered ? "covered — pausing render loop"
-                                           : "exposed — resuming render loop"));
-    }
 
     // ── THE QUALITY LADDER (WIP-768) ────────────────────────────────────────
     // Measured on the owner's 3060 before any boundary was drawn, because a

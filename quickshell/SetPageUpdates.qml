@@ -77,6 +77,7 @@ SetPage {
     Process {
         id: autoGate
         running: false
+        onExited: function (code) { if (code !== 0) console.warn("[Updates] auto-check toggle exited code " + code); }
     }
 
     function check() { if (!checker.running) { page.checked = false; checker.running = true; } }
@@ -99,6 +100,8 @@ SetPage {
           + '  [ "$ec" = "2" ] && exit 0; '
           + '  exit 0; '
           + 'else echo "__NOCHECK__"; fi']
+
+        onExited: function (code) { if (code !== 0) console.warn("[Updates] update check exited code " + code); }
 
         stdout: StdioCollector {
             onStreamFinished: {
@@ -135,6 +138,8 @@ SetPage {
         id: updater
         running: false
         stdinEnabled: false
+
+        onExited: function (code) { if (code !== 0) console.warn("[Updates] updater exited code " + code); }
 
         stdout: SplitParser {
             splitMarker: "\n"
@@ -201,6 +206,7 @@ SetPage {
         command: ["sh", "-c",
             'command -v fwupdmgr >/dev/null 2>&1 || exit 0; '
           + 'fwupdmgr get-updates 2>/dev/null | sed -n "s/^ *• //p"']
+        onExited: function (code) { if (code !== 0) console.warn("[Updates] firmware check exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 var out = [];
@@ -489,6 +495,7 @@ SetPage {
         id: hyprReload
         running: false
         command: ["hyprctl", "reload"]
+        onExited: function (code) { if (code !== 0) console.warn("[Updates] hyprctl reload exited code " + code); }
         stderr: StdioCollector {
             onStreamFinished: {
                 var m = String(this.text).trim();

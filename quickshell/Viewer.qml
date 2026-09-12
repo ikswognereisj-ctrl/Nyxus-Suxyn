@@ -160,6 +160,7 @@ AppWindow {
         id: lastProc
         running: false
         command: ["python3", win.io(), "last"]
+        onExited: function (code) { if (code !== 0) console.warn("[Viewer] last pictures read exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try { win.applyList(JSON.parse(String(this.text))); }
@@ -171,6 +172,7 @@ AppWindow {
         id: openProc
         running: false
         command: ["python3", win.io(), "last"]
+        onExited: function (code) { if (code !== 0) console.warn("[Viewer] picture list exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try { win.applyList(JSON.parse(String(this.text))); }
@@ -182,6 +184,7 @@ AppWindow {
         id: pickProc
         running: false
         command: ["python3", win.io(), "pick"]
+        onExited: function (code) { if (code !== 0) console.warn("[Viewer] file pick exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try { win.applyList(JSON.parse(String(this.text))); }
@@ -193,6 +196,7 @@ AppWindow {
         id: statProc
         running: false
         command: ["python3", win.io(), "last"]
+        onExited: function (code) { if (code !== 0) console.warn("[Viewer] picture info exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -205,11 +209,12 @@ AppWindow {
             }
         }
     }
-    Process { id: saveProc; running: false; command: ["python3", win.io(), "last"] }
+    Process { id: saveProc; running: false; command: ["python3", win.io(), "last"]; onExited: function (code) { if (code !== 0) console.warn("[Viewer] save exited code " + code); } }
     Process {
         id: trashProc
         running: false
         command: ["python3", win.io(), "last"]
+        onExited: function (code) { if (code !== 0) console.warn("[Viewer] trash exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -230,6 +235,7 @@ AppWindow {
         id: wallProc
         running: false
         command: ["python3", win.io(), "last"]
+        onExited: function (code) { if (code !== 0) console.warn("[Viewer] wallpaper set exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try {

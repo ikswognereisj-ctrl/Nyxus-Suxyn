@@ -1,5 +1,11 @@
 # Nyxus Suxyn
 
+> **One machine, on purpose.** This is a personal shell tuned for a single
+> Alienware 15 (`eDP-1` · 1920×1200 @ 165 Hz). It's shared as a **showcase /
+> reference build and dotfiles source — not a distribution, ISO, or drop-in
+> theme** that fits every desktop unchanged. Want it on your own hardware?
+> Fork it and adapt (see `DEPENDENCIES.md` + `CONTRIBUTING.md`).
+
 **Daily-driver desktop for one Alienware.** Hyprland compositor. Quickshell chrome. Starlight sky, a living bar, glass session lock.
 
 **Live page (open this on a phone too):** https://ikswognereisj-ctrl.github.io/Nyxus-Suxyn/
@@ -36,6 +42,14 @@ Glass is furniture (Pane + swell + a 1 px glacier seam). Crystal is identity ico
 
 Reload the shell with `qs ipc call nyxus reload`. Shader pipeline changes need a targeted `SIGTERM` of the Quickshell process.
 Run `tools/apply-shell.sh --preflight-only` before deploy to validate GPU, Hyprland/Quickshell, PipeWire, and monitor-baseline assumptions.
+
+## More
+
+| File | What |
+|---|---|
+| `DEPENDENCIES.md` | The stack this expects before deploy |
+| `CONTRIBUTING.md` | Scope, and how to adapt it to your own machine |
+| `LICENSE` | MIT |
 
 ## Not in this repo
 

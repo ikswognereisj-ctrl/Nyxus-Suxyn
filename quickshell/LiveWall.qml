@@ -133,10 +133,6 @@ PanelWindow {
             && size[1] >= root.screen.height - pad * 2;
     }
     readonly property bool coveredByViewport: root._coversViewport(root.topIpc)
-    onCoveredByViewportChanged: console.log("[LiveWall] "
-                                            + (coveredByViewport
-                                               ? "viewport covered — pausing wallpaper"
-                                               : "viewport exposed — resuming wallpaper"))
     Timer {
         id: livewallRefresh
         interval: 40

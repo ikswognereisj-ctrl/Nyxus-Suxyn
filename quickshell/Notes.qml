@@ -485,6 +485,7 @@ AppWindow {
         id: listProc
         running: false
         command: ["python3", win.io(), "list"]
+        onExited: function (code) { if (code !== 0) console.warn("[Notes] note list exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 var rows;
@@ -509,6 +510,7 @@ AppWindow {
         id: booksProc
         running: false
         command: ["python3", win.io(), "books"]
+        onExited: function (code) { if (code !== 0) console.warn("[Notes] notebook list exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -530,6 +532,7 @@ AppWindow {
         id: bookProc
         running: false
         command: ["python3", win.io(), "create-book", "Notes"]
+        onExited: function (code) { if (code !== 0) console.warn("[Notes] notebook create exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -549,6 +552,7 @@ AppWindow {
         id: createProc
         running: false
         command: ["python3", win.io(), "create", "Notes"]
+        onExited: function (code) { if (code !== 0) console.warn("[Notes] note create exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 var p = String(this.text).trim();
@@ -564,6 +568,7 @@ AppWindow {
         id: trashProc
         running: false
         command: ["python3", win.io(), "list"]
+        onExited: function (code) { if (code !== 0) console.warn("[Notes] note trash exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 win.selectedPath = "";
@@ -581,6 +586,7 @@ AppWindow {
         id: lockProc
         running: false
         command: ["python3", win.io(), "list"]
+        onExited: function (code) { if (code !== 0) console.warn("[Notes] note lock exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 win.dirty = false;
@@ -648,6 +654,7 @@ AppWindow {
         id: spellProc
         running: false
         command: ["python3", win.spellIo(), "file", win.spellPath()]
+        onExited: function (code) { if (code !== 0) console.warn("[Notes] spell check exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try {

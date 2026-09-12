@@ -161,10 +161,6 @@ PanelWindow {
         const o = root.topIpc;
         return root._coversViewport(o);
     }
-    onCoveredByViewportChanged: console.log("[Headliner] "
-                                            + (coveredByViewport
-                                               ? "viewport covered — pausing twinkle"
-                                               : "viewport exposed — resuming twinkle"))
     Timer {
         id: headlinerRefresh
         interval: 40
