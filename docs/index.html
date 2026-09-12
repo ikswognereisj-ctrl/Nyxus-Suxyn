@@ -5,9 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Nyxus Suxyn — Horizon desktop</title>
   <meta name="description" content="Nyxus Suxyn: a Hyprland + Quickshell desktop on Alienware. Starlight sky, living bar, glass lock, one Settings." />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@500;600&display=swap" rel="stylesheet" />
+  <meta name="theme-color" content="#020506" />
+  <meta property="og:title" content="Nyxus Suxyn" />
+  <meta property="og:description" content="Hyprland + Quickshell desktop. Starlight, living bar, glass lock." />
+  <meta property="og:image" content="https://ikswognereisj-ctrl.github.io/Nyxus-Suxyn/assets/desktop.jpg" />
+  <meta property="og:url" content="https://ikswognereisj-ctrl.github.io/Nyxus-Suxyn/" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@500;600&display=swap" />
   <style>
     :root {
       --void: #020506;
@@ -19,7 +22,7 @@
       --panel: rgba(8, 16, 20, 0.72);
     }
     * { box-sizing: border-box; }
-    html, body { margin: 0; background: var(--void); color: var(--ink); font-family: Inter, system-ui, sans-serif; }
+    html, body { margin: 0; background: var(--void); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; }
     body { line-height: 1.55; }
     a { color: var(--ice); text-decoration: none; }
     a:hover { color: #fff; }
@@ -72,6 +75,38 @@
     .magma { color: var(--magma); }
     footer { padding: 40px 0 64px; color: var(--dim); font-size: 13px; }
     video { width: 100%; background: #000; }
+    @media (max-width: 720px) {
+      header.hero { min-height: 70vh; }
+      h1 { font-size: 40px; }
+      nav .wrap { gap: 14px; font-size: 12px; }
+      section { padding: 48px 0; }
+      .stack div { grid-template-columns: 1fr; gap: 4px; }
+      table.spec th { width: 40%; }
+      video { max-height: 56vw; object-fit: cover; }
+    }
+    .pull {
+      border-left: 2px solid var(--magma);
+      padding: 4px 0 4px 18px;
+      margin: 0 0 28px;
+      color: var(--ink);
+      font-size: 18px;
+      max-width: 640px;
+    }
+    .stack {
+      display: grid; gap: 12px;
+      font-size: 13px;
+      margin: 0 0 28px;
+    }
+    .stack div {
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 16px;
+      padding: 10px 12px;
+      border: 1px solid rgba(79,127,166,.22);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+    .stack b { color: var(--ice); font-weight: 600; }
   </style>
 </head>
 <body>
@@ -81,7 +116,7 @@
     <div class="copy wrap">
       <div class="mark">Nyxus · Suxyn</div>
       <h1>SUXYN</h1>
-      <p class="lede">A daily-driver desktop for one Alienware. Hyprland compositor. Quickshell chrome. Starlight sky, a living bar, glass lock. Built as one piece — not a theme pack on someone else’s shell.</p>
+      <p class="lede">A daily-driver desktop for one Alienware. Hyprland compositor. Quickshell chrome. Starlight sky, a living bar, glass lock. Built as one piece — not a theme pack on someone else’s shell. Every surface is a material. Every accent is an emission ladder. Nothing important is a flat fill.</p>
       <div class="ids">
         <span>nyxus-suxyn 2026.09.02</span>
         <span>Alienware 15 DA15265</span>
@@ -131,7 +166,7 @@
       <h2>Living paint</h2>
       <p class="sub">The bar’s swirl is not a color wash. It is a fluid. Dye is material in a velocity field. Idle, it rolls and climbs on its own. Pointer and beat can feed it. It is never compositor blur.</p>
       <div class="frame">
-        <video src="assets/swirl.webm" autoplay muted loop playsinline></video>
+        <video src="assets/swirl.webm" autoplay muted loop playsinline preload="metadata" controls></video>
       </div>
       <p class="cap"><strong>How it’s made.</strong> <code>Swirl.qml</code> ports a Navier–Stokes chain on the GPU: splat → curl → vorticity → divergence → pressure ×22 → advect velocity → advect dye → display. Same solver on the bar, flyouts, and window rims. The display pass treats the dye as thickness — black-shadow glass that occludes a faint glow — so you read the swirl by what it hides, not by a tint.</p>
     </div>
@@ -142,9 +177,9 @@
       <h2>The analyser</h2>
       <p class="sub">When music is actually on the sink, the bar turns over. The swirl face flips to a spectrum: thin columns, mirrored in the seam, magma at the peaks. Notes ride the same field. Timed lyrics, when a track has them, launch from that same mirror line so the words are in the music, not a sticker on top of it.</p>
       <div class="frame">
-        <video src="assets/visualizer.webm" autoplay muted loop playsinline></video>
+        <video src="assets/visualizer.webm" autoplay muted loop playsinline preload="metadata" controls></video>
       </div>
-      <p class="cap"><strong>How it’s made.</strong> One long-lived <code>nyxus-beat-engine</code>: STFT, mel bands, SuperFlux onset, tempo, a phase-locked loop that predicts the downbeat. <code>BarSpectrum.qml</code> is its own shader, not a Swirl. Keep-out zones so columns never run through the dock, clock, or vitals. Lyrics are LRC lines placed on free spans of that field.</p>
+      <p class="cap"><strong>How it’s made.</strong> One long-lived <code>nyxus-beat-engine</code>: STFT, mel bands, SuperFlux onset, tempo, a phase-locked loop that predicts the downbeat. <code>BarSpectrum.qml</code> is its own shader, not a Swirl. Keep-out zones so columns never run through the dock, clock, or vitals. Lyrics are timed LRC lines on that same field — in this clip you can read them in the seam.</p>
     </div>
   </section>
 
@@ -170,8 +205,16 @@
     <div class="wrap">
       <h2>Session lock</h2>
       <p class="sub">Earth on the left. Time, weather, and a glass login card on the right. Super+L, Start, and the power menu all hit the same lock — not a second greeter.</p>
-      <div class="frame"><img src="assets/lock.jpg" alt="Earth lock screen with glass unlock card" /></div>
-      <p class="cap"><strong>How it’s made.</strong> <code>Lock.qml</code> + PAM via <code>hyprlock</code> as the authenticator, engaged by <code>loginctl lock-session</code>. The card is furniture glass (Pane + swell + a 1 px glacier seam). Magma is the no.</p>
+      <div class="grid two">
+        <div>
+          <div class="frame"><img src="assets/lock.jpg" alt="Earth lock screen with glass unlock card" /></div>
+          <p class="cap"><strong>Session lock.</strong> Earth shader, time, weather, glass card. Super+L. The card is furniture glass. Magma is the no.</p>
+        </div>
+        <div>
+          <div class="frame"><img src="assets/login.jpg" alt="Login still — vortex Earth" /></div>
+          <p class="cap"><strong>Login still.</strong> The same vortex Earth the machine uses at the front door.</p>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -195,9 +238,9 @@
   <section id="tour">
     <div class="wrap">
       <h2>A pass across the desktop</h2>
-      <p class="sub">Start opens and closes. The flyout comes up. Settings maps. A terminal states the build. Recorded on this machine, empty workspace, Starlight on.</p>
+      <p class="sub">A longer pass on this machine: Starlight, Start, flyout, Settings, Notes, Media, then a terminal that states the build. Empty workspace. No compositor blur.</p>
       <div class="frame">
-        <video src="assets/tour.webm" controls playsinline></video>
+        <video src="assets/tour.webm" controls playsinline preload="metadata"></video>
       </div>
     </div>
   </section>
@@ -205,28 +248,41 @@
   <section id="made">
     <div class="wrap">
       <h2>How this build is put together</h2>
-      <p class="sub">This is not a tinted GTK theme. Every surface is a material with a shader behind it. The palette is not a list of hex codes to fill rectangles — it is emission ladders sampled from nebula photographs, then used as thickness, etch, and dye.</p>
+      <p class="pull">This is not a tinted GTK theme. Every surface is a material with a shader behind it. The palette is not a list of hex codes to fill rectangles — it is emission ladders sampled from nebula photographs, then used as thickness, etch, and dye.</p>
+
+      <div class="stack">
+        <div><b>Starlight</b><span>Bottom-layer shader. Three lattices, hard points, true black gaps. Not a wallpaper file with a bloom filter.</span></div>
+        <div><b>Horizon</b><span>Top bar + click-through seam. Exclusive zone 84 px. Living paint under glass, not a panel bitmap.</span></div>
+        <div><b>Widgets</b><span>Clock, system, calendar, weather, notes, rooms. Same glass language as Start. They sit in the sky, not in the bar.</span></div>
+        <div><b>Lock</b><span>Earth shader + glass card. Super+L, Start, and Power all call the same lock. PAM through hyprlock.</span></div>
+        <div><b>Beat</b><span>One engine. Predicted downbeat. Spectrum, swirl, and window rims listen. Silence is still.</span></div>
+      </div>
 
       <h3>Glass is furniture</h3>
-      <p class="sub">Panels, Start, Settings, flyout: Pane + swell + a 1 px glacier seam. The body is empty. You see the sky through smoked glass that <em>bends</em>. No compositor blur — blur is off so the type stays sharp.</p>
+      <p class="sub">Panels, Start, Settings, flyout: Pane + swell + a 1 px glacier seam. The body is empty. You see the sky through smoked glass that <em>bends</em>. Hyprland’s blur stays at zero so the type never goes soft. A compositor blur would have been the easy way. It was rejected because it turns the whole desktop into vaseline.</p>
 
       <h3>Crystal is identity</h3>
-      <p class="sub">Dock gems are not icons on a plate. <code>ocular_crystal.frag</code> ray-marches a 3-D signed distance field baked from the mark. Height is 16-bit so the normals do not band. The glyph is laser-etched in the stone — points of light in ice — never a PNG glued on top.</p>
+      <p class="sub">Dock gems are not icons on a plate. <code>ocular_crystal.frag</code> ray-marches a 3-D signed distance field baked from the mark. The SDF packs silhouette in R and 16-bit dome height in GB so the normals do not band into rings. Alpha is pinned to 255 — Qt premultiplies, and an earlier pack in A silently destroyed the field. The glyph is laser-etched in the stone: points of light in ice, never a PNG glued on top.</p>
 
       <h3>The palette is layers</h3>
-      <p class="sub">Each accent is a five-band emission ladder (haze / deep / body / accent / glow) measured off nebula stills. Grounds sit at true black. Saturation stays high into the darks. Magma (<code>#ff7847</code>) is the only hot corner, and it is reserved for what matters. glacier[0] teal is banned as a fill. Nothing in the shell writes a raw hex; tokens live in one file.</p>
+      <p class="sub">Each accent is a five-band emission ladder (haze / deep / body / accent / glow) measured off nebula stills — 197k pixels, four banners. Grounds sit at <code>#000000–#000007</code>. Saturation stays 0.79–0.86 into the darks. Magma (<code>#ff7847</code>) is the only hot corner, and it is reserved for what matters: charging, the no, a peak on the analyser. glacier[0] teal is banned as a fill. Nothing in the shell writes a raw hex; tokens live in one file so a banned color cannot hide in an icon.</p>
+
+      <h3>Swirl is a fluid, not a gradient</h3>
+      <p class="sub">The solver is a real Navier–Stokes chain on the GPU, ported pass-for-pass from a reference that had filaments and voids. An earlier curl-noise “port” produced smooth bands with nothing for dye to pile against. Pressure is solved 22 iterations a frame. Idle, stirrers roll and climb so the field does not only slide. When music is on, bass/mid/high and a predicted kick feed the same tank. When music is off, the field does not fake a pulse.</p>
 
       <h3>Beat is predicted, not guessed</h3>
-      <p class="sub">One process, <code>nyxus-beat-engine</code>, hears the sink. It does not fake a pulse on silence. When music is on, a PLL knows the downbeat ahead of time so rims, swirl, and spectrum land on the hit. Window glow is Hyprland’s own border, rewritten from that kick.</p>
+      <p class="sub">One process, <code>nyxus-beat-engine</code>, hears the sink monitor. STFT 2048/512, mel bands, SuperFlux onset, autocorrelation tempo, phase-locked loop. It knows the downbeat ahead of the hit so rims, swirl, and spectrum land on time. <code>BorderPulse.qml</code> rewrites Hyprland’s active border from that kick — once per beat, falling between hits. Idle is a still glacier ring. A paused player’s metadata is not a beat.</p>
+
+      <h3>The analyser is a second face</h3>
+      <p class="sub">The bar does not overlay bars on the swirl. It <em>turns over</em> — a FlipPlate — after ~900 ms of real sink audio. <code>BarSpectrum.qml</code> is its own shader: hundreds of thin columns, mirrored in the seam, magma holds on the peaks. Keep-out rectangles so the field never runs through dock, clock, or vitals. Timed lyrics, when an LRC exists, launch from that same mirror line.</p>
 
       <table class="spec">
-        <tr><th>Product</th><td>Nyxus Suxyn · image <code>nyxus-suxyn</code> · <strong>2026.09.02</strong></td></tr>
-        <tr><th>Machine</th><td>Alienware 15 DA15265 · eDP-1 1920×1200 @ 165 Hz · scale 1</td></tr>
-        <tr><th>Compositor</th><td>Hyprland 0.56.2 · blur <span class="magma">off</span> · XWayland scale 1</td></tr>
-        <tr><th>Shell</th><td>Quickshell 0.3.1 · QML only for daily chrome</td></tr>
-        <tr><th>Sky</th><td>Starlight headliner shader. Six stills in Settings ▸ Background.</td></tr>
-        <tr><th>Login</th><td>GTK greeter on purpose. Quickshell greeter is parked until it can fail open to a TTY.</td></tr>
-        <tr><th>This repo</th><td>This machine’s shell. Not Nyxus-Core, not another PC, not personal apps.</td></tr>
+        <tr><th>Build</th><td>Nyxus Suxyn · <strong>2026.09.02</strong></td></tr>
+        <tr><th>Machine</th><td>Alienware 15 · 1920×1200 @ 165 Hz</td></tr>
+        <tr><th>Compositor</th><td>Hyprland 0.56.2 · blur off</td></tr>
+        <tr><th>Shell</th><td>Quickshell 0.3.1</td></tr>
+        <tr><th>Sky</th><td>Starlight shader · six stills in Settings</td></tr>
+        <tr><th>Lock</th><td>Earth glass card · Super+L</td></tr>
       </table>
     </div>
   </section>
