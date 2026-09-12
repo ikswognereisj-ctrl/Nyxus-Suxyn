@@ -118,9 +118,12 @@ check_versions() {
     fi
   fi
 
+  local have_quickshell=0
   if have qs; then
+    have_quickshell=1
     quickshell_ver="$(version_of qs --version)"
   elif have quickshell; then
+    have_quickshell=1
     quickshell_ver="$(version_of quickshell --version)"
   else
     quickshell_ver=""
@@ -132,8 +135,8 @@ check_versions() {
         warn "Quickshell is outside the repository-tested 0.3.x range; verify Hyprland integration after deploy"
       fi
     fi
-  elif have qs || have quickshell; then
-    fail "Quickshell CLI not found (qs or quickshell)"
+  elif [[ $have_quickshell -eq 1 ]]; then
+    fail "Quickshell CLI is present but its version could not be read"
   fi
 }
 
