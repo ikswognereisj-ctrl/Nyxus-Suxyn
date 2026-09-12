@@ -120,7 +120,19 @@ Item {
 
     // Kept for the Bar.qml call site; the mirrored envelope fills the item
     // and this now only steers the spine's resting position.
-    property int peakH: 64
+    property int peakH: Math.round(root.height * 0.76)
+    readonly property var _win: Window.window
+    readonly property real _screenW: _win && _win.screen ? _win.screen.width : Screen.width
+    readonly property real _screenH: _win && _win.screen ? _win.screen.height : Screen.height
+    readonly property real _screenScaleX: root._screenW > 0 ? root._screenW / 1920 : 1
+    readonly property real _screenScaleY: root._screenH > 0 ? root._screenH / 1200 : 1
+    readonly property real _screenScale: Math.max(0.80, Math.min(1.35,
+        Math.min(root._screenScaleX, root._screenScaleY)))
+    readonly property int _edgePad: Math.max(10, Math.round(12 * root._screenScale))
+    readonly property int _wordGap: Math.max(8, Math.round(10 * root._screenScale))
+    readonly property real centreFrac: Math.max(0.63, Math.min(0.68,
+        0.655 + (1.0 - root._screenScaleY) * 0.025))
+    readonly property real _columnPitch: Math.max(4, 5 * root._screenScaleX)
 
     // Fade the whole instrument in/out with the flip rather than popping.
     property real liveT: root.live ? 1 : 0
@@ -154,8 +166,6 @@ Item {
     // own reflection starts running off the bottom edge of an 84 px bar.
     // 0.655 has room; it is also the last position where the returned half
     // of the field still reads as a field rather than as a strip.
-    readonly property real centreFrac: 0.655
-
     // ── the clock · one FrameAnimation, alive only while the graph is ───
     property real time: 0
     property real _downAt: -100
@@ -532,7 +542,7 @@ Item {
         // 2–3 px of ink with a ~2 px gap — the references' density. The
         // ratio is the constant, so the look survives any screen width.
         property vector4d cfg: Qt.vector4d(
-            Math.max(64, Math.round(fx.width / 5)),
+            Math.max(64, Math.round(fx.width / root._columnPitch)),
             root.centreFrac,
             0.26,     // gap half-width, as a fraction of one column pitch
             0.10)     // halo drive — how far light continues past a tip
@@ -725,7 +735,8 @@ Item {
         // whitelisted instance (Swirl's `.out`) is documented as a
         // never-again. Each delegate filters the signal on its own index.
         root.noteFly(slot,
-                     Math.max(12, Math.min(root.width - 24, cx)),
+                     Math.max(root._edgePad,
+                              Math.min(root.width - root._edgePad, cx)),
                      root._glyphs[Math.floor(Math.random() * root._glyphs.length)],
                      down ? Theme.spectrumTip : Theme.paintLayers.glacier[5],
                      down ? 20 : 14 + Math.round(6 * bv),
@@ -789,7 +800,7 @@ Item {
     // assert that a placed phrase intersects no keep-out span. A gate that
     // greps for `keepOut` proves nothing.
     function _freeSpans() {
-        const pad = 12;
+        const pad = root._edgePad;
         const cuts = [];
         for (let i = 0; i < root.keepOut.length; i++) {
             const k = root.keepOut[i];
@@ -804,8 +815,6 @@ Item {
 
     // The clearance a phrase keeps from a control it is standing next to.
     // Zero would be legal and would still read as crowding.
-    readonly property int _wordGap: 10
-
     // The widest run of free bar there is, in px. The phrase shrinks to fit
     // this rather than being clipped or running under a control.
     function _widestFree() {

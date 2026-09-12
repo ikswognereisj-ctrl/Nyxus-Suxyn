@@ -372,6 +372,8 @@ Item {
     property real pointerForceMul: 1.0
     property real pressureScale: 0.8    // reference: pressure 0.8
     property int  pressureIterations: 22// reference: pressureIterations 22
+    property bool powerAwareSolver: true
+    property int  batteryPressureIterations: 9
     property real injectGain: 1.0
     property real intensity: 1.0        // user dial (Settings → Appearance →
                                         // Living paint); scales every deposit
@@ -386,6 +388,8 @@ Item {
     property bool interactive: true
     property bool playIntroOnLoad: true
     property int  lingerMs: 12000       // reference: sleepMs 12000
+    property bool pauseWhenCovered: false
+    property bool viewportCovered: false
     // What is left on screen once the sim has gone to sleep. The buffers keep
     // their last frame and nothing is being stepped, so this is a free static
     // image — see the long note on the display layer's `opacity` below.
@@ -606,6 +610,18 @@ Item {
     property bool batterySaver: true
     readonly property bool _saving: batterySaver
                                     && Sys.hasBattery && !Sys.batteryCharging
+    readonly property int _pressureIterations: (powerAwareSolver && _saving)
+        ? Math.max(8, Math.min(pressureIterations, batteryPressureIterations))
+        : pressureIterations
+    on_SavingChanged: console.log("[Swirl] power mode -> "
+                                  + (_saving ? "battery/eco" : "ac/performance")
+                                  + " (pressure iterations " + _pressureIterations + ")")
+    onViewportCoveredChanged: {
+        if (pauseWhenCovered)
+            console.log("[Swirl] viewport "
+                        + (viewportCovered ? "covered — pausing render loop"
+                                           : "exposed — resuming render loop"));
+    }
 
     // ── THE QUALITY LADDER (WIP-768) ────────────────────────────────────────
     // Measured on the owner's 3060 before any boundary was drawn, because a
@@ -663,6 +679,7 @@ Item {
 
     readonly property bool running: visible && windowExposed
                                     && width > 8 && height > 8
+                                    && !(pauseWhenCovered && viewportCovered)
                                     && !(_frozen && _floorSpent)
                                     && ((alwaysAlive && !_saving)
                                         || _stimulus || linger.running)
@@ -1190,10 +1207,10 @@ Item {
         format: ShaderEffectSource.RGBA16F
     }
 
-    // 6 ── the Jacobi chain. 22 links, each one layer.
+    // 6 ── the Jacobi chain. Full depth on AC, reduced on battery/eco.
     Repeater {
         id: pChain
-        model: root.pressureIterations
+        model: root._pressureIterations
         delegate: Item {
             id: link
             required property int index

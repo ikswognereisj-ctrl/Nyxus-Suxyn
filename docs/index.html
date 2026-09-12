@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Nyxus Suxyn — Horizon desktop</title>
-  <meta name="description" content="Nyxus Suxyn: a Hyprland + Quickshell desktop on Alienware. Starlight sky, living bar, glass lock, one Settings." />
+  <meta name="description" content="Nyxus Suxyn: a Hyprland + Quickshell desktop with a shader sky, living bar, predicted-beat analyser, glass lock, and one Settings surface. See what each piece is, how it is built, and how to deploy it." />
   <meta name="theme-color" content="#020506" />
   <meta property="og:title" content="Nyxus Suxyn" />
   <meta property="og:description" content="Hyprland + Quickshell desktop. Starlight, living bar, glass lock." />
@@ -130,6 +130,7 @@
   <nav>
     <div class="wrap">
       <a href="#horizon">Horizon</a>
+      <a href="#overview">Overview</a>
       <a href="#starlight">Starlight</a>
       <a href="#swirl">Swirls</a>
       <a href="#visualizer">Visualizer</a>
@@ -143,13 +144,30 @@
     </div>
   </nav>
 
+  <section id="overview">
+    <div class="wrap">
+      <h2>What this build is</h2>
+      <p class="sub">Nyxus Suxyn is not a GTK skin pack and not a wallpaper dump. It is a desktop shell built out of Quickshell surfaces, Hyprland rules, custom GLSL shaders, and one audio-analysis path that feeds the chrome. The point of this page is to show the main pieces, what each one does, and where the behavior actually lives in the repository.</p>
+
+      <div class="stack">
+        <div><b>Compositor layer</b><span><code>hypr/</code> carries monitor rules, binds, layer-shell behavior, hyprlock, hypridle, and the session-level rules the shell expects.</span></div>
+        <div><b>Shell surfaces</b><span><code>quickshell/Bar.qml</code>, <code>Launcher.qml</code>, <code>SidePanel.qml</code>, <code>Settings.qml</code>, widgets, media, and lock surfaces are the UI the user actually touches.</span></div>
+        <div><b>Render systems</b><span><code>Swirl.qml</code> is the living paint solver, <code>BarSpectrum.qml</code> is the analyser face, and <code>shaders/headliner.frag</code> is the hard-point sky.</span></div>
+        <div><b>Audio path</b><span><code>nyxus-beat-engine</code> drives predicted beat timing, while <code>Beat.qml</code> and <code>nyxus-beat-tap.sh</code> choose the correct PipeWire monitor source and distribute the result.</span></div>
+        <div><b>Deploy path</b><span><code>docs/get.sh</code> clones or updates the repo, and <code>tools/apply-shell.sh</code> now runs a pre-flight plus rollback snapshot before replacing shell config.</span></div>
+      </div>
+
+      <p class="cap"><strong>What ships here.</strong> Quickshell chrome, Hyprland config, lock/login visuals, shaders, helper scripts, and the docs/demo page. It is the shell layer of the machine. It is not the ISO builder, not package manifests for every dependency, and not a generic theme meant to fit every desktop unchanged.</p>
+    </div>
+  </section>
+
   <section id="horizon">
     <div class="wrap">
       <h2>The Horizon bar</h2>
       <p class="sub">There is no panel rectangle. The bottom of the screen is a lit seam of living paint. Icons, clock, desks, and vitals sit on that shelf and throw a floor reflection into the swirl.</p>
       <div class="frame"><img src="assets/bar.jpg" alt="Bottom bar with NYXUS mark, dock, clock, vitals and reflections" /></div>
       <p class="cap"><strong>What it is.</strong> Top-layer Quickshell window, 84 px exclusive zone, click-through living paint underneath. Magma is reserved for what matters (charging, the no). Glacier ice is chrome, not fill.</p>
-      <p class="cap"><strong>How it’s made.</strong> <code>Bar.qml</code> + <code>BarSeam.qml</code>. Dock gems are crystal identity, not glass furniture. Reflections are a flipped copy with foreshortening — not a live shader grab of the sibling (that class of grab can take the shell down).</p>
+      <p class="cap"><strong>How it’s made.</strong> <code>Bar.qml</code> owns the structure: exclusive zone, dock, desks, tray, centre clock, right-side vitals, and the flip to the analyser. <code>BarSeam.qml</code> owns the visible paint seam under the glass. Geometry and keep-out spans are derived from live screen and item widths, so the layout scales across other resolutions and multi-monitor setups instead of assuming one fixed 1920×1200 strip.</p>
     </div>
   </section>
 
@@ -158,7 +176,7 @@
       <h2>Starlight</h2>
       <p class="sub">The ground is not a JPEG of stars. It is a shader: three incommensurate lattices of hard points on true black, occupancy-hashed and jittered so they never read as a grid. No bloom, no diffraction spikes — a fibre tip, not a photographed star. Twinkle is occupancy over time, not a halo.</p>
       <div class="frame"><img src="assets/desktop.jpg" alt="Starlight sky with widgets" /></div>
-      <p class="cap"><strong>How it’s made.</strong> <code>shaders/headliner.frag</code> on a Bottom-layer Quickshell window. Compositor blur is off, so type stays pixel-perfect. A still wallpaper can sit underneath; Starlight wins the pixel until you switch sky mode.</p>
+      <p class="cap"><strong>How it’s made.</strong> <code>shaders/headliner.frag</code> draws the field on a dedicated Quickshell surface. The points are hard, snapped, and sparse by construction — not blurred after the fact. On battery the sky stops twinkling instead of redrawing pointlessly, and when a fullscreen window covers the monitor the effect pauses until the desktop is visible again.</p>
     </div>
   </section>
 
@@ -169,7 +187,7 @@
       <div class="frame">
         <video src="assets/swirl.webm" autoplay muted loop playsinline preload="metadata" controls></video>
       </div>
-      <p class="cap"><strong>How it’s made.</strong> <code>Swirl.qml</code> ports a Navier–Stokes chain on the GPU: splat → curl → vorticity → divergence → pressure ×22 → advect velocity → advect dye → display. Same solver on the bar, flyouts, and window rims. The display pass treats the dye as thickness — black-shadow glass that occludes a faint glow — so you read the swirl by what it hides, not by a tint.</p>
+      <p class="cap"><strong>How it’s made.</strong> <code>Swirl.qml</code> ports a Navier–Stokes chain on the GPU: splat → curl → vorticity → divergence → pressure → advect velocity → advect dye → display. On AC it keeps the full 22-iteration pressure solve; on battery it drops to an eco solve depth and lets idle surfaces sleep. Hosts such as the wallpaper can now tell it when the viewport is covered, so hidden motion stops instead of burning cycles under a fullscreen window.</p>
     </div>
   </section>
 
@@ -180,7 +198,7 @@
       <div class="frame">
         <video src="assets/visualizer.webm" autoplay muted loop playsinline preload="metadata" controls></video>
       </div>
-      <p class="cap"><strong>How it’s made.</strong> One long-lived <code>nyxus-beat-engine</code>: STFT, mel bands, SuperFlux onset, tempo, a phase-locked loop that predicts the downbeat. <code>BarSpectrum.qml</code> is its own shader, not a Swirl. Keep-out zones so columns never run through the dock, clock, or vitals. Lyrics are timed LRC lines on that same field — in this clip you can read them in the seam.</p>
+      <p class="cap"><strong>How it’s made.</strong> One long-lived <code>nyxus-beat-engine</code>: STFT, mel bands, SuperFlux onset, tempo, a phase-locked loop that predicts the downbeat. <code>BarSpectrum.qml</code> is its own shader, not a Swirl. The analyser now reads live keep-out spans from the bar itself, so lyrics and notes stay clear of the dock, clock, tray, and vitals even when those widths change. PipeWire sink monitoring is hardened for default-output switches, mute, pause, and unavailable routes so false beat pulses are zeroed instead of lingering.</p>
     </div>
   </section>
 
@@ -258,6 +276,8 @@
       <div class="frame" style="padding:18px 20px;background:#040b0e;font-family:ui-monospace,monospace;font-size:14px;color:#b7e6f2;">
         ~/src/Nyxus-Suxyn/tools/apply-shell.sh
       </div>
+      <p class="cap"><strong>Pre-flight.</strong> Before deploy, the repo now checks for GPU/driver expectations, Hyprland + Quickshell presence, PipeWire/WirePlumber, audio-monitor tools, and monitor geometry versus the 1920×1200 baseline the original layout was tuned on. You can run that alone with <code>tools/apply-shell.sh --preflight-only</code>.</p>
+      <p class="cap"><strong>What a target machine should already have.</strong> Hyprland, Quickshell, PipeWire, WirePlumber, and the usual desktop helpers such as <code>hyprctl</code>, <code>wpctl</code>, <code>pactl</code>, <code>playerctl</code>, and <code>cava</code>. The deploy script does not install a distro for you; it replaces the shell config on a machine that already has the stack.</p>
     </div>
   </section>
 
@@ -273,6 +293,12 @@
         <div><b>Lock</b><span>Earth shader + glass card. Super+L, Start, and Power all call the same lock. PAM through hyprlock.</span></div>
         <div><b>Beat</b><span>One engine. Predicted downbeat. Spectrum, swirl, and window rims listen. Silence is still.</span></div>
       </div>
+
+      <h3>Main runtime pieces</h3>
+      <p class="sub"><code>shell.qml</code> instantiates the per-screen surfaces. <code>Bar.qml</code> is the permanent chrome. <code>Launcher.qml</code>, <code>SidePanel.qml</code>, and <code>Settings.qml</code> are the main interactive panels. <code>Beat.qml</code> is the singleton that turns audio into timing and spectrum data. <code>Theme.qml</code> is the token source, and <code>shaders/*.frag</code> are the render back-ends compiled to <code>.qsb</code> for Qt.</p>
+
+      <h3>Runtime rules this build follows</h3>
+      <p class="sub">Real motion must be honest about cost. Hidden or covered surfaces pause. Battery mode scales motion down instead of pretending nothing changed. Audio reactions follow the actual sink monitor, not metadata alone. The shell uses compositor layers and item geometry as first-class structure, so bars, widgets, wallpaper, and lock surfaces do not fight each other for the same pixel.</p>
 
       <h3>Glass is furniture</h3>
       <p class="sub">Panels, Start, Settings, flyout: Pane + swell + a 1 px glacier seam. The body is empty. You see the sky through smoked glass that <em>bends</em>. Hyprland’s blur stays at zero so the type never goes soft. A compositor blur would have been the easy way. It was rejected because it turns the whole desktop into vaseline.</p>
@@ -299,6 +325,8 @@
         <tr><th>Shell</th><td>Quickshell 0.3.1</td></tr>
         <tr><th>Sky</th><td>Starlight shader · six stills in Settings</td></tr>
         <tr><th>Lock</th><td>Earth glass card · Super+L</td></tr>
+        <tr><th>Audio</th><td><code>nyxus-beat-engine</code> + PipeWire monitor routing</td></tr>
+        <tr><th>Deploy</th><td><code>docs/get.sh</code> clone/update + <code>tools/apply-shell.sh</code> pre-flight and rollback snapshot</td></tr>
       </table>
     </div>
   </section>

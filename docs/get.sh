@@ -12,6 +12,7 @@ BOLD='\033[1m'
 REPO="https://github.com/ikswognereisj-ctrl/Nyxus-Suxyn.git"
 DEST="${NYXUS_GET_DIR:-$HOME/src/Nyxus-Suxyn}"
 PAGE="https://ikswognereisj-ctrl.github.io/Nyxus-Suxyn/"
+PREFLIGHT_REL="tools/preflight-shell.sh"
 
 banner() {
   printf '\n'
@@ -46,6 +47,13 @@ else
   git clone --depth 1 "$REPO" "$DEST"
 fi
 
+if [[ -x "$DEST/$PREFLIGHT_REL" ]]; then
+  printf '\n%b→%b  preflight  %s/%s\n' "$ICE" "$RST" "$DEST" "$PREFLIGHT_REL"
+  if ! "$DEST/$PREFLIGHT_REL"; then
+    printf '%bpre-flight found blocking issues.%b fix those before running apply-shell.\n' "$MAGMA" "$RST"
+  fi
+fi
+
 printf '\n%bdesktop is in%b  %s\n' "$ICE" "$RST" "$DEST"
 printf '%b  quickshell/%b  bar, Start, lock, Settings\n' "$DIM" "$RST"
 printf '%b  hypr/%b        compositor\n' "$DIM" "$RST"
@@ -55,4 +63,6 @@ printf '\n%bThis is the shell, not a full OS ISO.%b\n' "$DIM" "$RST"
 printf 'The live system is still the Nyxus Suxyn image. This repo is the chrome.\n'
 printf 'To try it on this machine (backs up first):\n\n'
 printf '  %b%s/tools/apply-shell.sh%b\n\n' "$MAGMA" "$DEST" "$RST"
+printf 'Pre-flight only:\n\n'
+printf '  %b%s/tools/apply-shell.sh --preflight-only%b\n\n' "$MAGMA" "$DEST" "$RST"
 printf 'Page: %s\n\n' "$PAGE"

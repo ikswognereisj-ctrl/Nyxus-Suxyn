@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Nyxus Suxyn — which Pulse/PipeWire sink Beat.qml's cava must tap.
 #
-# Prints two lines: sink name, then 0 or 1 (is anything actually playing).
+# Prints three lines: sink name, then 0 or 1 (is anything actually playing),
+# then route state (`ok`, `paused`, `muted`, `unavailable`).
 # Falls back to the default sink for the unused conf. Never the microphone.
 # Never a hardcoded device name.
 #
@@ -26,7 +27,7 @@ set -euo pipefail
 default=$(pactl get-default-sink 2>/dev/null || true)
 
 # Python parses the long sink-input list (cork/mute/volume) and MPRIS.
-# Prints: sink<TAB>0|1
+# Prints: sink<TAB>0|1<TAB>state
 map=$(python3 - "$default" <<'PY'
 import re, subprocess, sys
 
@@ -42,14 +43,26 @@ def run(cmd, timeout=0.6):
         return ""
 
 def sink_map():
-    names, states = {}, {}
+    names, states, order = {}, {}, []
     for line in run(["pactl", "list", "short", "sinks"]).splitlines():
         p = line.split("\t")
         if len(p) >= 2:
             names[p[0]] = p[1]
+            order.append(p[1])
             if len(p) >= 5:
                 states[p[1]] = p[4]
-    return names, states
+    mutes = {}
+    for block in re.split(r"\n(?=Sink #)", run(["pactl", "list", "sinks"])):
+        m = re.search(r"^\s*Name:\s*([^\n]+)", block, re.M)
+        if not m:
+            continue
+        mute = re.search(r"^\s*Mute:\s*(yes|no)", block, re.M)
+        mutes[m.group(1).strip()] = (mute.group(1) == "yes") if mute else False
+    return names, states, mutes, order
+
+def sink_available(name: str, states: dict) -> bool:
+    state = (states.get(name) or "").strip().upper()
+    return name != "" and state not in ("UNLINKED",)
 
 def is_browser(blob: str) -> bool:
     b = blob.lower()
@@ -59,7 +72,7 @@ def is_filter(name: str) -> bool:
     n = (name or "").lower()
     return any(x in n for x in FILTER)
 
-names, _states = sink_map()
+names, states, mutes, _sink_order = sink_map()
 text = run(["pactl", "list", "sink-inputs"])
 other = False
 browser = False
@@ -110,15 +123,32 @@ if playing and sink and is_filter(sink) and default and not is_filter(default):
     # EasyEffects monitor hiss is not the hear path. Headphones/default is.
     sink = default
 
+if not sink and sink_available(default, states):
+    sink = default
+
+state = "ok"
+if not sink:
+    state = "unavailable"
+elif mutes.get(sink, False):
+    state = "muted"
+    playing = 0
+elif not sink_available(sink, states):
+    state = "unavailable"
+    playing = 0
+elif not playing:
+    state = "paused"
+
 if not sink:
     sys.stderr.write("nyxus-beat-tap: no sink\n")
     sys.exit(1)
-sys.stdout.write(f"{sink}\t{playing}\n")
+sys.stdout.write(f"{sink}\t{playing}\t{state}\n")
 PY
 )
 
 sink=${map%%$'\t'*}
-playing=${map##*$'\t'}
+rest=${map#*$'\t'}
+playing=${rest%%$'\t'*}
+state=${rest##*$'\t'}
 
 if [[ -z ${sink:-} ]]; then
     echo "nyxus-beat-tap: no sink" >&2
@@ -146,4 +176,4 @@ if [[ $# -eq 2 ]]; then
     mv "$tmp" "$live"
 fi
 
-printf '%s\n%s\n' "$sink" "$playing"
+printf '%s\n%s\n%s\n' "$sink" "$playing" "${state:-ok}"

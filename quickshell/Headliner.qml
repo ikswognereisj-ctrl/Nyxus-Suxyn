@@ -59,6 +59,7 @@
 // are forwarded so the property names an operator would reach for are still on
 // the type they have always been on. `shaders/headliner.frag` was not opened.
 import Quickshell
+import Quickshell.Hyprland
 import Quickshell.Wayland
 import QtQuick
 
@@ -135,6 +136,52 @@ PanelWindow {
         onTriggered: root.windowExposed = true
     }
 
+    readonly property var hlMonitor: Hyprland.monitorFor(root.screen)
+    readonly property var topIpc: {
+        const t = Hyprland.activeToplevel;
+        return (t && t.lastIpcObject) ? t.lastIpcObject : null;
+    }
+    function _coversViewport(o) {
+        if (!o || !root.hlMonitor)
+            return false;
+        if (o.monitor !== root.hlMonitor.id)
+            return false;
+        if (o.fullscreen !== 0)
+            return true;
+        const at = o.at;
+        const size = o.size;
+        if (!at || !size || at.length < 2 || size.length < 2)
+            return false;
+        const pad = 6;
+        return at[0] <= pad && at[1] <= pad
+            && size[0] >= root.screen.width - pad * 2
+            && size[1] >= root.screen.height - pad * 2;
+    }
+    readonly property bool coveredByViewport: {
+        const o = root.topIpc;
+        return root._coversViewport(o);
+    }
+    onCoveredByViewportChanged: console.log("[Headliner] "
+                                            + (coveredByViewport
+                                               ? "viewport covered — pausing twinkle"
+                                               : "viewport exposed — resuming twinkle"))
+    Timer {
+        id: headlinerRefresh
+        interval: 40
+        repeat: false
+        onTriggered: Hyprland.refreshToplevels()
+    }
+    Connections {
+        target: Hyprland
+        function onRawEvent(event) {
+            const n = event.name;
+            if (n === "fullscreen" || n === "openwindow" || n === "closewindow"
+                || n === "activewindow" || n === "activewindowv2"
+                || n === "workspace" || n === "workspacev2" || n === "monitorfocus")
+                headlinerRefresh.restart();
+        }
+    }
+
     // ── ON BATTERY (Swirl.qml's rule, extended not replaced) ─────────────────
     // Swirl's `_saving` exists because half a core, continuously, is a real
     // bite out of an unplugged afternoon. The same argument applies here and
@@ -164,7 +211,7 @@ PanelWindow {
         id: skyItem
         anchors.fill: parent
         // The window half of the gate, which an Item cannot compute for itself.
-        active: root.windowExposed
+        active: root.windowExposed && !root.coveredByViewport
         batterySaver: root.batterySaver
         qualityTier: root.qualityTier
         // The commissioned look, unchanged: 0.45 twinkle depth, full density,

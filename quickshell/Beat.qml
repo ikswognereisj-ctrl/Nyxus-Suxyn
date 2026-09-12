@@ -217,7 +217,33 @@ Singleton {
     readonly property string _liveConf: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp")
                                         + "/nyxus-cava-beat.conf"
     property string _tap: ""
+    property string _audioRouteState: "paused"
     property bool _liveReady: false
+    property bool _routeRefreshPending: false
+
+    function _zeroReactiveState(clearSpectrum) {
+        beat.bass = 0;
+        beat.low = 0;
+        beat.mid = 0;
+        beat.high = 0;
+        beat.air = 0;
+        beat.pulse = 0;
+        beat.kick = 0;
+        beat._engineHot = false;
+        beat.locked = false;
+        beat.bpm = 0;
+        beat.barPos = 0;
+        beat.downbeat = false;
+        if (clearSpectrum && beat.spectrum.length > 0)
+            beat.spectrum = [];
+    }
+
+    function _restartAudioFeed(reason) {
+        if (reason && reason.length > 0)
+            console.log("[Beat] " + reason);
+        beat._routeRefreshPending = true;
+        feedRestartTap.restart();
+    }
 
     // ── one ear: the sink that is PLAYING (not the default, not the mic)
     // YouTube never registers MPRIS. Gating on hasPlayer handed the mic
@@ -234,17 +260,34 @@ Singleton {
                     return;
                 const s = lines[0];
                 const playing = lines.length > 1 && lines[1] === "1";
+                const routeState = lines.length > 2 ? lines[2] : (playing ? "ok" : "paused");
                 const sinkChanged = s !== beat._tap;
+                const routeChanged = routeState !== beat._audioRouteState;
+                beat._liveReady = true;
                 beat._tap = s;
+                beat._audioRouteState = routeState;
+                if (beat._routeRefreshPending) {
+                    beat._routeRefreshPending = false;
+                    if (routeState === "ok")
+                        feedRestartReaders.restart();
+                }
                 if (playing !== beat.havePlayback) {
                     beat.havePlayback = playing;
                     if (!playing)
-                        beat.kick = 0;
+                        beat._zeroReactiveState(true);
                 }
-                if (playing) {
-                    beat._liveReady = true;
-                    if (sinkChanged && proc.running)
-                        restartCava.restart();
+                if (routeChanged) {
+                    console.log("[Beat] route state -> " + routeState);
+                    if (routeState !== "ok")
+                        beat._zeroReactiveState(true);
+                }
+                if (sinkChanged && routeState === "ok") {
+                    console.log("[Beat] monitor source -> " + s);
+                    beat._restartAudioFeed("reconnecting audio monitor after sink change");
+                } else if (routeChanged && routeState === "ok") {
+                    beat._restartAudioFeed("reconnecting audio monitor after route state change");
+                } else if (sinkChanged) {
+                    console.log("[Beat] monitor source -> " + s + " (" + routeState + ")");
                 }
             }
         }
@@ -271,7 +314,38 @@ Singleton {
         interval: 40
         onTriggered: {
             proc.running = false;
-            proc.running = true;
+            if (beat.enabled && beat.havePlayback && beat._liveReady && !beat.engineOk)
+                proc.running = true;
+        }
+    }
+    Timer {
+        id: feedRestartTap
+        interval: 20
+        onTriggered: {
+            beat._liveReady = false;
+            tap.running = false;
+            tapStart.stop();
+            tapStart.start();
+        }
+    }
+    Timer {
+        id: feedRestartReaders
+        interval: 80
+        onTriggered: {
+            if (beat.enabled) {
+                if (engineProc.running)
+                    engineProc.running = false;
+                engineRestart.restart();
+            }
+            restartCava.restart();
+        }
+    }
+    Timer {
+        id: engineRestart
+        interval: 40
+        onTriggered: {
+            if (beat.enabled)
+                engineProc.running = true;
         }
     }
     // ── the engine · one long-lived process, parsed in-process ───────
@@ -479,8 +553,7 @@ Singleton {
             onRead: data => beat._frame(data)
         }
         onRunningChanged: {
-            if (!running) { beat.bass = 0; beat.low = 0; beat.mid = 0; beat.high = 0; beat.air = 0; beat.pulse = 0; beat.kick = 0; beat._bassAvg = 0;
-                            beat.spectrum = [];
+            if (!running) { beat._zeroReactiveState(true); beat._bassAvg = 0;
                             beat._bFloor = 1; beat._mFloor = 1; beat._hFloor = 1;
                             beat._bPrev = 0; beat._mPrev = 0; beat._hPrev = 0;
                             beat._fluxAvg = 0; beat._fluxDev = 0; }
