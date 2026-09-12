@@ -317,6 +317,7 @@ Singleton {
         onTriggered: {
             beat._liveReady = false;
             tap.running = false;
+            tapStart.stop();
             tapStart.start();
             feedRestartReaders.restart();
         }

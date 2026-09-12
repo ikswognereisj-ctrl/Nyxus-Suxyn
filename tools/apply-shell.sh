@@ -43,7 +43,11 @@ cp -a "$ROOT/quickshell/." "$TMP_QUICKSHELL/"
 if [[ -d "$HOME/.config/quickshell" ]]; then
   mv "$HOME/.config/quickshell" "$OLD_QUICKSHELL"
 fi
-mv "$TMP_QUICKSHELL" "$HOME/.config/quickshell"
+if ! mv "$TMP_QUICKSHELL" "$HOME/.config/quickshell"; then
+  [[ -d "$OLD_QUICKSHELL" ]] && mv "$OLD_QUICKSHELL" "$HOME/.config/quickshell"
+  printf 'failed to install quickshell config; restored previous copy\n' >&2
+  exit 1
+fi
 rm -rf "$OLD_QUICKSHELL"
 # hypr: copy conf, keep user's walls
 mkdir -p "$HOME/.config/hypr"

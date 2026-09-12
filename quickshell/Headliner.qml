@@ -141,16 +141,30 @@ PanelWindow {
         const t = Hyprland.activeToplevel;
         return (t && t.lastIpcObject) ? t.lastIpcObject : null;
     }
-    readonly property bool coveredByFullscreen: {
-        const o = root.topIpc;
+    function _coversViewport(o) {
         if (!o || !root.hlMonitor)
             return false;
-        return o.fullscreen !== 0 && o.monitor === root.hlMonitor.id;
+        if (o.monitor !== root.hlMonitor.id)
+            return false;
+        if (o.fullscreen !== 0)
+            return true;
+        const at = o.at;
+        const size = o.size;
+        if (!at || !size || at.length < 2 || size.length < 2)
+            return false;
+        const pad = 6;
+        return at[0] <= pad && at[1] <= pad
+            && size[0] >= root.screen.width - pad * 2
+            && size[1] >= root.screen.height - pad * 2;
     }
-    onCoveredByFullscreenChanged: console.log("[Headliner] "
-                                              + (coveredByFullscreen
-                                                 ? "fullscreen cover detected — pausing twinkle"
-                                                 : "fullscreen cover cleared — resuming twinkle"))
+    readonly property bool coveredByViewport: {
+        const o = root.topIpc;
+        return root._coversViewport(o);
+    }
+    onCoveredByViewportChanged: console.log("[Headliner] "
+                                            + (coveredByViewport
+                                               ? "viewport covered — pausing twinkle"
+                                               : "viewport exposed — resuming twinkle"))
     Timer {
         id: headlinerRefresh
         interval: 40
@@ -197,7 +211,7 @@ PanelWindow {
         id: skyItem
         anchors.fill: parent
         // The window half of the gate, which an Item cannot compute for itself.
-        active: root.windowExposed && !root.coveredByFullscreen
+        active: root.windowExposed && !root.coveredByViewport
         batterySaver: root.batterySaver
         qualityTier: root.qualityTier
         // The commissioned look, unchanged: 0.45 twinkle depth, full density,
