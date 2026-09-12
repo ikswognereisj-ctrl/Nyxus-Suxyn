@@ -115,9 +115,80 @@
       background: var(--panel);
     }
     .stack b { color: var(--ice); font-weight: 600; }
+
+    /* scroll progress bar */
+    #progress {
+      position: fixed; top: 0; left: 0; height: 2px; width: 0;
+      background: linear-gradient(90deg, var(--hair), var(--magma));
+      z-index: 60;
+    }
+
+    /* feature cards — "the main pieces at a glance" */
+    .cards { display: grid; gap: 18px; grid-template-columns: 1fr; }
+    @media (min-width: 700px) { .cards { grid-template-columns: 1fr 1fr; } }
+    @media (min-width: 1000px) { .cards { grid-template-columns: 1fr 1fr 1fr; } }
+    .card {
+      border: 1px solid rgba(79,127,166,.25);
+      border-radius: 12px;
+      background: var(--panel);
+      padding: 18px 18px 16px;
+      transition: border-color .2s ease, transform .2s ease, box-shadow .2s ease;
+    }
+    .card:hover {
+      border-color: rgba(255,120,71,.55);
+      transform: translateY(-3px);
+      box-shadow: 0 14px 40px rgba(0,0,0,.4);
+    }
+    .card .tag {
+      font-family: Orbitron, Inter, sans-serif;
+      font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+      color: var(--magma); margin-bottom: 6px;
+    }
+    .card h3 { margin: 0 0 6px; color: var(--ink); }
+    .card p { margin: 0; color: var(--dim); font-size: 13.5px; }
+    .card code { color: var(--ice); }
+
+    /* architecture flow */
+    .flow {
+      display: grid; gap: 10px;
+      font-size: 13.5px; margin: 0 0 28px;
+    }
+    .flow .hop {
+      display: grid; grid-template-columns: 30px 1fr; gap: 14px; align-items: start;
+      padding: 12px 14px;
+      border: 1px solid rgba(79,127,166,.22);
+      border-radius: 8px; background: var(--panel);
+    }
+    .flow .n {
+      font-family: Orbitron, Inter, sans-serif;
+      color: var(--magma); font-weight: 600; font-size: 14px; line-height: 1.4;
+    }
+    .flow .hop b { color: var(--ice); font-weight: 600; }
+    .flow .hop p { margin: 2px 0 0; color: var(--dim); }
+
+    /* faq */
+    details.faq {
+      border: 1px solid rgba(79,127,166,.22);
+      border-radius: 10px; background: var(--panel);
+      padding: 2px 18px; margin-bottom: 12px;
+    }
+    details.faq summary {
+      cursor: pointer; list-style: none;
+      padding: 14px 0; font-weight: 600; color: var(--ink);
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    }
+    details.faq summary::-webkit-details-marker { display: none; }
+    details.faq summary::after {
+      content: "+"; color: var(--magma); font-size: 20px; font-weight: 400;
+      transition: transform .2s ease; flex: none;
+    }
+    details.faq[open] summary::after { transform: rotate(45deg); }
+    details.faq .body { padding: 0 0 16px; color: var(--dim); font-size: 14px; }
+    details.faq .body code { color: var(--ice); }
   </style>
 </head>
 <body>
+  <div id="progress" aria-hidden="true"></div>
   <a class="skip" href="#overview">Skip to content</a>
   <header class="hero">
     <img src="assets/desktop.jpg" alt="Nyxus Suxyn desktop: Starlight sky, glass widgets, living bar" />
@@ -138,8 +209,9 @@
 
   <nav>
     <div class="wrap">
-      <a href="#horizon">Horizon</a>
+      <a href="#pieces">The pieces</a>
       <a href="#overview">Overview</a>
+      <a href="#horizon">Horizon</a>
       <a href="#starlight">Starlight</a>
       <a href="#swirl">Swirls</a>
       <a href="#visualizer">Visualizer</a>
@@ -150,10 +222,51 @@
       <a href="#tour">Tour</a>
       <a href="#get">Get it</a>
       <a href="#update">Update</a>
+      <a href="#architecture">How it works</a>
+      <a href="#faq">FAQ</a>
       <a href="#made">How it’s built</a>
       <a href="#scope">Scope</a>
     </div>
   </nav>
+
+  <section id="pieces">
+    <div class="wrap">
+      <h2>The main pieces, at a glance</h2>
+      <p class="sub">Six systems carry the whole desktop. Each is a real, separable piece of code — not a coat of paint. This is the map; the sections below go deep on each one.</p>
+      <div class="cards">
+        <div class="card">
+          <div class="tag">Chrome</div>
+          <h3>The Horizon bar</h3>
+          <p>No panel rectangle — an 84&nbsp;px lit seam of living paint. Dock, desks, clock, tray, and vitals sit on it and reflect into the swirl. Flips over into a spectrum analyser when music plays. <code>Bar.qml</code></p>
+        </div>
+        <div class="card">
+          <div class="tag">Sky</div>
+          <h3>Starlight</h3>
+          <p>The ground is a shader, not an image — three lattices of hard points on true black that twinkle by occupancy. It pauses on battery and under fullscreen windows. <code>shaders/headliner.frag</code></p>
+        </div>
+        <div class="card">
+          <div class="tag">Motion</div>
+          <h3>Living paint</h3>
+          <p>The swirl is a real Navier–Stokes fluid on the GPU, not a gradient. Idle it rolls on its own; pointer and beat feed it; hidden it sleeps. <code>Swirl.qml</code></p>
+        </div>
+        <div class="card">
+          <div class="tag">Sound</div>
+          <h3>The beat engine</h3>
+          <p>One process hears the PipeWire sink monitor, predicts the downbeat with a phase-locked loop, and times the spectrum, the swirl, and the window rims to it. Silence is still. <code>Beat.qml</code></p>
+        </div>
+        <div class="card">
+          <div class="tag">Control</div>
+          <h3>Settings &amp; flyout</h3>
+          <p>One Settings window — 40 pages of live controls over a catalog — plus a quick flyout for network, Bluetooth, power, and audio. <code>Settings.qml</code> · <code>SidePanel.qml</code></p>
+        </div>
+        <div class="card">
+          <div class="tag">Session</div>
+          <h3>Lock &amp; login</h3>
+          <p>An Earth shader, time and weather, and a glass unlock card. Super+L, Start, and Power all hit the same PAM-authenticated lock. <code>Lock.qml</code> · <code>hyprlock.conf</code></p>
+        </div>
+      </div>
+    </div>
+  </section>
 
   <section id="overview">
     <div class="wrap">
@@ -304,6 +417,63 @@
     </div>
   </section>
 
+  <section id="architecture">
+    <div class="wrap">
+      <h2>How it works</h2>
+      <p class="sub">The whole desktop is one data flow. Sound and input come in at the bottom; everything you see is a reaction to it. Here is the path a single beat of music actually travels.</p>
+
+      <div class="flow">
+        <div class="hop"><span class="n">01</span><div><b>PipeWire plays audio.</b><p>The desktop's sound server runs the sink. Nothing in the shell touches the audio device directly.</p></div></div>
+        <div class="hop"><span class="n">02</span><div><b><code>nyxus-beat-tap.sh</code> picks the right monitor.</b><p>It follows the <em>default</em> sink's monitor source, so the analysis tracks whatever output is actually live — and goes quiet on mute, pause, or an unavailable route instead of guessing.</p></div></div>
+        <div class="hop"><span class="n">03</span><div><b><code>nyxus-beat-engine</code> analyzes it.</b><p>STFT → mel bands → SuperFlux onset detection → autocorrelation tempo → a phase-locked loop that predicts the downbeat <em>ahead</em> of the hit, so reactions land on time instead of chasing it.</p></div></div>
+        <div class="hop"><span class="n">04</span><div><b><code>Beat.qml</code> broadcasts it.</b><p>One Quickshell singleton turns the engine's output into timing + spectrum data the rest of the shell can bind to.</p></div></div>
+        <div class="hop"><span class="n">05</span><div><b>The surfaces react.</b><p><code>BarSpectrum.qml</code> flips the bar into columns, <code>Swirl.qml</code> feeds bass/mid/high and the predicted kick into the fluid, and <code>BorderPulse.qml</code> rewrites Hyprland's active border once per beat. No real audio → no fake pulse.</p></div></div>
+      </div>
+
+      <h3>The layers, top to bottom</h3>
+      <p class="sub">Quickshell surfaces live on explicit Wayland layer-shell tiers, so the sky, the widgets, the bar, and the lock never fight over the same pixel.</p>
+      <div class="stack">
+        <div><b>Overlay</b><span>Lock &amp; screensaver (<code>Lock.qml</code>, <code>Screensaver.qml</code>) — above everything, the only tier that authenticates.</span></div>
+        <div><b>Top</b><span>The Horizon bar (<code>Bar.qml</code>) and the flyout (<code>SidePanel.qml</code>) — the chrome you touch.</span></div>
+        <div><b>Bottom</b><span>Widgets (<code>Widgets.qml</code>) and the sky (<code>Headliner.qml</code> / <code>Starlight3D.qml</code>) — they sit <em>in</em> the scene, behind windows.</span></div>
+        <div><b>Background</b><span>The still wallpaper (<code>LiveWall.qml</code> + <code>awww</code>) — the floor everything else floats over.</span></div>
+      </div>
+      <p class="cap"><strong>Why it holds together.</strong> <code>shell.qml</code> instantiates the surfaces; <code>Theme.qml</code> is the single token source so no component writes a raw hex; and the compositor itself (<code>hypr/hyprland.conf</code> + the <code>conf.d/</code> shards) carries the window rules, keybinds, and idle/lock pipeline the shell assumes.</p>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="wrap">
+      <h2>Questions</h2>
+      <p class="sub">The short answers to what people actually ask.</p>
+
+      <details class="faq">
+        <summary>Is this a distro or an ISO I can flash?</summary>
+        <div class="body">No. This repository is the <strong>shell layer</strong> — Quickshell chrome, Hyprland config, shaders, and scripts. It does not build or ship an operating system. The full system is a separate Nyxus Suxyn image; only the Calamares <em>branding</em> for it lives here (in <code>installer/</code>).</div>
+      </details>
+      <details class="faq">
+        <summary>Will it work on my machine?</summary>
+        <div class="body">It is tuned for one Alienware 15 (1920×1200 @ 165&nbsp;Hz). Machine-specific values ship commented out with generic fallbacks, so it will <em>run</em> elsewhere, but it is opinionated. The supported path is to <strong>fork it</strong> and adapt it — <code>DEPENDENCIES.md</code> lists the expected stack and <code>tools/apply-shell.sh --preflight-only</code> checks a machine against it before anything changes.</div>
+      </details>
+      <details class="faq">
+        <summary>How do I install it from a terminal?</summary>
+        <div class="body"><code>curl -fsSL https://ikswognereisj-ctrl.github.io/Nyxus-Suxyn/get.sh | bash</code> clones it to <code>~/src/Nyxus-Suxyn</code> and pre-flights the machine. Then <code>~/src/Nyxus-Suxyn/tools/apply-shell.sh</code> deploys it, after taking a timestamped backup.</div>
+      </details>
+      <details class="faq">
+        <summary>How do I update it later?</summary>
+        <div class="body"><code>~/src/Nyxus-Suxyn/tools/update-shell.sh</code> pulls the latest commit (fast-forward only — your local edits are never discarded) and re-runs the deploy with a fresh rollback snapshot. Use <code>--check</code> to see how far behind you are without changing anything.</div>
+      </details>
+      <details class="faq">
+        <summary>What happens if an update breaks something?</summary>
+        <div class="body">Every deploy snapshots your previous <code>~/.config/quickshell</code> and <code>~/.config/hypr</code> to <code>~/.local/share/nyxus/shell-bak-&lt;timestamp&gt;/</code> with a <code>RESTORE.txt</code> beside them. Rolling back is copying that snapshot back — the exact commands are written into the file at deploy time.</div>
+      </details>
+      <details class="faq">
+        <summary>Does it collect or send any data?</summary>
+        <div class="body">No. The only network calls in the shell are to the hardcoded Open-Meteo weather APIs, and only if you turn weather on. Locking authenticates locally through PAM; no credentials are stored, logged, or transmitted.</div>
+      </details>
+    </div>
+  </section>
+
   <section id="made">
     <div class="wrap">
       <h2>How this build is put together</h2>
@@ -377,5 +547,19 @@
       Photographs and clips from the live Alienware, 2026-09-11.
     </div>
   </footer>
+  <script>
+    (function () {
+      var bar = document.getElementById('progress');
+      if (!bar) return;
+      var update = function () {
+        var h = document.documentElement;
+        var max = h.scrollHeight - h.clientHeight;
+        bar.style.width = (max > 0 ? (h.scrollTop / max) * 100 : 0) + '%';
+      };
+      addEventListener('scroll', update, { passive: true });
+      addEventListener('resize', update);
+      update();
+    })();
+  </script>
 </body>
 </html>
