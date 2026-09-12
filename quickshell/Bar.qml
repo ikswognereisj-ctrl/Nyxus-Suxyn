@@ -2816,7 +2816,7 @@ PanelWindow {
     readonly property var chromeKeepOut: {
         const out = [];
         const zs = bar.chromeZones;
-        const maxX = Math.max(1, bar.screen ? bar.screen.width : bar.width);
+        const maxX = Math.max(1, bar.width);
         for (let i = 0; i < zs.length; i++) {
             const it = zs[i];
             // ⚠ x/width/visible are read explicitly, not merely used inside
