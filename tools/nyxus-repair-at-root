@@ -6,14 +6,18 @@
 # no TTY. This copies known-good boot + greetd files from 169 onto @.
 # It does NOT enable the Quickshell greeter. It does NOT mkinitcpio.
 #
-#   sudo /home/gowski/.local/bin/nyxus-repair-at-root
+#   sudo ~/.local/bin/nyxus-repair-at-root
 set -euo pipefail
 
 SNAP=/.snapshots/169/snapshot
 DEV=/dev/nvme0n1p1
 MNT=/tmp/nyxus-at-root
 STAMP=$(date +%Y%m%d-%H%M%S)
-BAK=/home/gowski/.local/share/nyxus/lockout-backup-${STAMP}
+# Backups land in the invoking user's data dir, not a hardcoded account.
+# SUDO_USER is set by sudo; fall back to $HOME so a root shell still works.
+OWNER_HOME=$(getent passwd "${SUDO_USER:-$USER}" | cut -d: -f6)
+OWNER_HOME=${OWNER_HOME:-$HOME}
+BAK=${OWNER_HOME}/.local/share/nyxus/lockout-backup-${STAMP}
 
 if [[ ${EUID} -ne 0 ]]; then
   cat <<EOF

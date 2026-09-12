@@ -32,7 +32,7 @@ AppWindow {
 
     readonly property color ice: Theme.tokenAccentPrimary
     readonly property color iceHair: Theme.tokenAccentHairline
-    readonly property string homePath: Quickshell.env("HOME") || "/home/gowski"
+    readonly property string homePath: Quickshell.env("HOME") || "/"
 
     readonly property var shown: {
         var q = win.filter.trim().toLowerCase();

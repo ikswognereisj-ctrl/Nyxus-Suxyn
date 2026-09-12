@@ -24,6 +24,9 @@ import QtQuick
 Singleton {
     id: beat
 
+    // Set NYXUS_BEAT_DEBUG=1 to trace audio route/source changes.
+    readonly property bool debugLog: Quickshell.env("NYXUS_BEAT_DEBUG") === "1"
+
     // ── what consumers read ──────────────────────────────────────────
     // ── TRK-3495 · the FULL visual spectrum ─────────────────────────────
     // `nyxus-beat-engine` has always emitted FIVE visual bands — its own
@@ -239,7 +242,7 @@ Singleton {
     }
 
     function _restartAudioFeed(reason) {
-        if (reason && reason.length > 0)
+        if (debugLog && reason && reason.length > 0)
             console.log("[Beat] " + reason);
         beat._routeRefreshPending = true;
         feedRestartTap.restart();
@@ -277,17 +280,20 @@ Singleton {
                         beat._zeroReactiveState(true);
                 }
                 if (routeChanged) {
-                    console.log("[Beat] route state -> " + routeState);
+                    if (debugLog)
+                        console.log("[Beat] route state -> " + routeState);
                     if (routeState !== "ok")
                         beat._zeroReactiveState(true);
                 }
                 if (sinkChanged && routeState === "ok") {
-                    console.log("[Beat] monitor source -> " + s);
+                    if (debugLog)
+                        console.log("[Beat] monitor source -> " + s);
                     beat._restartAudioFeed("reconnecting audio monitor after sink change");
                 } else if (routeChanged && routeState === "ok") {
                     beat._restartAudioFeed("reconnecting audio monitor after route state change");
                 } else if (sinkChanged) {
-                    console.log("[Beat] monitor source -> " + s + " (" + routeState + ")");
+                    if (debugLog)
+                        console.log("[Beat] monitor source -> " + s + " (" + routeState + ")");
                 }
             }
         }

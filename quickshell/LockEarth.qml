@@ -49,11 +49,12 @@ import QtQuick
 Item {
     id: earth
 
-    // ── where he is ──────────────────────────────────────────────────────
+    // ── where the observer is ────────────────────────────────────────────
     // Overwritten from the cache that `nyxus-lock-weather` fills. The default
-    // is only what the first frame shows before that read lands.
-    property real lat: 42.511
-    property real lon: -83.616
+    // is only what the first frame shows before that read lands; it is a
+    // generic stand-in (0,0), not a real location.
+    property real lat: 0.0
+    property real lon: 0.0
 
     // ── the look, all of it settings-driven ──────────────────────────────
     // `sizeFrac` is the globe's DIAMETER as a fraction of the screen's short

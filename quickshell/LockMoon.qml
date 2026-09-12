@@ -50,8 +50,10 @@ Item {
     id: moon
 
     // ── where the observer is ────────────────────────────────────────────
-    property real lat: 42.511
-    property real lon: -83.616
+    // Generic stand-in (0,0), not a real location; the real fixup lands from
+    // the weather cache before the first frame.
+    property real lat: 0.0
+    property real lon: 0.0
 
     // ── the band this may occupy, in fractions of width ──────────────────
     // Set by Lock.qml from the slab's own geometry, so the text column is a

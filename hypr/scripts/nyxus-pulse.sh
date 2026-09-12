@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -uo pipefail
 # ============================================================
 #  NYXUS PULSE — audio-reactive prism halo (rev r1 · 2026-07-07)
 #

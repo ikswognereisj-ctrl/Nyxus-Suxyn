@@ -2,7 +2,7 @@
 # Live pin: GTK radial greeter, dead-man off. No initramfs, no Plymouth,
 # no Quickshell login. Run ON this session (you are already on @).
 #
-#   sudo /home/gowski/.local/bin/nyxus-pin-gtk-greeter
+#   sudo ~/.local/bin/nyxus-pin-gtk-greeter
 set -euo pipefail
 
 CFG=/etc/greetd/config.toml

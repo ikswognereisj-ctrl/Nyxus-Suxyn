@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -uo pipefail
 # NYXUS easter egg - "comet pulse". Secret chord: SUPER+SHIFT+X.
 # Spins the emission border gradient a full 3 turns around every
 # window, then settles back to the stock 270deg galaxy ring.

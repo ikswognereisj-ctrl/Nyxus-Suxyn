@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -uo pipefail
 # NYXUS easter egg - a different cryptic line on the lock screen each day.
 # Deterministic: day-of-year picks the line, so it changes at midnight.
 LINES=(
