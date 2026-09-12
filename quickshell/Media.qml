@@ -195,6 +195,7 @@ AppWindow {
         id: listProc
         running: false
         command: ["python3", win.io()]
+        onExited: function (code) { if (code !== 0) console.warn("[Media] library scan exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -218,6 +219,7 @@ AppWindow {
         id: eqGet
         running: false
         command: ["python3", win.io(), "eq-get"]
+        onExited: function (code) { if (code !== 0) console.warn("[Media] eq read exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -237,6 +239,7 @@ AppWindow {
         id: eqSet
         running: false
         command: ["python3", win.io(), "eq-get"]
+        onExited: function (code) { if (code !== 0) console.warn("[Media] eq apply exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -261,11 +264,13 @@ AppWindow {
         id: playProc
         running: false
         command: ["python3", win.io(), "play", "{}"]
+        onExited: function (code) { if (code !== 0) console.warn("[Media] playback command exited code " + code); }
     }
     Process {
         id: careProc
         running: false
         command: ["python3", win.io(), "care"]
+        onExited: function (code) { if (code !== 0) console.warn("[Media] care read exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try { win.care = JSON.parse(String(this.text)); } catch (e) { }
@@ -276,6 +281,7 @@ AppWindow {
         id: autoProc
         running: false
         command: ["python3", win.io(), "auto", "on"]
+        onExited: function (code) { if (code !== 0) console.warn("[Media] automix toggle exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: win.refresh()
         }

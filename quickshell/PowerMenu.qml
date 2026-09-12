@@ -127,6 +127,7 @@ PanelWindow {
             'if command -v nyxus-hibernate >/dev/null 2>&1; then '
           + '  nyxus-hibernate --check --json 2>/dev/null; '
           + 'else echo __NOHIB__; fi']
+        onExited: function (code) { if (code !== 0) console.warn("[PowerMenu] hibernate probe exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 var raw = String(this.text).trim();

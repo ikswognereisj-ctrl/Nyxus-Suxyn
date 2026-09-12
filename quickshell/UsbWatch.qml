@@ -74,6 +74,8 @@ Singleton {
         command: ["stdbuf", "-oL", "udevadm", "monitor", "--udev",
                   "--subsystem-match=block"]
 
+        onExited: function (code) { if (code !== 0) console.warn("[UsbWatch] udev monitor exited code " + code); }
+
         stdout: SplitParser {
             splitMarker: "\n"
             onRead: function (line) {
@@ -119,6 +121,8 @@ Singleton {
         running: false
         command: ["lsblk", "-J", "-b", "-o",
                   "NAME,PATH,SIZE,TYPE,RM,HOTPLUG,TRAN,FSTYPE,LABEL,MOUNTPOINT,VENDOR,MODEL"]
+
+        onExited: function (code) { if (code !== 0) console.warn("[UsbWatch] device list exited code " + code); }
 
         stdout: StdioCollector {
             onStreamFinished: {
@@ -290,6 +294,7 @@ Singleton {
     Process {
         id: actor
         running: false
+        onExited: function (code) { if (code !== 0) console.warn("[UsbWatch] mount action exited code " + code); }
         stderr: StdioCollector {
             onStreamFinished: {
                 var msg = String(this.text).trim();

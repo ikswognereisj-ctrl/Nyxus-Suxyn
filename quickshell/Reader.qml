@@ -166,6 +166,7 @@ AppWindow {
         id: lastProc
         running: false
         command: ["python3", win.io(), "last"]
+        onExited: function (code) { if (code !== 0) console.warn("[Reader] last document read exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -180,6 +181,7 @@ AppWindow {
         id: infoProc
         running: false
         command: ["python3", win.io(), "last"]
+        onExited: function (code) { if (code !== 0) console.warn("[Reader] document info exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 win.listing = false;
@@ -213,6 +215,7 @@ AppWindow {
         id: renderProc
         running: false
         command: ["python3", win.io(), "last"]
+        onExited: function (code) { if (code !== 0) console.warn("[Reader] page render exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -227,6 +230,7 @@ AppWindow {
         id: tocProc
         running: false
         command: ["python3", win.io(), "last"]
+        onExited: function (code) { if (code !== 0) console.warn("[Reader] outline read exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -240,11 +244,13 @@ AppWindow {
         id: saveProc
         running: false
         command: ["python3", win.io(), "last"]
+        onExited: function (code) { if (code !== 0) console.warn("[Reader] save exited code " + code); }
     }
     Process {
         id: findProc
         running: false
         command: ["python3", win.io(), "last"]
+        onExited: function (code) { if (code !== 0) console.warn("[Reader] find exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -265,6 +271,7 @@ AppWindow {
         id: printProc
         running: false
         command: ["python3", win.io(), "last"]
+        onExited: function (code) { if (code !== 0) console.warn("[Reader] print exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -278,6 +285,7 @@ AppWindow {
         id: pickProc
         running: false
         command: ["python3", win.io(), "pick"]
+        onExited: function (code) { if (code !== 0) console.warn("[Reader] file pick exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try {

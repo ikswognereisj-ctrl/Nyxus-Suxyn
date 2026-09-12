@@ -263,6 +263,7 @@ AppWindow {
         id: catProc
         running: false
         command: ["python3", win.io(), "catalog"]
+        onExited: function (code) { if (code !== 0) console.warn("[Store] catalog read exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -278,6 +279,7 @@ AppWindow {
         id: updProc
         running: false
         command: ["python3", win.io(), "updates"]
+        onExited: function (code) { if (code !== 0) console.warn("[Store] updates read exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -291,6 +293,7 @@ AppWindow {
         id: instProc
         running: false
         command: ["python3", win.io(), "catalog"]
+        onExited: function (code) { if (code !== 0) console.warn("[Store] install exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 win.busyId = "";
@@ -308,6 +311,7 @@ AppWindow {
         id: upgProc
         running: false
         command: ["python3", win.io(), "upgrade"]
+        onExited: function (code) { if (code !== 0) console.warn("[Store] upgrade exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 win.busyId = "";
