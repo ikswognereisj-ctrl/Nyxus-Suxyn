@@ -121,8 +121,11 @@ Item {
     // Kept for the Bar.qml call site; the mirrored envelope fills the item
     // and this now only steers the spine's resting position.
     property int peakH: Math.round(root.height * 0.76)
-    readonly property real _screenScaleX: Screen.width > 0 ? Screen.width / 1920 : 1
-    readonly property real _screenScaleY: Screen.height > 0 ? Screen.height / 1200 : 1
+    readonly property var _win: Window.window
+    readonly property real _screenW: _win && _win.screen ? _win.screen.width : Screen.width
+    readonly property real _screenH: _win && _win.screen ? _win.screen.height : Screen.height
+    readonly property real _screenScaleX: root._screenW > 0 ? root._screenW / 1920 : 1
+    readonly property real _screenScaleY: root._screenH > 0 ? root._screenH / 1200 : 1
     readonly property real _screenScale: Math.max(0.80, Math.min(1.35,
         Math.min(root._screenScaleX, root._screenScaleY)))
     readonly property int _edgePad: Math.max(10, Math.round(12 * root._screenScale))

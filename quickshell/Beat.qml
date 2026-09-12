@@ -265,6 +265,7 @@ Singleton {
                 const routeState = lines.length > 2 ? lines[2] : (playing ? "ok" : "paused");
                 const sinkChanged = s !== beat._tap;
                 const routeChanged = routeState !== beat._audioRouteState;
+                beat._liveReady = true;
                 beat._tap = s;
                 beat._audioRouteState = routeState;
                 if (playing !== beat.havePlayback) {
@@ -283,7 +284,6 @@ Singleton {
                 } else if (routeChanged && routeState === "ok") {
                     beat._restartAudioFeed("reconnecting audio monitor after route state change");
                 }
-                beat._liveReady = true;
             }
         }
     }
@@ -527,7 +527,6 @@ Singleton {
         }
         onRunningChanged: {
             if (!running) { beat._zeroReactiveState(true); beat._bassAvg = 0;
-                            beat.spectrum = [];
                             beat._bFloor = 1; beat._mFloor = 1; beat._hFloor = 1;
                             beat._bPrev = 0; beat._mPrev = 0; beat._hPrev = 0;
                             beat._fluxAvg = 0; beat._fluxDev = 0; }

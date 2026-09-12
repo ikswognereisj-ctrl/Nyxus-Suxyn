@@ -72,7 +72,7 @@ def is_filter(name: str) -> bool:
     n = (name or "").lower()
     return any(x in n for x in FILTER)
 
-names, states, mutes, sink_order = sink_map()
+names, states, mutes, _sink_order = sink_map()
 text = run(["pactl", "list", "sink-inputs"])
 other = False
 browser = False
@@ -123,18 +123,8 @@ if playing and sink and is_filter(sink) and default and not is_filter(default):
     # EasyEffects monitor hiss is not the hear path. Headphones/default is.
     sink = default
 
-if (not sink or not sink_available(sink, states)) and sink_available(default, states):
+if not sink and sink_available(default, states):
     sink = default
-if not sink or not sink_available(sink, states):
-    for cand in sink_order:
-        if sink_available(cand, states) and not is_filter(cand):
-            sink = cand
-            break
-if not sink or not sink_available(sink, states):
-    for cand in sink_order:
-        if sink_available(cand, states):
-            sink = cand
-            break
 
 state = "ok"
 if not sink:

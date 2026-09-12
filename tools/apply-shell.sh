@@ -6,6 +6,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 STAMP=$(date +%Y%m%d-%H%M%S)
 BAK="$HOME/.local/share/nyxus/shell-bak-$STAMP"
 PREFLIGHT="$ROOT/tools/preflight-shell.sh"
+TMP_QUICKSHELL="$HOME/.config/.nyxus-quickshell-$STAMP"
+OLD_QUICKSHELL="$HOME/.config/.nyxus-quickshell-prev-$STAMP"
 
 snapshot_existing() {
   mkdir -p "$BAK"
@@ -35,9 +37,14 @@ snapshot_existing
 printf '  snap  rollback snapshot created\n'
 
 mkdir -p "$HOME/.config"
-rm -rf "$HOME/.config/quickshell"
-mkdir -p "$HOME/.config/quickshell"
-cp -a "$ROOT/quickshell/." "$HOME/.config/quickshell/"
+rm -rf "$TMP_QUICKSHELL" "$OLD_QUICKSHELL"
+mkdir -p "$TMP_QUICKSHELL"
+cp -a "$ROOT/quickshell/." "$TMP_QUICKSHELL/"
+if [[ -d "$HOME/.config/quickshell" ]]; then
+  mv "$HOME/.config/quickshell" "$OLD_QUICKSHELL"
+fi
+mv "$TMP_QUICKSHELL" "$HOME/.config/quickshell"
+rm -rf "$OLD_QUICKSHELL"
 # hypr: copy conf, keep user's walls
 mkdir -p "$HOME/.config/hypr"
 find "$ROOT/hypr" -maxdepth 1 -type f -exec cp -a {} "$HOME/.config/hypr/" \;
