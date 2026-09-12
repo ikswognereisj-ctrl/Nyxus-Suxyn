@@ -185,6 +185,33 @@
     details.faq[open] summary::after { transform: rotate(45deg); }
     details.faq .body { padding: 0 0 16px; color: var(--dim); font-size: 14px; }
     details.faq .body code { color: var(--ice); }
+
+    /* media inside the piece cards */
+    .card .shot {
+      margin: -18px -18px 12px;
+      border-bottom: 1px solid rgba(79,127,166,.25);
+      overflow: hidden; border-radius: 12px 12px 0 0;
+    }
+    .card .shot img { width: 100%; height: 130px; object-fit: cover; display: block; }
+
+    /* keybind cheat-sheet */
+    .keys { display: grid; gap: 26px; grid-template-columns: 1fr; }
+    @media (min-width: 860px) { .keys { grid-template-columns: 1fr 1fr; } }
+    table.binds { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    table.binds caption {
+      text-align: left; font-family: Orbitron, Inter, sans-serif;
+      font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+      color: var(--magma); padding-bottom: 8px;
+    }
+    table.binds td { padding: 7px 10px; border-bottom: 1px solid rgba(79,127,166,.16); vertical-align: top; }
+    table.binds td:first-child { width: 46%; }
+    table.binds tr:hover td { background: rgba(79,127,166,.08); }
+    kbd {
+      display: inline-block; padding: 1px 7px; margin: 1px 2px 1px 0;
+      border: 1px solid rgba(183,230,242,.4); border-bottom-width: 2px; border-radius: 5px;
+      background: #04121a; color: var(--ice);
+      font-family: ui-monospace, monospace; font-size: 12px; white-space: nowrap;
+    }
   </style>
 </head>
 <body>
@@ -223,6 +250,7 @@
       <a href="#get">Get it</a>
       <a href="#update">Update</a>
       <a href="#architecture">How it works</a>
+      <a href="#keys">Keys</a>
       <a href="#faq">FAQ</a>
       <a href="#made">How it’s built</a>
       <a href="#scope">Scope</a>
@@ -235,31 +263,37 @@
       <p class="sub">Six systems carry the whole desktop. Each is a real, separable piece of code — not a coat of paint. This is the map; the sections below go deep on each one.</p>
       <div class="cards">
         <div class="card">
+          <div class="shot"><img src="assets/bar.jpg" alt="The Horizon bar with dock, clock, vitals and reflections" loading="lazy" /></div>
           <div class="tag">Chrome</div>
           <h3>The Horizon bar</h3>
           <p>No panel rectangle — an 84&nbsp;px lit seam of living paint. Dock, desks, clock, tray, and vitals sit on it and reflect into the swirl. Flips over into a spectrum analyser when music plays. <code>Bar.qml</code></p>
         </div>
         <div class="card">
+          <div class="shot"><img src="assets/desktop.jpg" alt="Starlight sky with glass widgets" loading="lazy" /></div>
           <div class="tag">Sky</div>
           <h3>Starlight</h3>
           <p>The ground is a shader, not an image — three lattices of hard points on true black that twinkle by occupancy. It pauses on battery and under fullscreen windows. <code>shaders/headliner.frag</code></p>
         </div>
         <div class="card">
+          <div class="shot"><img src="assets/bar.jpg" alt="Living paint seam under the bar" loading="lazy" /></div>
           <div class="tag">Motion</div>
           <h3>Living paint</h3>
           <p>The swirl is a real Navier–Stokes fluid on the GPU, not a gradient. Idle it rolls on its own; pointer and beat feed it; hidden it sleeps. <code>Swirl.qml</code></p>
         </div>
         <div class="card">
+          <div class="shot"><img src="assets/visualizer.jpg" alt="The spectrum analyser face of the bar" loading="lazy" /></div>
           <div class="tag">Sound</div>
           <h3>The beat engine</h3>
           <p>One process hears the PipeWire sink monitor, predicts the downbeat with a phase-locked loop, and times the spectrum, the swirl, and the window rims to it. Silence is still. <code>Beat.qml</code></p>
         </div>
         <div class="card">
+          <div class="shot"><img src="assets/settings.jpg" alt="The Settings hub and quick flyout" loading="lazy" /></div>
           <div class="tag">Control</div>
           <h3>Settings &amp; flyout</h3>
           <p>One Settings window — 40 pages of live controls over a catalog — plus a quick flyout for network, Bluetooth, power, and audio. <code>Settings.qml</code> · <code>SidePanel.qml</code></p>
         </div>
         <div class="card">
+          <div class="shot"><img src="assets/lock.jpg" alt="The Earth lock screen with glass unlock card" loading="lazy" /></div>
           <div class="tag">Session</div>
           <h3>Lock &amp; login</h3>
           <p>An Earth shader, time and weather, and a glass unlock card. Super+L, Start, and Power all hit the same PAM-authenticated lock. <code>Lock.qml</code> · <code>hyprlock.conf</code></p>
@@ -439,6 +473,61 @@
         <div><b>Background</b><span>The still wallpaper (<code>LiveWall.qml</code> + <code>awww</code>) — the floor everything else floats over.</span></div>
       </div>
       <p class="cap"><strong>Why it holds together.</strong> <code>shell.qml</code> instantiates the surfaces; <code>Theme.qml</code> is the single token source so no component writes a raw hex; and the compositor itself (<code>hypr/hyprland.conf</code> + the <code>conf.d/</code> shards) carries the window rules, keybinds, and idle/lock pipeline the shell assumes.</p>
+    </div>
+  </section>
+
+  <section id="keys">
+    <div class="wrap">
+      <h2>Keybind cheat-sheet</h2>
+      <p class="sub">The chords that drive the desktop, straight from <code>hypr/hyprland.conf</code> and the <code>conf.d/</code> shards. <kbd>Super</kbd> is the modifier (<code>$mod</code>).</p>
+
+      <div class="keys">
+        <table class="binds">
+          <caption>Launch &amp; shell</caption>
+          <tr><td><kbd>Super</kbd><kbd>Enter</kbd></td><td>Terminal (ghostty)</td></tr>
+          <tr><td><kbd>Super</kbd><kbd>Space</kbd></td><td>Start / launcher</td></tr>
+          <tr><td><kbd>Super</kbd><kbd>A</kbd> / <kbd>N</kbd></td><td>Quick flyout</td></tr>
+          <tr><td><kbd>Super</kbd><kbd>X</kbd></td><td>Power menu</td></tr>
+          <tr><td><kbd>Super</kbd><kbd>Tab</kbd></td><td>Task view</td></tr>
+          <tr><td><kbd>Super</kbd><kbd>.</kbd></td><td>Emoji picker</td></tr>
+          <tr><td><kbd>Super</kbd><kbd>B</kbd></td><td>Browser</td></tr>
+          <tr><td><kbd>Super</kbd><kbd>E</kbd></td><td>Files</td></tr>
+        </table>
+
+        <table class="binds">
+          <caption>Windows</caption>
+          <tr><td><kbd>Super</kbd><kbd>Q</kbd></td><td>Close window</td></tr>
+          <tr><td><kbd>Alt</kbd><kbd>F4</kbd></td><td>Close window</td></tr>
+          <tr><td><kbd>Alt</kbd><kbd>Tab</kbd></td><td>Cycle windows</td></tr>
+          <tr><td><kbd>Super</kbd><kbd>F</kbd></td><td>Fullscreen</td></tr>
+          <tr><td><kbd>Super</kbd><kbd>Shift</kbd><kbd>V</kbd></td><td>Toggle floating</td></tr>
+          <tr><td><kbd>Super</kbd> + <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd></td><td>Snap to halves</td></tr>
+          <tr><td><kbd>Super</kbd><kbd>Alt</kbd> + arrows</td><td>Move focus</td></tr>
+          <tr><td><kbd>Super</kbd><kbd>Alt</kbd><kbd>Shift</kbd> + arrows</td><td>Move window</td></tr>
+        </table>
+
+        <table class="binds">
+          <caption>Workspaces &amp; rooms</caption>
+          <tr><td><kbd>Super</kbd><kbd>1</kbd>–<kbd>0</kbd></td><td>Go to workspace 1–10</td></tr>
+          <tr><td><kbd>Super</kbd><kbd>Shift</kbd><kbd>1</kbd>–<kbd>0</kbd></td><td>Move window to workspace</td></tr>
+          <tr><td><kbd>Super</kbd><kbd>S</kbd></td><td>Toggle scratchpad</td></tr>
+          <tr><td><kbd>Ctrl</kbd><kbd>Alt</kbd> + arrows</td><td>Walk between rooms</td></tr>
+          <tr><td><kbd>Super</kbd><kbd>Alt</kbd><kbd>M</kbd></td><td>Station map</td></tr>
+          <tr><td><kbd>Super</kbd> + scroll</td><td>Next / previous workspace</td></tr>
+        </table>
+
+        <table class="binds">
+          <caption>Session &amp; capture</caption>
+          <tr><td><kbd>Super</kbd><kbd>L</kbd></td><td>Lock</td></tr>
+          <tr><td><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>Del</kbd></td><td>Power menu</td></tr>
+          <tr><td><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>Esc</kbd></td><td>System monitor</td></tr>
+          <tr><td><kbd>PrtSc</kbd></td><td>Screenshot (fullscreen)</td></tr>
+          <tr><td><kbd>Shift</kbd><kbd>PrtSc</kbd></td><td>Screenshot (region)</td></tr>
+          <tr><td><kbd>Alt</kbd><kbd>PrtSc</kbd></td><td>Screenshot (window)</td></tr>
+          <tr><td>Volume / play keys</td><td>Volume, mute, play-pause</td></tr>
+        </table>
+      </div>
+      <p class="cap">In-session, <kbd>Super</kbd><kbd>/</kbd> opens a searchable cheatsheet (<code>~/.config/rofi/cheatsheet.sh</code>).</p>
     </div>
   </section>
 
