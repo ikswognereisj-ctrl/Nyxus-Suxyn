@@ -1,29 +1,65 @@
-# Contributing / scope
+# Contributing
 
-Thanks for the interest — but a heads-up on what this repo **is** first.
+Thank you for the interest. Before opening an issue or a pull request,
+please read the scope below — it decides what can be accepted.
 
-**Nyxus Suxyn is a single-machine personal shell**, tuned for one Alienware 15
-(`eDP-1`, 1920×1200 @ 165 Hz). It is public as a **showcase / reference
+## Scope
+
+**Nyxus Suxyn is a single-machine personal shell**, tuned for one Alienware
+15 (`eDP-1`, 1920×1200 @ 165 Hz). It is public as a **showcase / reference
 build**, not as a distribution or a drop-in theme that fits every desktop.
 
-## What that means for issues & PRs
+### In scope
 
-- **Welcome:** bug reports with logs, QML/shell correctness fixes, shader
-  fixes, portability improvements that don't regress the target machine,
-  docs corrections.
-- **Probably out of scope:** "make it work on my ThinkPad / multi-monitor /
-  NVIDIA" feature requests, requests to turn it into a full distro/ISO, or
-  app feature requests unrelated to this desktop.
+- Bug reports with logs, reproduction steps, and what you expected instead.
+- QML/shell correctness fixes.
+- Shader correctness fixes.
+- Portability improvements that do not regress the target machine.
+- Documentation corrections.
 
-If you want to adapt it to your own machine, **fork it** — that's the
-intended path. See `DEPENDENCIES.md` for the stack it expects and run
-`tools/apply-shell.sh --preflight-only` before anything else.
+### Out of scope
+
+- "Make it work on my ThinkPad / multi-monitor / NVIDIA" feature requests.
+- Turning the repository into a full distribution or ISO builder.
+- Feature requests for applications unrelated to this desktop.
+
+If you want this desktop on your own machine, **fork it** — that is the
+intended path. [`DEPENDENCIES.md`](DEPENDENCIES.md) lists the stack it
+expects, and `tools/apply-shell.sh --preflight-only` checks a machine
+against those expectations before anything is deployed.
 
 ## Conventions
 
-- QML: `pragma ComponentBehavior: Bound`, reactive bindings, singletons for
-  shared state (`Theme`, `Prefs`, `Sys`, …).
-- Shell scripts: `#!/usr/bin/env bash`, `set -uo pipefail`, quote expansions.
-- Don't hardcode user/home paths or real coordinates — keep it adaptable.
-- Explain *why* in comments (this repo reads its git history as a decision
-  log); tag open threads with the existing `WIP-`/`TRK-` markers.
+These are enforced by the shape of the tree; matching them keeps a change
+reviewable:
+
+- **QML** — `pragma ComponentBehavior: Bound`, reactive bindings, singletons
+  for shared state (`Theme`, `Prefs`, `Sys`, …). New `.qml` files must be
+  declared in `quickshell/qmldir` or they do not exist as types at runtime.
+- **Shell scripts** — `#!/usr/bin/env bash`, `set -uo pipefail`, quoted
+  expansions.
+- **Paths** — no hardcoded user/home paths or real coordinates. Config goes
+  to `~/.config`, state to `~/.local/share/nyxus`, caches to
+  `~/.cache/nyxus`.
+- **Comments** — explain *why*, not what. This repository reads its git
+  history and comments as a decision log; open threads carry the existing
+  `WIP-`/`TRK-` markers.
+- **Shaders** — after editing a `.frag`, rebuild the `.qsb` beside it with
+  `quickshell/shaders/build.sh` (requires `qt6-shadertools`).
+
+## Reporting bugs
+
+Include: the component (bar / lock / Settings page / shader / script), what
+you did, what happened, and the relevant log lines. The shell log is at
+`/tmp/nyxus-shell.log` on a running session; Hyprland's log is under
+`$XDG_RUNTIME_DIR/hypr/`.
+
+## Security issues
+
+Do not open a public issue with exploit details. See
+[`SECURITY.md`](SECURITY.md).
+
+## License
+
+By contributing you agree that your contributions are licensed under the
+repository's [MIT license](LICENSE).

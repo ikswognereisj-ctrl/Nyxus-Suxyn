@@ -2,8 +2,9 @@
 
 Nyxus Suxyn is the **shell layer only**. It assumes a working Arch-based
 system that already has the Wayland desktop stack installed. Nothing here
-installs a distro or pulls in packages for you — `tools/apply-shell.sh`
-replaces config on a machine that already has the below.
+installs a distribution or pulls in packages for you — `tools/apply-shell.sh`
+replaces user-level shell configuration on a machine that already has
+everything below.
 
 ## Core (hard requirements)
 
@@ -14,8 +15,8 @@ replaces config on a machine that already has the below.
 | Terminal | `ghostty` | default terminal |
 | Audio server | `pipewire` + `wireplumber` | sound, media routing |
 | Session lock | `hyprlock` (fallback) / Quickshell lock | locking |
-| Idle daemon | `hypridle` | idle / screensaver clock |
-| Wallpaper | `hyprpaper` (+ optional `mpvpaper` for live) | backgrounds |
+| Idle daemon | `hypridle` | idle pipeline (lock/suspend triggers) |
+| Wallpaper | `awww` (or `swww`) | still backgrounds; `hyprpaper` is retired — see `hypr/hyprpaper.conf` |
 
 ## Desktop helpers (called from configs / scripts)
 
@@ -23,6 +24,14 @@ replaces config on a machine that already has the below.
 `dbus-update-activation-environment` · `gsettings` · `dex` (autostart) ·
 `easyeffects` (audio FX) · `kdeconnectd` + `kdeconnect-indicator` ·
 `python3` (the `quickshell/*-io.py` helpers)
+
+## Fonts and themes (referenced by gtk-3.0 / gtk-4.0 / ghostty)
+
+`Inter` · `JetBrains Mono Nerd Font` · `adw-gtk3-dark` ·
+`NYXUS-Dark` icon theme · `NYXUS-Aurora` cursor theme
+
+The two `NYXUS-*` themes live on the built image, not in this repository;
+`gsettings` falls back to the system defaults where they are absent.
 
 ## Nyxus-specific binaries (not in this repo)
 
