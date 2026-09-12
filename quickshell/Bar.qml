@@ -104,10 +104,14 @@ PanelWindow {
     // Air above the chrome so the dock name can pop up like a lyric
     // and not sit inside the stone. Exclusive zone stays chromeH.
     readonly property int captionAir: 22
+    readonly property real _screenScale: Math.max(0.85, Math.min(1.20,
+        Math.min((bar.screen ? bar.screen.width : 1920) / 1920,
+                 (bar.screen ? bar.screen.height : 1200) / 1200)))
     // Same air between every icon and its fall. Sigil used 0 (touching);
     // dock used the gem box which looked gapped. One number.
     readonly property int reflectGap: Theme.s4
-    implicitHeight: Theme.chromeH + bar.dissolveH + bar.captionAir
+    implicitHeight: Theme.chromeH + bar.dissolveH
+                    + Math.max(18, Math.round(bar.captionAir * bar._screenScale))
     exclusiveZone: Theme.chromeH
     exclusionMode: ExclusionMode.Normal
     color: "transparent"
@@ -2812,6 +2816,7 @@ PanelWindow {
     readonly property var chromeKeepOut: {
         const out = [];
         const zs = bar.chromeZones;
+        const maxX = Math.max(1, bar.screen ? bar.screen.width : bar.width);
         for (let i = 0; i < zs.length; i++) {
             const it = zs[i];
             // ⚠ x/width/visible are read explicitly, not merely used inside
@@ -2826,7 +2831,9 @@ PanelWindow {
             const p0 = it.mapToItem(null, 0, 0);
             if (!p0)
                 continue;
-            out.push([p0.x, p0.x + it.width]);
+            const x0 = Math.max(0, Math.min(maxX, p0.x));
+            const x1 = Math.max(x0, Math.min(maxX, p0.x + it.width));
+            out.push([x0, x1]);
         }
         return out;
     }

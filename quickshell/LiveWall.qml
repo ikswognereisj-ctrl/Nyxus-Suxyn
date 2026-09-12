@@ -37,6 +37,7 @@
 // but it IS a change, so `interactive` is a separate switch from `wallEnabled`
 // and turning it off restores the empty mask exactly.
 import Quickshell
+import Quickshell.Hyprland
 import Quickshell.Wayland
 import QtQuick
 
@@ -110,6 +111,43 @@ PanelWindow {
 
     visible: root.wallEnabled
 
+    readonly property var hlMonitor: Hyprland.monitorFor(root.screen)
+    readonly property var topIpc: {
+        const t = Hyprland.activeToplevel;
+        return (t && t.lastIpcObject) ? t.lastIpcObject : null;
+    }
+    function _coversViewport(o) {
+        if (!o || !root.hlMonitor)
+            return false;
+        if (o.monitor !== root.hlMonitor.id)
+            return false;
+        if (o.fullscreen !== 0)
+            return true;
+        const at = o.at;
+        const size = o.size;
+        if (!at || !size || at.length < 2 || size.length < 2)
+            return false;
+        const pad = 6;
+        return at[0] <= pad && at[1] <= pad
+            && size[0] >= root.screen.width - pad * 2
+            && size[1] >= root.screen.height - pad * 2;
+    }
+    readonly property bool coveredByViewport: root._coversViewport(root.topIpc)
+    onCoveredByViewportChanged: console.log("[LiveWall] "
+                                            + (coveredByViewport
+                                               ? "viewport covered — pausing wallpaper"
+                                               : "viewport exposed — resuming wallpaper"))
+    Connections {
+        target: Hyprland
+        function onRawEvent(event) {
+            const n = event.name;
+            if (n === "fullscreen" || n === "activewindow" || n === "activewindowv2"
+                || n === "openwindow" || n === "closewindow"
+                || n === "workspace" || n === "workspacev2" || n === "monitorfocus")
+                Hyprland.refreshToplevels();
+        }
+    }
+
     // The empty region is the resting state and the safe one; it is only given
     // up while the stirring is actually wanted.
     property Region noInput: Region {}
@@ -167,6 +205,7 @@ PanelWindow {
     onStirringChanged: if (!stirring) settle.restart()
     Timer { id: settle; interval: 2600; repeat: false }
     readonly property bool composing: root.wallEnabled
+                                      && !root.coveredByViewport
                                       && (fluid.running || settle.running)
 
     // The picture. An Image is a texture provider in its own right, so it can
@@ -301,6 +340,8 @@ PanelWindow {
         layer.smooth: true
         layer.textureSize: Qt.size(480, 270)
         interactive: root.interactive
+        pauseWhenCovered: true
+        viewportCovered: root.coveredByViewport
         // A wallpaper is stirred, not painted on: the dye is held well down so
         // what you see is his galaxy moving, not a sheet of liquid over it.
         intensity: 0.55

@@ -59,6 +59,7 @@
 // are forwarded so the property names an operator would reach for are still on
 // the type they have always been on. `shaders/headliner.frag` was not opened.
 import Quickshell
+import Quickshell.Hyprland
 import Quickshell.Wayland
 import QtQuick
 
@@ -135,6 +136,32 @@ PanelWindow {
         onTriggered: root.windowExposed = true
     }
 
+    readonly property var hlMonitor: Hyprland.monitorFor(root.screen)
+    readonly property var topIpc: {
+        const t = Hyprland.activeToplevel;
+        return (t && t.lastIpcObject) ? t.lastIpcObject : null;
+    }
+    readonly property bool coveredByFullscreen: {
+        const o = root.topIpc;
+        if (!o || !root.hlMonitor)
+            return false;
+        return o.fullscreen !== 0 && o.monitor === root.hlMonitor.id;
+    }
+    onCoveredByFullscreenChanged: console.log("[Headliner] "
+                                              + (coveredByFullscreen
+                                                 ? "fullscreen cover detected — pausing twinkle"
+                                                 : "fullscreen cover cleared — resuming twinkle"))
+    Connections {
+        target: Hyprland
+        function onRawEvent(event) {
+            const n = event.name;
+            if (n === "fullscreen" || n === "activewindow" || n === "activewindowv2"
+                || n === "openwindow" || n === "closewindow"
+                || n === "workspace" || n === "workspacev2" || n === "monitorfocus")
+                Hyprland.refreshToplevels();
+        }
+    }
+
     // ── ON BATTERY (Swirl.qml's rule, extended not replaced) ─────────────────
     // Swirl's `_saving` exists because half a core, continuously, is a real
     // bite out of an unplugged afternoon. The same argument applies here and
@@ -164,7 +191,7 @@ PanelWindow {
         id: skyItem
         anchors.fill: parent
         // The window half of the gate, which an Item cannot compute for itself.
-        active: root.windowExposed
+        active: root.windowExposed && !root.coveredByFullscreen
         batterySaver: root.batterySaver
         qualityTier: root.qualityTier
         // The commissioned look, unchanged: 0.45 twinkle depth, full density,

@@ -35,6 +35,7 @@ This repository is **this machine’s shell**. It is not Nyxus-Core, not another
 Glass is furniture (Pane + swell + a 1 px glacier seam). Crystal is identity icons. Magma (`#ff7847`) is what matters. The live sky is Starlight; stills live in Settings ▸ Background.
 
 Reload the shell with `qs ipc call nyxus reload`. Shader pipeline changes need a targeted `SIGTERM` of the Quickshell process.
+Run `tools/apply-shell.sh --preflight-only` before deploy to validate GPU, Hyprland/Quickshell, PipeWire, and monitor-baseline assumptions.
 
 ## Not in this repo
 
