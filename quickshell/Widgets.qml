@@ -122,6 +122,7 @@
 //     Settings-owned numbers, and the `Prefs.widget_*` schema is untouched
 //     by this pass (`SetPageWidgets.qml` reads it).
 //
+// © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
@@ -157,7 +158,7 @@ Scope {
         // set needs a half-step between them.
         property bool quiet: false
 
-        visible: Prefs.widgetsEnabled && Prefs.widgetOn(slug)
+        visible: Prefs.widgetsEnabled && Prefs.widgetOn(slug) && !Prefs.arcadeMode
         screen: Quickshell.screens.length > 0 ? Quickshell.screens[0] : null
         anchors { top: true; left: true }
 
@@ -649,7 +650,7 @@ Scope {
             }
 
             // ── 4 · THE SEAM (TRK-3372) ─────────────────────────────
-            // 1 px, glacier[4] — the last of the canonical five, and the
+            // 1 px, Theme.lookSeam — the last of the canonical five, and the
             // one this card did not have. `SetSlab.qml` draws it on every
             // Settings surface and `widget_face()` on every GTK card, both
             // deriving the value from THIS component as the reference; the
@@ -669,9 +670,10 @@ Scope {
                 anchors.fill: parent
                 radius: Theme.r2
                 color: "transparent"
-                borderWidth: 1
-                borderColor: Theme.soften(Theme.paintLayers.glacier[4],
-                                          chip.hovered ? 0.85 : 0.45)
+                borderWidth: Theme.lookOutlineW
+                borderColor: Theme.soften(Theme.lookSeam,
+                                          chip.hovered ? 0.85
+                                          : (Theme.lookMagma ? 0.62 : 0.45))
                 Behavior on borderColor {
                     ColorAnimation { duration: Theme.durQuick }
                 }
@@ -775,7 +777,7 @@ Scope {
     component ChipRule: Rectangle {
         Layout.fillWidth: true
         Layout.preferredHeight: 1
-        color: Theme.soften(Theme.paintLayers.glacier[4], 0.34)
+        color: Theme.soften(Theme.lookSeam, 0.34)
     }
 
     // TRK-3762. This was a Canvas drawing a 1.4 px `glacier[5]` polyline —
@@ -802,10 +804,12 @@ Scope {
         id: spark
         property var samples: []
         property bool banded: true      // accepted, inert -- see MeterRow
+        property color stroke: Theme.lookPale
         Layout.fillWidth: true
         implicitHeight: 16
         onSamplesChanged: requestPaint()
         onWidthChanged: requestPaint()
+        onStrokeChanged: requestPaint()
         onPaint: {
             var ctx = getContext("2d");
             ctx.reset();
@@ -817,7 +821,7 @@ Scope {
                 var n = Number(s[i]);
                 if (n > mx) mx = n;
             }
-            ctx.strokeStyle = Theme.paintLayers.glacier[5];
+            ctx.strokeStyle = spark.stroke;
             ctx.lineWidth = 1.4;
             ctx.beginPath();
             for (var j = 0; j < s.length; j++) {
@@ -1104,7 +1108,7 @@ Scope {
                     return (u[0].kind === "alarm" ? qsTr("Alarm") : qsTr("Next"))
                            + "  " + t + "  ·  " + (u[0].text || "");
                 }
-                color: Theme.paintLayers.glacier[0]
+                color: Theme.lookHot
                 font.family: Theme.fTech
                 font.pixelSize: Theme.tMicro
                 font.features: ({ "tnum": 1 })
@@ -1653,7 +1657,7 @@ Scope {
                     font.pixelSize: Theme.tBody
                     selectByMouse: true
                     activeFocusOnPress: true
-                    selectionColor: Theme.soften(Theme.paintLayers.glacier[0], 0.28)
+                    selectionColor: Theme.soften(Theme.lookHot, 0.28)
                     onTextChanged: stickySave.restart()
                     onEditingFinished: stickySave.triggered()
                     Component.onCompleted: wSticky.hydrateNote()
@@ -1776,7 +1780,7 @@ Scope {
                         text: today
                               ? Qt.formatTime(at, Prefs.timeFmt)
                               : Qt.formatDate(at, "ddd d")
-                        color: Theme.paintLayers.glacier[0]   // 13.35:1
+                        color: Theme.lookHot   // 13.35:1 on ice; magma[0] on magma
                         font.family: Theme.fTech   // TIMEPIECE -> fTech (13q21): it prints a
                         // clock time, so it speaks the clock's face. The
                         // ddd-d branch is a date on the same run of glyphs.
@@ -1918,7 +1922,7 @@ Scope {
                 width: 24
                 height: 2
                 radius: 1
-                color: Theme.soften(Theme.paintLayers.glacier[4], 0.55)
+                color: Theme.soften(Theme.lookSeam, 0.55)
             }
 
             RowLayout {
@@ -2024,7 +2028,7 @@ Scope {
         living: false
         chipW: 300
         chipH: Math.ceil(npBody.implicitHeight) + 2 * pad
-        visible: Prefs.widgetsEnabled && Prefs.widgetOn(slug)
+        visible: Prefs.widgetsEnabled && Prefs.widgetOn(slug) && !Prefs.arcadeMode
                  && MediaSource.present && !Prefs.mediaBarPop
 
         // MPRIS `position` does not free-run — something has to ask. Same
@@ -2076,7 +2080,7 @@ Scope {
                         visible: albumArt.status !== Image.Ready
                         name: "note"
                         size: Theme.tTitle
-                        color: Theme.paintLayers.glacier[4]   // 4.41:1
+                        color: Theme.lookSeam   // 4.41:1 on ice
                     }
                     Image {
                         id: albumArt
@@ -2150,7 +2154,7 @@ Scope {
                         width: parent.width * wPlaying.frac
                         height: parent.height
                         radius: 2
-                        color: Theme.paintLayers.glacier[5]   // 14.00:1
+                        color: Theme.lookPale   // 14.00:1 on ice
                         Behavior on width {
                             NumberAnimation {
                                 duration: Theme.durQuick
@@ -2200,7 +2204,7 @@ Scope {
                     size: Theme.tHead
                     color: MediaSource.canGoPrevious
                            ? Theme.textMuted                  // 12.26:1
-                           : Theme.paintLayers.glacier[4]     //  4.41:1
+                           : Theme.lookSeam     //  4.41:1 on ice
                     TapHandler {
                         enabled: MediaSource.canGoPrevious
                         onTapped: MediaSource.previous()
@@ -2210,8 +2214,8 @@ Scope {
                     name: MediaSource.playing ? "pause" : "play"
                     size: Theme.tTitle
                     color: MediaSource.canTogglePlaying
-                           ? Theme.paintLayers.glacier[0]     // 13.35:1
-                           : Theme.paintLayers.glacier[4]     //  4.41:1
+                           ? Theme.lookHot     // 13.35:1 on ice
+                           : Theme.lookSeam     //  4.41:1 on ice
                     TapHandler {
                         enabled: MediaSource.canTogglePlaying
                         onTapped: MediaSource.togglePlaying()
@@ -2222,7 +2226,7 @@ Scope {
                     size: Theme.tHead
                     color: MediaSource.canGoNext
                            ? Theme.textMuted                  // 12.26:1
-                           : Theme.paintLayers.glacier[4]     //  4.41:1
+                           : Theme.lookSeam     //  4.41:1 on ice
                     TapHandler {
                         enabled: MediaSource.canGoNext
                         onTapped: MediaSource.next()

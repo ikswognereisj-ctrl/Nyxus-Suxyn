@@ -49,6 +49,7 @@ import QtQuick.Effects
 
 Item {
     id: sigil
+    clip: false
 
     property bool lit: false
     property bool engaged: false
@@ -126,8 +127,19 @@ Item {
     // is the finished brand art — matte black head, white eyes — so it is
     // shown as drawn, never recoloured. `engaged` is the 1.06 confirmation
     // scale; crisp at 28 px via smooth + mipmap.
+    CrystalGem {
+        visible: Theme.lookMagma
+        clip: false
+        z: 1
+        anchors.fill: parent
+        markUrl: Qt.resolvedUrl("sigil-mark.png")
+        hot: sigil.lit
+        on: sigil.engaged
+    }
+
     Image {
         id: face
+        visible: !Theme.lookMagma
         z: 1
         anchors.fill: parent
         source: Qt.resolvedUrl("sigil-mark.png")

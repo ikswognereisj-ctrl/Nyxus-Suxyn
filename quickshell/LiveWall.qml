@@ -342,8 +342,6 @@ PanelWindow {
         layer.smooth: true
         layer.textureSize: Qt.size(480, 270)
         interactive: root.interactive
-        pauseWhenCovered: true
-        viewportCovered: root.coveredByViewport
         // A wallpaper is stirred, not painted on: the dye is held well down so
         // what you see is his galaxy moving, not a sheet of liquid over it.
         intensity: 0.55

@@ -35,19 +35,26 @@ void main() {
     vec2 uv = qt_TexCoord0;
     vec2 p = uv * 2.0 - 1.0;
     float r = length(p);
-    float disc = 1.0 - smoothstep(0.86, 1.0, r);
+    // 1 px coverage, not a 14% radius fade and not a binary disc.
+    float fw = max(fwidth(r), 1e-5);
+    float disc = clamp(0.5 - (r - 1.0) / fw, 0.0, 1.0);
+
+    vec2 ts = vec2(textureSize(source, 0));
+    vec2 g1 = dFdx(uv) * ts;
+    vec2 g2 = dFdy(uv) * ts;
+    float lod = max(0.0, 0.5 * log2(max(dot(g1, g1), max(dot(g2, g2), 1e-12))) - 0.35);
+    vec4 src = textureLod(source, uv, lod);
+    float etch = clamp(src.a, 0.0, 1.0);
+    float hover = clamp(tint.a, 0.0, 1.0);
+
     if (disc < 0.01) {
         fragColor = vec4(0.0);
         return;
     }
 
-    vec4 src = texture(source, uv);
-    float etch = clamp(src.a, 0.0, 1.0);
-    float hover = clamp(tint.a, 0.0, 1.0);
-
     vec2 ptr = (mouse.xy - 0.5) * (0.35 + 0.40 * hover);
     vec3 V = normalize(vec3(-ptr.x, -ptr.y, 1.0));
-    float z = sqrt(max(0.0, 1.0 - r * r));
+    float z = sqrt(max(0.0, 1.0 - min(r * r, 1.0)));
     vec3 N = normalize(vec3(p, z + 0.12));
     float fres = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 4.0);
 
@@ -68,6 +75,5 @@ void main() {
 
     col = 1.0 - exp(-col * 2.15);
     col = pow(max(col, 0.0), vec3(0.92));
-    float a = clamp(max(col.r, max(col.g, col.b)) * 1.9, 0.0, 1.0) * disc;
-    fragColor = vec4(col * a, a) * qt_Opacity;
+    fragColor = vec4(col * disc, disc) * qt_Opacity;
 }

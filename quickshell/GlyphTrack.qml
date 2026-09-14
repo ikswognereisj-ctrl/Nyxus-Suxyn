@@ -27,7 +27,9 @@ Item {
 
     // Driven by the real field's length. Never by its text.
     property int count: 0
-    property color glyphColor: "#b7e6f2"
+    // Theme.lookPale, not a literal: the track follows Settings ▸ Appearance
+    // ▸ Theme like every other chrome surface.
+    property color glyphColor: Theme.lookPale
     property real glyphSize: 20
     property bool alarmed: false
 
@@ -92,7 +94,10 @@ Item {
                 required property var modelData
                 required property int index
                 text: modelData
-                color: track.alarmed ? "#ff7847" : track.glyphColor
+                // Alarm = the lock's error state, so Theme.danger (errors
+                // ONLY) — and it can never collide with glyphColor the way a
+                // fixed #ff7847 did once glyphColor followed the look.
+                color: track.alarmed ? Theme.danger : track.glyphColor
                 // ⚠ STATED, NEVER INHERITED. The field this sits over uses
                 // Theme.fUi, and a display face anywhere in the chain (Orbitron
                 // covers none of these) turns the whole track into boxes. The

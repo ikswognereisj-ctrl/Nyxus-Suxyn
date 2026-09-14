@@ -29,7 +29,7 @@ PanelWindow {
     exclusionMode: ExclusionMode.Ignore
     exclusiveZone: 0
     color: "transparent"
-    visible: Prefs.swirlEnabled
+    visible: Prefs.swirlEnabled && !Prefs.arcadeMode && !(seam.screen && String(seam.screen.name || "").indexOf("HDMI") === 0)
     WlrLayershell.layer: WlrLayer.Bottom
     WlrLayershell.namespace: "nyxus-bar-seam"
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
@@ -44,6 +44,8 @@ PanelWindow {
     // produced a plum line across the last few rows that survived turning the
     // swirl fully off. A floor is the one thing that cannot be argued with.
     property bool barFloor: true
+    // ICE widget body #0d060d. MAGMA matches Theme.void_ (#0a0404), not leftover plum.
+    readonly property color floorBody: Theme.lookMagma ? Theme.void_ : "#0d060d"
     // TRK-3487 probe — the seam's OWN glass. The Shelf above already draws
     // the bar's glass; this is a second copy, and at panelMid 0.34 over
     // swellGround 0.89 it blocks ~93% on its own.
@@ -203,11 +205,11 @@ PanelWindow {
         // only half-there at 55% — because a linear fade on an 84px strip
         // reads as a grey wash rather than as something emerging.
         gradient: Gradient {
-            GradientStop { position: 0.00; color: "#000d060d" }
-            GradientStop { position: 0.18; color: "#0d0d060d" }
-            GradientStop { position: 0.55; color: "#800d060d" }
-            GradientStop { position: 0.82; color: "#e60d060d" }
-            GradientStop { position: 1.00; color: "#ff0d060d" }
+            GradientStop { position: 0.00; color: Theme.soften(seam.floorBody, 0) }
+            GradientStop { position: 0.28; color: Theme.soften(seam.floorBody, 0.02) }
+            GradientStop { position: 0.58; color: Theme.soften(seam.floorBody, 0.40) }
+            GradientStop { position: 0.82; color: Theme.soften(seam.floorBody, 0.88) }
+            GradientStop { position: 1.00; color: Theme.soften(seam.floorBody, 1.0) }
         }
     }
 
@@ -268,7 +270,7 @@ PanelWindow {
         // ⚠ LOCAL, NOT THE TOKEN. Theme.panelMid is read by the clock, the
         // launcher, the emoji picker, the context menu and the widget chips;
         // this surface wants to be thinner than all of them.
-        fill: Qt.rgba(0.010, 0.026, 0.034, 0.16)   // was panelMid @ 0.34
+        fill: Qt.rgba(Theme.panelMid.r, Theme.panelMid.g, Theme.panelMid.b, 0.16)
         radius: Theme.r0
         crown: 0
 
@@ -321,9 +323,24 @@ PanelWindow {
             // same reading, and nothing of the sky comes through to betray
             // that it is standing somewhere brighter.
             gradient: Gradient {
-                GradientStop { position: 0.00; color: Qt.rgba(0.047, 0.000, 0.024, 1.0) }
-                GradientStop { position: 0.50; color: Qt.rgba(0.043, 0.000, 0.020, 1.0) }
-                GradientStop { position: 1.00; color: Qt.rgba(0.037, 0.000, 0.016, 1.0) }
+                GradientStop {
+                    position: 0.00
+                    color: Theme.lookMagma
+                           ? Qt.rgba(0.047, 0.016, 0.016, 1.0)
+                           : Qt.rgba(0.047, 0.000, 0.024, 1.0)
+                }
+                GradientStop {
+                    position: 0.50
+                    color: Theme.lookMagma
+                           ? Qt.rgba(0.043, 0.014, 0.014, 1.0)
+                           : Qt.rgba(0.043, 0.000, 0.020, 1.0)
+                }
+                GradientStop {
+                    position: 1.00
+                    color: Theme.lookMagma
+                           ? Qt.rgba(0.037, 0.012, 0.012, 1.0)
+                           : Qt.rgba(0.037, 0.000, 0.016, 1.0)
+                }
             }
         }
 
@@ -358,8 +375,8 @@ PanelWindow {
             anchors.fill: parent
             color: "transparent"
             antialiasing: true
-            border.width: 1
-            border.color: Theme.soften(Theme.paintLayers.glacier[4], 0.45)
+            border.width: 0
+            border.color: Theme.soften(Theme.lookSeam, 0.45)
         }
     }
 
@@ -543,9 +560,11 @@ PanelWindow {
         // so "the same way" is the same BEHAVIOUR and not merely the same
         // picture: both surfaces now answer to the one Settings key, and the
         // shipped default "paint" resolves the ladder to 0.
-        paintMode: seam.occluder
-            ? "shadow-bar"
-            : Prefs.swirlMode
+        // MAGMA: Start's colour branch (Launcher.qml cardPaint). ICE keeps
+        // the occluder treatment the owner signed off for glacier.
+        paintMode: Theme.lookMagma
+            ? "paint"
+            : (seam.occluder ? "shadow-bar" : Prefs.swirlMode)
         // ── TRK-3478 · owner 2026-08-30, looking at the deployed bar ─────
         // "the bottom bar, the background or the layers don't look like that
         // of the widgets."
@@ -614,7 +633,7 @@ PanelWindow {
         // menu runs, having never set it. It shapes where along the sweep the
         // dye lands, so it only means anything on the colour branch.
         sweepGamma: seam.occluder ? 1.0 : 1.35
-        impulseRadius: 0.15       // was 0.12 — fuller, rounder strokes (TRK-3466)
+        impulseRadius: Theme.lookMagma ? 0.10 : 0.15
         // TRK-3703 — the power menu runs 0.62 (TRK-3669, the value the owner
         // approved the same morning he said he liked its swirls) and it is the
         // ONE display knob that is not inert on either branch. 0.45 here: see
@@ -639,7 +658,9 @@ PanelWindow {
         // changed nothing. With `seamGlass` now providing a real card, the
         // paint no longer has to BE the background, so it can be what it was
         // always described as: the living seam, not the floor.
-        opacity: Bus.barMusicUp ? 0 : (seam.occluder ? 1.00 : 0.45)
+        opacity: Bus.barMusicUp ? 0
+               : (Theme.lookMagma ? 0.85
+                  : (seam.occluder ? 1.00 : 0.45))
         Behavior on opacity {
             NumberAnimation {
                 duration: Theme.durCeremony
@@ -743,9 +764,9 @@ PanelWindow {
         // under the 24 that got the sigil brightness lift refused. If he
         // wants it lower still, `opacity` is the lever and it costs motion
         // and detail roughly in proportion.
-        exposure: seam.occluder ? 1.30 : 1.15
-        saturation: seam.occluder ? 1.45 : 1.22
-        sheen: seam.occluder ? 0.12 : 0.18
+        exposure: Theme.lookMagma ? 0.92 : (seam.occluder ? 1.30 : 1.15)
+        saturation: Theme.lookMagma ? 1.22 : (seam.occluder ? 1.45 : 1.22)
+        sheen: Theme.lookMagma ? 0.35 : (seam.occluder ? 0.12 : 0.18)
         // ── TRK-3396 · THE TOP EDGE FADES · owner 2026-08-28 ────────────
         // "almost like this, I tried to get it better as fading and darker."
         // The screenshots show why: the paint stops at a HARD HORIZONTAL LINE
@@ -795,8 +816,7 @@ PanelWindow {
         // DUPLICATE properties beside paintMode and broke the whole config
         // load — "Property value set multiple times"; the caged
         // shell-load-check caught it, the live shell rode the old config.)
-        injectGain: 1.75          // owner: strokes born too thin/faint —
-                                  // each stroke starts carrying far more
+        injectGain: Theme.lookMagma ? 0.70 : 1.75
         // TRK-3484 — the stirrers sweep at constant speed instead of
         // dwelling at their turning points. Sine dwell was pooling the field
         // at both ends of a 22.9:1 bar and starving the middle, which is what
@@ -806,12 +826,16 @@ PanelWindow {
         // than a pure rotation, which is what a stirred fluid actually does.
         // Pure 1.0 spins neatly and reads mechanical; leaving some along-path
         // push keeps the eddies wandering as they turn.
-        ambientVortex: 0.72
+        // Owner 2026-09-11: idle motion is fine, make it a little different.
+        // More shear so the field rolls instead of only sliding, plus a
+        // faint vertical current so filaments climb and fall, not just
+        // travel the strip.
+        ambientVortex: 0.90
         // A slow current along the bar. The stirrers alone pool dye wherever
         // they linger and starve the middle of a 22.9:1 strip — the dark
         // centre in the owner's screenshots. This carries material through.
-        ambientCurrentX: 0.055
-        ambientCurrentY: 0.0
+        ambientCurrentX: 0.042
+        ambientCurrentY: 0.032
         ambientEvenSweep: true
         ambientDye: 0.48          // was 0.36
         // Owner 08-29, next breath: "and slower movement when they do" —
@@ -836,9 +860,7 @@ PanelWindow {
         // laggy". The slow-drift force also weakened his hand. 5200/4300
         // restores the hand to exactly trunk strength; the drift keeps 4300.
         pointerForceMul: 1.21
-        curlAmp: 1.55             // trunk 1.0 (curl 50→62) — strokes WIND into
-                                  // vortices instead of streaking; this is the
-                                  // "good looking swirls" knob
+        curlAmp: Theme.lookMagma ? 0.64 : 1.55
         velocityDecay: 0.12       // trunk 0.16 — motion carries further, so a
                                   // swirl completes its turn instead of dying
         decayRate: 0.36           // was 0.50 — strokes live ~40% longer
@@ -922,7 +944,7 @@ PanelWindow {
         // with the music again, this is the line, and the fix is to raise it
         // toward 0.30 — not to put the glow back.
         shadowHaloFloor: 0.12
-        bloom: seam.occluder ? 0.38 : 0.45
+        bloom: Theme.lookMagma ? 0.80 : (seam.occluder ? 0.38 : 0.45)
         introStrength: 0.55
         audioBass: Beat.bass
         audioMid: Beat.mid

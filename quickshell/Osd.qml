@@ -75,7 +75,7 @@ PanelWindow {
 
     readonly property color markOn: Theme.paintLayers.glacier[5]
     readonly property color markHot: Theme.paintLayers.magma[5]
-    readonly property color iceSeam: Theme.paintLayers.glacier[4]
+    readonly property color iceSeam: Theme.lookSeam
 
     visible: root.shown || fadeAnim.running
     mask: Region {

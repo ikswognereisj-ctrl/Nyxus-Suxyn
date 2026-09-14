@@ -1,0 +1,9 @@
+Nyxus Suxyn live image — stock Arch linux, any typical PC
+  hostname : suxyn
+  live user: nyx  (password: nyx)
+  installer: calamares (creates YOUR user; nyx is removed)
+
+This stick is not a clone of the machine that baked it.
+Hardware (initramfs MODULES, GPU env, fans) is detected on the TARGET.
+
+Root has an empty password on the stick. Set one before networking.

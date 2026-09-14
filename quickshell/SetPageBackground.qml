@@ -52,6 +52,7 @@ SetPage {
     //   9  suxyn-voyage-rings      was 47
     //  10  suxyn-fiber-headliner   RR fibre-star roof (new)
     //  11  suxyn-meteor-strike     two meteors colliding (new)
+    //  12  suxyn-magma-world       MAGMA look layered still (stars + lava world)
     readonly property var keepSlugs: [
         "suxyn-concrete-rose",
         "suxyn-ocular-wide",
@@ -63,7 +64,8 @@ SetPage {
         "suxyn-voyage-galaxy",
         "suxyn-voyage-rings",
         "suxyn-fiber-headliner",
-        "suxyn-meteor-strike"
+        "suxyn-meteor-strike",
+        "suxyn-magma-world"
     ]
     // TRK-3502 · the same records as `moreWalls`, keyed by slug for the
     // "Also shipped" picker. Kept as its own binding rather than mapped inline
@@ -387,7 +389,7 @@ SetPage {
                         color: Theme.soften(Theme.void_, 0.55)
                         border.width: 1
                         border.color: hov.hovered && !card.on ? page.iceHover
-                                      : Theme.paintLayers.glacier[4]
+                                      : Theme.lookSeam
                     }
 
                     // Selected ring — 1 px, ice, local opacity breathe.
@@ -438,7 +440,7 @@ SetPage {
                         radius: 4
                         color: Theme.soften(Theme.void_, 0.72)
                         border.width: 1
-                        border.color: Theme.paintLayers.glacier[4]
+                        border.color: Theme.lookSeam
                         Text {
                             id: numLab
                             anchors.centerIn: parent

@@ -41,6 +41,8 @@ SetPage {
     //   lyrics" is the ordinary outcome, not a fault.
     property int lyricsHelper: -1
     readonly property string swirlMode: SettingsStore.stringValue("swirl_mode", "paint")
+    readonly property string swirlPreview: SettingsStore.stringValue("swirl_preview", "glacier")
+    readonly property string lookSet: SettingsStore.stringValue("look_set", "ice") === "magma" ? "magma" : "ice"
     // TRK-3492 · PAINT STRENGTH. `swirl_intensity` is read by nine surfaces
     // (Bar, BarSeam, Spill, Frame, SidePanel x2, Launcher, PowerMenu,
     // SwirlChip) and the GTK Settings twin has shipped a slider for it since
@@ -127,9 +129,9 @@ SetPage {
     }
 
     SetCard {
-        heading: qsTr("Theme")
+        heading: qsTr("Mark")
         tone: page.tone
-        note: qsTr("Both themes ship in this build; NYXUS is the default. The switch moves five things and nothing else: the mark on the bar, the lock scene it falls back to, the login screen, the system sounds, and the password mask. Accent, living paint, widgets, glass and your wallpaper are shared and do not change. A lock scene you have picked yourself is kept — switching only moves the fallback.")
+        note: qsTr("NYXUS is the default. This switch moves five things only: the mark on the bar, the lock fallback, the login screen, system sounds, and the password mask. Desktop paint and widgets are the Desktop theme below.")
 
         RowLayout {
             Layout.fillWidth: true
@@ -160,6 +162,59 @@ SetPage {
                 selected: page.markTheme === "alien"
                 interactive: true
                 onActivated: page.applyTheme("alien")
+            }
+        }
+    }
+
+    SetCard {
+        heading: qsTr("Theme")
+        tone: page.tone
+        note: qsTr("Two complete themes. ICE is glacier living paint, plum, and Starlight. MAGMA is magma-to-black dye, the same Starlight sky, and the lava world as its own layer — not a photo of the two flattened together.")
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.s3
+
+            SetIceFace {
+                property string key: "look_set"
+                Layout.fillWidth: true
+                Layout.leftMargin: 0
+                Layout.rightMargin: 0
+                compact: true
+                kicker: qsTr("ICE")
+                caption: qsTr("Glacier + plum")
+                selected: page.lookSet === "ice"
+                interactive: true
+                onActivated: {
+                    SettingsStore.setValues({
+                        look_set: "ice",
+                        swirl_preview: "glacier",
+                        swirl_mode: "paint",
+                        sky_mode: "headliner",
+                        layered_wall_base: ""
+                    });
+                }
+            }
+            SetIceFace {
+                property string key: "look_set"
+                Layout.fillWidth: true
+                Layout.leftMargin: 0
+                Layout.rightMargin: 0
+                compact: true
+                kicker: qsTr("MAGMA")
+                caption: qsTr("Live magma + Starlight")
+                selected: page.lookSet === "magma"
+                interactive: true
+                onActivated: {
+                    const home = Quickshell.env("HOME") || "";
+                    SettingsStore.setValues({
+                        look_set: "magma",
+                        swirl_preview: "glacier",
+                        swirl_mode: "paint",
+                        sky_mode: "headliner",
+                        layered_wall_base: home + "/.local/share/nyxus/walls/suxyn-magma-open"
+                    });
+                }
             }
         }
     }
@@ -372,6 +427,102 @@ SetPage {
             }
         }
 
+        SetCard {
+            heading: qsTr("Swirl preview")
+            tone: page.tone
+            note: qsTr("Look only. Tapping a colour turns PAINT on so you can see the dye. For widgets + stones + the bar on one page, open Layer lab from Personalization. Put GLACIER back when you are done.")
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.s3
+
+            SetIceFace {
+                Layout.fillWidth: true
+                Layout.leftMargin: 0
+                Layout.rightMargin: 0
+                compact: true
+                kicker: qsTr("GLACIER")
+                caption: qsTr("House — pale ice")
+                selected: page.swirlPreview === "glacier"
+                interactive: true
+                onActivated: SettingsStore.setValue("swirl_preview", "glacier")
+            }
+            SetIceFace {
+                Layout.fillWidth: true
+                Layout.leftMargin: 0
+                Layout.rightMargin: 0
+                compact: true
+                kicker: qsTr("ROSE")
+                caption: qsTr("Teal into plum")
+                selected: page.swirlPreview === "rose"
+                interactive: true
+                onActivated: {
+                    SettingsStore.setValue("swirl_preview", "rose");
+                    SettingsStore.setValue("swirl_mode", "paint");
+                }
+            }
+            SetIceFace {
+                Layout.fillWidth: true
+                Layout.leftMargin: 0
+                Layout.rightMargin: 0
+                compact: true
+                kicker: qsTr("MAGMA")
+                caption: qsTr("Ember / hot")
+                selected: page.swirlPreview === "magma"
+                interactive: true
+                onActivated: {
+                    SettingsStore.setValue("swirl_preview", "magma");
+                    SettingsStore.setValue("swirl_mode", "paint");
+                }
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.s3
+
+            SetIceFace {
+                Layout.fillWidth: true
+                Layout.leftMargin: 0
+                Layout.rightMargin: 0
+                compact: true
+                kicker: qsTr("VIOLET")
+                caption: qsTr("Orchid / plum")
+                selected: page.swirlPreview === "violet"
+                interactive: true
+                onActivated: {
+                    SettingsStore.setValue("swirl_preview", "violet");
+                    SettingsStore.setValue("swirl_mode", "paint");
+                }
+            }
+            SetIceFace {
+                Layout.fillWidth: true
+                Layout.leftMargin: 0
+                Layout.rightMargin: 0
+                compact: true
+                kicker: qsTr("WINE")
+                caption: qsTr("New dusty rose")
+                selected: page.swirlPreview === "wine"
+                interactive: true
+                onActivated: {
+                    SettingsStore.setValue("swirl_preview", "wine");
+                    SettingsStore.setValue("swirl_mode", "paint");
+                }
+            }
+            SetIceFace {
+                Layout.fillWidth: true
+                Layout.leftMargin: 0
+                Layout.rightMargin: 0
+                compact: true
+                kicker: qsTr("LAB")
+                caption: qsTr("All layers on one page")
+                selected: false
+                interactive: true
+                onActivated: Bus.openSettings("layerlab")
+            }
+        }
+
         // Strength, as three named stops for the same reason DRIFT/CALM/
         // LIVELY are stops and not a slider: the honest answer to "what
         // number is right" is a feel, not a figure. The GTK twin's slider
@@ -565,7 +716,7 @@ SetPage {
     // belong to their pickers (TRK-3424/25), not to this page.
     SetResetRow {
         what: qsTr("Appearance")
-        keys: ["panel_chamfer", "mark_theme",
+        keys: ["panel_chamfer", "mark_theme", "look_set",
                "swirl_enabled", "swirl_motion", "swirl_music", "swirl_mode",
                "swirl_intensity", "bar_spectrum", "lyrics_online",
                "swirl_controls", "swirl_control_speed",

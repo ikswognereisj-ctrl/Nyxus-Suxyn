@@ -44,9 +44,9 @@ AppWindow {
     // keeps catching — it is hover light on a chip rim, never a fill
     // and never a glyph. Pale identity is glacier[5]; seams are
     // glacier[4]; numerals are Theme.text, same as the clock.
-    readonly property color ice: Theme.tokenAccentPrimary
-    readonly property color iceHair: Theme.tokenAccentHairline
-    readonly property color iceFocus: Theme.tokenAccentInteractive
+    readonly property color ice: Theme.lookPale
+    readonly property color iceHair: Theme.lookSeam
+    readonly property color iceFocus: Theme.lookHot
 
     function io() {
         return (Quickshell.env("HOME") || "") + "/.config/quickshell/calc-io.py";
@@ -139,7 +139,6 @@ AppWindow {
         id: evalProc
         running: false
         command: ["python3", win.io(), "{\"expr\":\"\"}"]
-        onExited: function (code) { if (code !== 0) { win.result = qsTr("Error"); console.warn("[Calculator] io exited code " + code); } }
         stdout: StdioCollector {
             onStreamFinished: {
                 var j;

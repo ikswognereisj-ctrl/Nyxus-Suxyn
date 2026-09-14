@@ -161,7 +161,7 @@ PanelWindow {
     // is the hover rim, never a fill. Bar swirls stay the user's pick.
     readonly property color iceInteractive: Theme.paintLayers.glacier[0]
     readonly property color icePrimary:     Theme.paintLayers.glacier[5]
-    readonly property color iceHairline:    Theme.paintLayers.glacier[4]
+    readonly property color iceHairline:    Theme.lookSeam
     readonly property color magmaInteractive: Theme.paintLayers.magma[0]
     readonly property color magmaPrimary:     Theme.paintLayers.magma[5]
 

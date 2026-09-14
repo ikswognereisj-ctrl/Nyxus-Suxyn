@@ -1,0 +1,1060 @@
+# ============================================
+# NYXUS
+# Copyright © 2026 Joseph A. Sierengowski
+# All Rights Reserved
+# NYX-J5W-2026-SIERENGOWSKI-LOCKED
+# ============================================
+#
+# Pacman packages baked into the NYXUS live ISO.
+# Comments + blank lines are ignored by mkarchiso.
+
+# ── base system ────────────────────────────────────────────────────
+base
+base-devel
+linux
+linux-firmware
+mkinitcpio
+mkinitcpio-archiso
+intel-ucode
+amd-ucode
+sudo
+networkmanager
+iwd
+wpa_supplicant
+dhcpcd
+openssh
+git
+nano
+vim
+wget
+curl
+unzip
+zip
+tar
+# htop REMOVED 2026-08-22 (TRK-1252 / CS-1153): a duplicate of btop, which is
+# the themed process monitor this build ships (below). Store shelf: Search.
+# btop was NEVER in this list, yet the profile ships /etc/skel/.config/btop/
+# (btop.conf + nyxus-galaxy.theme + SharkDash.theme + nyxus-hacker.theme) and
+# four shipped launch paths fall back to it (stations GHOST + MESH, the OPS
+# deck quick-launch grid, nyxus-hacker-mode's btop theme swap). Verified
+# absent from the 2026.07.29 image: no /usr/bin/btop anywhere in the squashfs.
+# So the whole Jul-29 hacker-mode btop work was dead on the stick and two
+# station fallbacks resolved to nothing. (2026-07-30)
+btop
+fastfetch
+
+# ── boot ───────────────────────────────────────────────────────────
+syslinux
+grub
+efibootmgr
+edk2-shell
+memtest86+
+memtest86+-efi
+
+# ── filesystem support ─────────────────────────────────────────────
+btrfs-progs
+dosfstools
+e2fsprogs
+exfatprogs
+f2fs-tools
+ntfs-3g
+xfsprogs
+gptfdisk
+parted
+mtools
+
+# ── Hyprland / Wayland ────────────────────────────────────────────
+hyprland
+hyprlock
+hypridle
+# mpvpaper is AUR-only — built from source by customize_airootfs.sh.
+# These are its runtime + build dependencies.
+mpv
+meson
+ninja
+scdoc
+# rust — historically required to build eww in customize; eww build removed
+# 2026-08-05. Kept so other source builds in customize still have cargo.
+rust
+wayland-protocols
+hyprcursor
+greetd
+plymouth
+qt5-quickcontrols2
+qt5-graphicaleffects
+qt5-declarative
+# waybar removed 2026-05-11; eww deleted 2026-08-03 (HANDOFF). Quickshell is
+# the shell. socat/jq/acpi remain as general helpers; gtk-layer-shell backs
+# layer-shell clients.
+socat
+jq
+acpi
+gtk-layer-shell
+wofi
+rofi
+rofi-emoji
+dunst
+xdg-desktop-portal-hyprland
+xdg-desktop-portal-gtk
+# Settings portal colour-scheme (CS-1057 / TRK-1211, 2026-08-22). The gtk
+# portal serves org.freedesktop.impl.portal.Settings — the only way a Flatpak
+# or Electron app learns the OS is dark — by READING GSettings
+# org.gnome.desktop.interface color-scheme. Both were only transitive here
+# (dconf via gtk4, the schemas via xdg-desktop-portal-gtk), so a package
+# shuffle could silently drop them and leave `gsettings set` writing to the
+# memory backend, i.e. nowhere. Pinned on purpose; nyxus-session-start writes
+# the keys at login.
+# dconf                    : the GSettings backend that actually persists
+# gsettings-desktop-schemas: org.gnome.desktop.interface (color-scheme, gtk-theme, …)
+dconf
+gsettings-desktop-schemas
+qt5-wayland
+qt6-wayland
+# Quickshell — the desktop shell (HORIZON bar, Start, flyout, Task View).
+# Official Arch extra. Skel launches `qs`. This is the bar, not eww.
+quickshell
+xorg-xwayland
+wl-clipboard
+grim
+slurp
+cliphist
+brightnessctl
+playerctl
+pamixer
+pavucontrol
+swaybg
+# rev 2026-07-16: `swww` no longer resolves in Arch `extra` — upstream
+# repos dropped it in favor of `awww` ("An Answer to your Wayland
+# Wallpaper Woes"), which is a maintained fork/successor, not a
+# different project as an earlier comment here claimed — its own
+# package metadata declares `Provides: swww` + `Replaces: swww`. Package
+# name swapped back to `awww`; a `swww`→`awww` compat symlink is added
+# by customize_airootfs.sh so every existing `swww ...`-invoking script
+# (nyxus-set-wallpaper.sh, nyxus-wallpaper-autostart, nyxus_wallpaper_
+# studio.py, etc.) keeps working unmodified.
+awww
+wdisplays
+# wlogout removed 2026-05-11 — built from upstream source by
+# customize_airootfs.sh (was failing pacstrap on mirrors that don't yet
+# carry it in extra; building from source removes the mirror dependency).
+nwg-displays
+# kanshi (WIP-503, 2026-08-16 CH) — multi-monitor layout MEMORY: dock the
+# laptop and get the dock's arrangement back without touching anything.
+# 58 KiB, extra, 1.9.0. It ships NO systemd unit, NO D-Bus service and NO
+# default config, which is why WIP-503 held it for months: added bare it
+# would do nothing twice over. It lands here only alongside the two halves
+# that make it real — etc/skel/.config/systemd/user/nyxus-kanshi.service
+# (with a committed default.target wants-symlink, and a ConditionPathExists
+# so it stays dormant for anyone who never docks) and the "Remember this
+# arrangement" action in Settings ▸ Displays, which GENERATES the config
+# from the live outputs. Package + autostart + UI, together, per the row.
+kanshi
+blueman
+geoclue
+power-profiles-daemon
+bluez
+bluez-utils
+# (dedup) networkmanager
+network-manager-applet
+polkit
+hyprpolkitagent
+
+# ── audio ─────────────────────────────────────────────────────────
+pipewire
+pipewire-alsa
+pipewire-pulse
+pipewire-jack
+# USB 08-26: xdg-desktop-portal logged
+# "Failed to load RealtimeKit property … name is not activatable" three
+# times at session start. PipeWire still runs; it just never gets RT
+# scheduling. rtkit is the daemon the portal and wireplumber ask for.
+# Both package tiers (item 16).
+rtkit
+wireplumber
+alsa-utils
+# paplay / pactl. SetPageSound EXECs `paplay` for the test tone.
+# pipewire-pulse *depends on* libpulse today, so the binary reaches the
+# image only as a transitive accident — the same class xdg-utils was
+# listed to stop. Name it so a lighter pulse shim cannot drop the player.
+libpulse
+# cava — console audio visualizer. REQUIRED, not optional eye candy: it
+# drives cava / audio-reactive surfaces
+# halo (hypr/scripts/nyxus-pulse.sh via ~/.config/nyxus/pulse-cava.conf),
+# and the signature-bar spectrum. Was referenced everywhere but never
+# listed here, so the music-reactive features were dead on a real install.
+cava
+# audacious DROPPED 2026-08-20 (owner): leftover second player next to
+# nyxus-media (PKG-5 / TRK-931). Do not add strawberry/lollypop.
+
+# ── GTK4 + Python (for NYXUS apps) ────────────────────────────────
+gtk4
+libadwaita
+adw-gtk-theme
+papirus-icon-theme
+# hicolor-icon-theme was NEVER declared here — it only existed on the image
+# as a transitive accident of other packages pulling files into
+# usr/share/icons/hicolor/, with six size dirs and no index.theme at all.
+# hicolor is the freedesktop.org FALLBACK theme: every icon lookup that
+# misses in the active theme (Papirus, or whatever the user picks) falls
+# through to hicolor last, and every one of this build's own nyxus-*.svg/png
+# app icons is shipped INTO hicolor's own directories rather than a named
+# theme of its own. Declaring the package (not hand-writing index.theme in
+# this tree — that path is package-owned and not in hicolor-icon-theme's
+# backup=(), so a profile-tree copy aborts the pacstrap transaction the same
+# way the blueman-manager.desktop conflict did, per gate 13q8) is what turns
+# "icons happen to land in a directory with this name" into "a real,
+# resolvable icon theme with a valid index.theme", which pacstrap installs.
+# Gate 13vp checks this by content coverage, not by the package's name alone.
+hicolor-icon-theme
+# ── vte4 IS THE ONE NYXUS Terminal NEEDS (WIP-319, 2026-08-11) ────
+# `vte3` ships the GTK3 binding and installs Vte-2.91.typelib. NYXUS
+# Terminal is a GTK4 app and asks for `Vte 3.91`, which comes only
+# from `vte4`. Without it the require_version() raises on every
+# launch, the except branch draws the label "VTE not available", and
+# the build's own terminal opens a window that cannot run a single
+# command — proven by launching it on the booted 2026-08-11 ISO.
+#
+# Keep BOTH: vte3 is a dependency of other packaged GTK3 software,
+# and removing it is a separate question from adding this one.
+#
+# Super+Return and the Start tile exec ghostty. Other emulators are not
+# shipped. vte4 stays for any GTK VTE leftover, not as a second Terminal.
+vte4
+vte3
+vte-common
+# ── gtksourceview5 — NYXUS Notes is an editor now (WIP-331, 2026-08-11) ──
+# Notes was one textarea. The owner asked for a Notepad++-class editor, so
+# it gained tabs, line numbers, syntax highlighting, find/replace and
+# go-to-line, all of which are GtkSourceView.
+#
+# This line exists because of vte4 directly above it. That entry is the
+# record of what happens when an app asks gi for a typelib the image does
+# not carry: require_version raises, an except branch draws an apology, and
+# the app ships dead through green gates. Notes degrades to a plain
+# Gtk.TextView if GtkSource is missing rather than dying — but it should
+# never have to, so the package is named here in the same commit as the code
+# that needs it.
+gtksourceview5
+python
+python-gobject
+python-pip
+python-cairo
+python-psutil
+python-cryptography
+
+# ── NYXUS Studio's deps, packaged so first login does NOT pip (WIP-322) ──
+# nyxus-studio.tgz's install.sh runs, at FIRST LOGIN:
+#     pip install --user sounddevice soundfile scipy trimesh
+# for any of the four it cannot already import. On a live stick that is a
+# download from PyPI before the user has done anything — the same fault as
+# SAGE's chromadb, and it slipped past audit.sh 15 for the same reason: the
+# pip lives inside a cache payload, not in an app file.
+#
+# The installer checks `python3 -c "import <pkg>"` FIRST and skips the pip
+# when the import succeeds, so packaging these makes that branch dead code
+# rather than needing the tarball repacked.
+#
+# ⚠ `sounddevice` is deliberately NOT here: it has no official Arch package
+# (AUR only), and this profile has no AUR path — local-repo carries only the
+# owner's Kage-Ryu kernel. It is therefore the one first-login pip that can
+# still fire, and gate 13ui names it rather than pretending otherwise.
+python-soundfile
+python-scipy
+python-trimesh
+python-requests
+python-pillow
+python-dnspython
+
+# ── nyxus-intel runtime deps (Policy A — pacman-first, offline-capable) ─
+# Mirrors the contents of intel/packages.txt + intel/requirements.txt
+# packaged for Arch. Anything not in official repos stays as a pip-at-
+# first-run fallback inside install.sh.
+python-bcrypt
+python-reportlab
+# NOTE: `python-shodan` is AUR-only — install.sh handles it as a pip
+# fallback at first run if needed (nyxus-phantom threat-intel feature).
+# NOTE: `python-piexif` is AUR-only — install.sh handles it as a pip
+# fallback at first run (EXIF metadata editing for the media library).
+# NOTE: `python-whois` is AUR-only — install.sh handles it as a pip
+# fallback at first run. The `whois` C binary below covers the CLI need.
+whois
+
+# ── input methods (WIP-118) ───────────────────────────────────────
+# The build shipped noto-fonts-cjk, so Chinese, Japanese and Korean RENDERED
+# perfectly — and there was no way to TYPE a single character of any of them.
+# That asymmetry is worse than shipping neither: the system looks like it
+# supports those languages right up until someone tries to use it. Against a
+# brief of "an everyday system anyone can use", "anyone" meant "anyone who
+# writes in a Latin script".
+#
+# fcitx5 over ibus because fcitx5's Wayland frontend speaks text-input-v3,
+# which is what wlroots implements; ibus still leans on the X11 path.
+fcitx5
+fcitx5-configtool
+fcitx5-gtk
+fcitx5-qt
+# Engines. Chinese (pinyin/shuangpin + more), Korean (hangul), Japanese
+# (anthy), and the table engines that cover a long tail of other scripts.
+fcitx5-chinese-addons
+fcitx5-hangul
+fcitx5-anthy
+fcitx5-table-extra
+
+# ── WIP-124 · the long tail ───────────────────────────────────────
+# The owner asked for these in as many words: "all the features small or big
+# ones that even people won't even use". Each is one line and none is urgent;
+# collected here so the reasoning is in one place.
+#
+# udftools    — UDF, so a video DVD or a Blu-ray data disc actually mounts.
+# nfs-utils   — SMB shares already work via gvfs-smb; NFS ones did not.
+# libldac     — LDAC-capable headphones were negotiating down to SBC/AAC, so
+#               the good codec on expensive headphones went unused.
+# squeekboard — on-screen keyboard, and it REPLACES the wvkbd that Settings
+#               Accessibility has offered to launch for months while it was
+#               never packaged. wvkbd and magnus are both AUR-only; adding
+#               either by name would have failed pacstrap and killed the bake,
+#               which is exactly how this build once shipped four ISOs with no
+#               installer. squeekboard is in extra and does the same job.
+#               The magnifier has no repo equivalent — see WIP-124.
+# baobab DROPPED 2026-08-20 (owner): Settings ▸ Storage is the surface
+# (GAP-912); gnome-disk-utility stays for format/SMART.
+# snapshot    — a camera app, so a webcam can be tested outside a browser.
+udftools
+nfs-utils
+libldac
+squeekboard
+snapshot
+
+# ── fonts ─────────────────────────────────────────────────────────
+ttf-jetbrains-mono-nerd
+ttf-firacode-nerd
+inter-font
+noto-fonts
+noto-fonts-emoji
+otf-font-awesome
+
+# ── terminal: Ghostty is the ISO Terminal (owner 2026-08-20) ──
+# extra/ghostty 1.3.1-2. Desktop id from the Arch package file list:
+# usr/share/applications/com.mitchellh.ghostty.desktop
+# kitty, alacritty, and foot are NOT shipped (owner 2026-08-25).
+# Super+Return and the Start tile exec ghostty only. No fallback emulator.
+ghostty
+
+# ── utilities (no second terminal) ──
+fzf
+ripgrep
+fd
+bat
+eza
+zoxide
+starship
+ranger
+
+
+# ── GPU drivers — NVIDIA hybrid stack (LOCKED · 2026-05-10 r5) ────
+# Target hw: MSI GS77 i9-12900H + RTX 3060 (Intel iGPU + NVIDIA dGPU).
+# nvidia-open-dkms rebuilds the module against any kernel; linux-headers is
+# required for DKMS to compile. egl-wayland + libva-nvidia-driver are
+# required for proper Wayland + hardware video decode under Hyprland.
+linux-headers
+nvidia-open-dkms
+nvidia-utils
+nvidia-settings
+lib32-nvidia-utils
+opencl-nvidia
+egl-wayland
+libva-nvidia-driver
+
+# ── GPU drivers — Intel iGPU + Vulkan loaders ────────────────────
+intel-media-driver
+libva-intel-driver
+libva-utils
+# WIP-121 was a FALSE GAP, and the way it was wrong is worth keeping.
+#
+# The audit searched packages.x86_64 for `libva-mesa-driver`, did not find it,
+# and concluded AMD machines had no hardware video decode. The package name was
+# the wrong test: Arch folded that package INTO mesa, which now carries
+# `provides: libva-mesa-driver` and `replaces: libva-mesa-driver<1:24.2.7-1`.
+# mesa has been in this list all along, so AMD VAAPI already worked.
+#
+# Adding the name would have been worse than useless — it is not in the repos
+# at all any more, so pacstrap would have failed and taken the whole bake with
+# it. `mesa-vdpau` is gone the same way. Caught by querying the Arch package
+# database before trusting the audit's own finding.
+#
+# The lesson, which is the same one as WIP-117: "is the name present?" is not
+# the same question as "does the capability exist?"
+vulkan-intel
+lib32-vulkan-intel
+vulkan-icd-loader
+lib32-vulkan-icd-loader
+vulkan-tools
+intel-gpu-tools
+mesa
+lib32-mesa
+mesa-utils
+
+# ── GPU drivers — AMD (TRK-1205 / CS-1058, 2026-08-22) ──────────────
+# AMD is a TARGET now, not an accident. The owner's 2026-08-20 ruling: the OS
+# must pick up "any typical PC ~2012-now" — and his own second machine (the
+# Alienware 15, Ryzen 7 260) carries an AMD iGPU. Until today Vulkan on any
+# AMD box resolved to nothing: the 2026-07-14 note further down dropped
+# vulkan-radeon as "hardware-locked build for the MSI GS77", which this block
+# supersedes. What AMD needed and now has:
+#   vulkan-radeon / lib32-       : RADV, the Mesa Vulkan driver for GCN 1.2+
+#                                  (Radeon HD 7000 era onward, 2012 = the
+#                                  ruling's own cut line)
+#   switcheroo-control           : D-Bus dual-GPU reporter for hybrid boxes
+#                                  (AMD iGPU + NVIDIA dGPU = the Alienware);
+#                                  180 KiB, dbus-activated
+# Already here all along, for the record: mesa (radeonsi GL **and**
+# `provides: libva-mesa-driver`, i.e. AMD VA-API — see the WIP-121 note
+# above), lib32-mesa, linux-firmware (the amdgpu/ firmware set), amd-ucode.
+# The support matrix itself lives in ONE place — airootfs
+# /usr/local/bin/nyxus-gpu-probe (`--matrix`) — and gate 13s50 derives this
+# block's package names from it rather than restating them.
+vulkan-radeon
+lib32-vulkan-radeon
+switcheroo-control
+
+# ── Audio firmware (CRITICAL — MSI GS77 needs sof-firmware) ──────
+sof-firmware
+alsa-firmware
+alsa-ucm-conf
+
+# ── Power / thermal management ──────────────────────────────────
+thermald
+acpid
+upower
+lm_sensors
+nvtop
+powertop
+
+# ── Hardware control — universal power modes, fan curves, RGB ────
+# (Agent AH, 2026-08-12 — Hardware app's platform-profile/fan/RGB scope)
+#
+# dkms: explicit even though nvidia-open-dkms above already pulls it in as a
+# hard dependency (`pacman -Qi nvidia-open-dkms` -> Depends On: dkms, and it
+# was in fact already present on the dev/preview machine for exactly that
+# reason). Listing it here documents the OTHER, unrelated reason it must
+# never quietly disappear: the community msi-ec driver (real EC-level fan
+# curves + RGB "shift" modes on MSI laptops — AUR-only, opt-in, see
+# docs/MSI_EC_OPT_IN_2026-08-12.md) is itself an out-of-tree module and MUST
+# be rebuilt against every new kernel. Without dkms a routine `pacman -Syu`
+# silently breaks fan control with nothing on screen announcing it — the
+# module just stops matching the running kernel until someone thinks to
+# check `lsmod`.
+dkms
+# openrgb: nyxus_control.py's RGB tab has probed for this binary since it
+# shipped (`which openrgb`) but it was never in this list, so the tab always
+# rendered its color/mode buttons pointed at a program that did not exist on
+# disk — one of the three known instances of this build shipping a control
+# with nothing behind it. Packaging it is half the fix; the other half is
+# nyxus_control.py's _rgb_probe(), which now hides the RGB tab entirely
+# unless `openrgb --list-devices` finds at least one real device, so an
+# installed-but-deviceless machine does not get a tab full of dead buttons
+# either — measured live on the dev/preview machine: openrgb IS present
+# there and still finds zero devices, and the tab is correctly absent.
+openrgb
+
+# ── Bluetooth + printing + webcam ───────────────────────────────
+bluez-obex
+cups
+cups-pdf
+system-config-printer
+v4l-utils
+# WIP-120. cups + hplip cover driverless IPP Everywhere, which is most printers
+# sold recently. These two are the PPD databases anything older needs. The
+# failure without them is undramatic and hard to diagnose: the printer is
+# detected, it appears in the dialog, and the output is wrong or absent.
+gutenprint
+foomatic-db
+# WIP-119. simple-scan and sane were both packaged and there was a scanning
+# surface — with no backend that can find a modern scanner. Nearly every
+# scanner sold in the last decade is driverless, reached over eSCL/AirScan or
+# WSD rather than by a vendor SANE backend, and sane-airscan is what speaks
+# those. Without it simple-scan opens, finds nothing, and reports no scanner
+# attached on a machine with a working scanner on the same network — a
+# false-green surface. ipp-usb covers the USB half, where the same driverless
+# protocol runs over a USB link.
+sane-airscan
+ipp-usb
+
+# ── Biometric + hardware-token authentication ───────────────────
+# fprintd  → fingerprint daemon (libfprint backend; works with most
+#            laptop fingerprint sensors out of the box).
+# pam-u2f  → PAM module for FIDO2/U2F hardware tokens (YubiKey).
+# libfido2 → FIDO2 support library used by pam-u2f + ykman.
+# yubikey-manager → CLI to register/program YubiKeys.
+# python-opencv + python-dlib are runtime deps for `howdy` face auth
+# (built from AUR by customize_airootfs.sh, since howdy is AUR-only).
+fprintd
+libfprint
+pam-u2f
+libfido2
+yubikey-manager
+# pamtester is not packaged and is not built at bake time. It existed
+# only for nyxus-bd-router (NYXUS backdoor, WIP-324). USB 08-26 SYS
+# dropped the customize curl.
+python-opencv
+# python-dlib removed 2026-05-11 — AUR-only, pulled in transitively by
+# howdy's own debian/install.sh during the customize_airootfs.sh build.
+# v4l2loopback-dkms — virtual V4L2 loopback device kernel module.
+# Provides the v4l2loopback kernel module across the shipped kernel set.
+v4l2loopback-dkms
+# oath-toolkit ships oathtool (TOTP code generator/verifier) and pam_oath.
+# Used by the backdoor stack as the 4th factor (rotating 30-second OTP).
+oath-toolkit
+# qrencode renders the TOTP enrolment URI as an ASCII QR code so the user
+# can scan it into Aegis/Authy/Google Authenticator from a terminal.
+qrencode
+
+# ── Gaming stack (multilib) ─────────────────────────────────────
+gamemode
+lib32-gamemode
+mangohud
+lib32-mangohud
+gamescope
+giflib
+# lib32-giflib — REMOVED 2026-08-17 (WIP-768). Arch DROPPED it from multilib.
+# It is not renamed and nothing provides it: resolving every entry in this file
+# against the bake's own freshly-synced databases (20,454 packages, 7,601
+# provides) found this as the ONE dead reference in the whole list.
+#
+# ⚠ `pacman -Ss lib32-giflib` on the owner's box FINDS it, which is why this
+# looked like a bake bug rather than an upstream removal. His host DB is from
+# 2026-07-22; multilib has since shrunk from 272 packages to 235. The bake
+# synced fresh and was correct — the stale copy was the host's.
+#
+# 64-bit `giflib` above is unaffected and stays. If a 32-bit GIF path is ever
+# genuinely needed again, check what multilib provides at that time rather than
+# restoring this line.
+gnutls
+lib32-gnutls
+libpng
+lib32-libpng
+
+# ── Daily-driver apps ───────────────────────────────────────────
+# firefox REMOVED 2026-08-22 (TRK-1252 / CS-1153): a second browser. Chromium
+# is the browser (HANDOFF; owner 2026-08-20 "Chromium only"); mimeapps.list
+# names no firefox.desktop fallback any more (13q35 migrated). Store shelf:
+# Recommended (org.mozilla.firefox on Flathub, pacman `firefox`).
+# nautilus DROPPED 2026-08-20 (owner, PKG-6): Nyxus Files is the file
+# manager. gvfs* stay as the trash/SMB/NFS engine. xdg-user-dirs-gtk is
+# listed next to xdg-user-dirs so GTK bookmarks survive without nautilus.
+hyprshot
+# Pixel eyedropper — Super+I copies any on-screen colour (Aurora pack).
+hyprpicker
+wf-recorder
+7zip
+unrar
+libcanberra
+
+# ═══════════════════════════════════════════════════════════════════
+# DE COMPLETENESS — WAVE 1 (rev 2026-08-01)
+# docs/DE_COMPLETENESS_AND_EDITIONS_2026-07-31.md §2.1
+# Every entry here backs something that was already built, shipped and
+# exposed in Settings but could not run for want of a package.
+# ═══════════════════════════════════════════════════════════════════
+
+# gtk4-layer-shell — the GTK4 layer-shell binding.
+# /opt/nyxus/desktop/nyxus_desktop.py is a complete GTK4 layer-shell desktop
+# client (wallpaper paint per-monitor at the BOTTOM layer + right-click →
+# nyxus-context-menu.sh). It does gi.require_version("Gtk4LayerShell","1.0")
+# and this profile only ever listed `gtk-layer-shell`, which is the GTK **3**
+# library and a different package. The import guard's fallback is
+# os.execvp("swaybg", …) with a message on stderr nobody reads, so the desktop
+# layer degraded to a plain wallpaper with no right-click and NO visible error.
+gtk4-layer-shell
+
+# loupe — image viewer. There was no image viewer on the ISO at all, so every
+# PNG/JPEG resolved to Firefox (which claims those types) and opened in a
+# browser tab. Needed before a mimeapps.list has anything to point at.
+
+# poppler — the PDF engine behind Nyxus Reader (nyxus_reader.py renders with
+# pdftocairo / pdfinfo / pdftotext / pdftohtml, "needs exactly one package —
+# poppler"). zathura + zathura-pdf-mupdf REMOVED 2026-08-22 (TRK-1252 /
+# CS-1153): Reader is the PDF viewer and mimeapps.list's application/pdf
+# points at nyxus-reader.desktop first; the zathura fallback id is gone with
+# the package (13pk would otherwise name a handler nothing provides). Store
+# shelf: Search (`zathura`).
+poppler
+
+# qt5ct + qt6ct — Qt theming, and the ONE consistent option available.
+# skel already ships ~/.config/qt5ct/qt5ct.conf and ~/.config/qt6ct/qt6ct.conf
+# (style=Fusion + the custom nyxus-galaxy palette) and NEITHER
+# package was installed, so nothing read either file and every Qt app rendered
+# default light grey.
+#
+# The DE study's §2.1 item 3 asked for `adwaita-qt5` + `adwaita-qt6` instead
+# (to match QT_QPA_PLATFORMTHEME=adwaita-dark in /etc/environment.d). Those
+# packages NO LONGER EXIST in the Arch repos — `pacman -Si adwaita-qt5` and
+# `adwaita-qt6` both resolve to nothing on a fully synced box (upstream
+# adwaita-qt is archived), and pacstrap ABORTS on an unknown package, so
+# listing them would have failed the bake outright. qt5ct/qt6ct is the
+# alternative the study itself offers in §1.3 row 7, and it is the better one
+# because the config it needs is already in skel and already on palette.
+qt5ct
+qt6ct
+# ── Kvantum (WIP-343) ──────────────────────────────────────────────
+# A Qt STYLE, not a platform theme, so one config applies across Qt5
+# AND Qt6 — which is why the owner's theme brief names it. It is the
+# only way to give both toolkit generations identical button shapes
+# and toggle mechanics; QT_QPA_PLATFORMTHEME can only ever name one
+# plugin, and naming qt6ct (see environment.d/90-nyxus-theme.conf)
+# leaves Qt5 apps falling back. Packaged now so the theme itself is
+# unblocked; writing it is still owed.
+kvantum
+
+# ffmpegthumbnailer — video thumbnails in Files. Image thumbnails already work
+# (nautilus pulls glycin); video and PDF had none. `tumbler` is deliberately
+# NOT added — it serves the thunar family, and no thunar-family file manager
+# ships here.
+ffmpegthumbnailer
+
+# ── DE completeness Wave 2 · the MIME substrate (§2.2) ────────────────────
+# Both of these were ALREADY on the ISO, and both only by accident. Listing
+# them explicitly is the whole point: the accidents are load-bearing and one of
+# them breaks the moment a lighter edition drops a browser.
+#
+# xdg-utils — xdg-open and xdg-mime themselves, i.e. the mechanism the entire
+# mimeapps.list depends on. It reached the image only because CHROMIUM
+# hard-depends on it — an implicit dependency is not a listing, and the day
+# chromium moves or is dropped, xdg-open and xdg-mime would leave with it and
+# nothing would open anything by association. So it is listed OUTRIGHT here.
+# (TRK-3681: this note used to cite packages.x86_64.lean, which already
+# dropped chromium, as the live proof. That list is deleted — one product,
+# one package list — so the reason is stated directly instead.)
+xdg-utils
+# xdg-user-dirs — ~/Documents, ~/Downloads, ~/Pictures and friends.
+# xdg-user-dirs-gtk was a nautilus hard-dep; listed here so dropping
+# GNOME Files does not lose GTK bookmarks / first-login dir update.
+xdg-user-dirs
+xdg-user-dirs-gtk
+
+# ── NYXUS Store: the software catalogue ───────────────────────────
+# This is what makes the Store a store rather than a package manager with
+# buttons. It ships the standard AppStream metadata for every application
+# in the repositories into /usr/share/swcatalog/ — the same data GNOME
+# Software reads — and `nyxus_appstream.py` parses it with the standard
+# library, so NOTHING here depends on the `appstream` package or its GIR
+# bindings.
+#
+# Measured against the 20260606 drop, 2026-08-12:
+#   1179 applications with real names, summaries and full descriptions
+#    828 with screenshots (remote URLs, fetched and cached on demand)
+#   1179 with an icon ON LOCAL DISK
+#
+# That last line is why the Store works offline. Only screenshots need a
+# network; everything else, including every icon, is read from this
+# package. 22.50 MiB installed.
+archlinux-appstream-data
+
+# ── archiso runtime requirements ──────────────────────────────────
+arch-install-scripts
+archinstall
+archiso
+squashfs-tools
+pacman-contrib
+reflector
+rsync
+which
+# USB 08-26: /usr/bin/hostname was missing. hostnamectl ships with systemd;
+# typing `hostname` is still a daily-driver hole. inetutils is the Arch
+# package that provides it. Keep in BOTH tiers (item 16).
+inetutils
+
+# NYXUS installer (AUR-only; built in customize_airootfs.sh).
+
+# ═══════════════════════════════════════════════════════════════════
+# COMPLETION WAVE 1+2+3 — backends for half-built UI, hardware /
+# network / FS completeness, stability + security hardening.
+# Added 2026-05-13 to back the Settings UI pages that previously had
+# frontend-only implementations (App Sandbox, Backup Snapshots,
+# Accessibility, Notifications, Firmware Updates) and to fill the gaps
+# audited in the 121-item completion master list.
+# ═══════════════════════════════════════════════════════════════════
+
+# ── Wave 1: backends for half-built UI pages ──────────────────────
+# Settings → App Sandbox backend.
+flatpak
+# Flatpak portal base.
+xdg-desktop-portal
+# Settings → Notifications busctl backend.
+swaync
+# Settings → Firmware Updates backend.
+fwupd
+# Settings → System → Storage backend, and the only thing on this build that
+# can warn before a disk dies. nyxus_settings_pages_system.py has advertised
+# `smartctl` since the page was written (~1718/~1761) and calls it (~1884),
+# but the package was in NEITHER tier — the page offered a capability the
+# system did not have. Owner ruled YES 2026-08-15. Must stay in BOTH lists:
+# audit item 16's recorded failure is exactly a package that landed in one
+# tier and not the other, and the Storage page ships on every tier.
+# Ships with /etc/smartd.conf (our `-M exec` route to a desktop toast) and
+# smartd.service enabled on both install paths.
+smartmontools
+# mpv codec coverage (h264/aac/vorbis).
+gst-plugins-good
+# h265 / mkv / aac+.
+gst-plugins-bad
+# mp3 / x264 (proprietary).
+gst-plugins-ugly
+# ffmpeg-backed gstreamer plugins.
+gst-libav
+# general media transcoding + thumbnails.
+ffmpeg
+# accurate system time (TLS sanity).
+chrony
+
+# ── Wave 2: hardware / network / FS completeness ──────────────────
+# CJK + missing standard font fallbacks.
+noto-fonts-cjk
+# WIP-124. noto-fonts covers the common scripts; -extra is Armenian, Georgian,
+# Ethiopic and the rest of the long tail. Cheap insurance against tofu boxes
+# in a build whose brief is that anyone can use it.
+noto-fonts-extra
+ttf-liberation
+ttf-dejavu
+cantarell-fonts
+ttf-iosevka-nerd
+adobe-source-code-pro-fonts
+# NOTE (2026-07-14): dropped vulkan-radeon + lib32-vulkan-radeon — this is a
+# hardware-locked build for the MSI GS77 (Intel Iris Xe + NVIDIA only). AMD's
+# RADV Vulkan driver does nothing here; Vulkan resolves to vulkan-intel / the
+# NVIDIA driver. Re-add only if this profile is ever retargeted to AMD hardware.
+# ⚠ SUPERSEDED 2026-08-22 (TRK-1205 / CS-1058): the profile WAS retargeted —
+# the owner's 2026-08-20 "any typical PC ~2012-now" ruling. Both packages are
+# back, in the "GPU drivers — AMD" block up with the other GPU stacks. This
+# note stays as the record of why they were ever missing.
+# Pin input driver explicitly (Hyprland normally pulls it but archiso
+# image-build doesn't always include it).
+xf86-input-libinput
+# Removable media automount + GVFS backends (USB sticks, Android,
+# SMB, iOS via gvfs-afc).
+udisks2
+# gnome-disk-utility: the udisks2 GUI front-end — format a USB stick, resize
+# a partition, check SMART data. Approved 2026-08-12 as the disk management
+# surface (WIP-463). Uses the udisks2 daemon already running, no extra
+# daemon added.
+gnome-disk-utility
+udiskie
+gvfs
+gvfs-mtp
+gvfs-smb
+gvfs-afc
+gvfs-gphoto2
+gvfs-nfs
+# WIP-505: network discovery backends — gvfs-wsdd for WS-Discovery (Windows
+# shares without NetBIOS), gvfs-dnssd for mDNS/DNS-SD (Macs and NASes).
+# Both are gvfs backends, D-Bus-activated, no new daemons; they populate
+# the existing "Other Locations → Networks" view. Extra: 180 KB combined.
+gvfs-wsdd
+gvfs-dnssd
+# VPN + mobile broadband + NM full GUI editor.
+wireguard-tools
+openvpn
+networkmanager-openvpn
+modemmanager
+mobile-broadband-provider-info
+nm-connection-editor
+# mDNS / .local hostnames / AirPrint / printer auto-discovery.
+avahi
+nss-mdns
+# Print/scan completeness.
+# HP printer drivers (covers ~40% of home printers).
+hplip
+# Scanner backend.
+sane
+# Scanner GUI.
+simple-scan
+
+# ── Wave 3: stability + security + accessibility ──────────────────
+# Out-of-memory protection (the single biggest stability win).
+earlyoom
+# Compressed RAM-backed swap (~2x effective RAM on small machines).
+zram-generator
+# Multi-core IRQ distribution + auto-nice.
+irqbalance
+# Sandboxing primitives (bubblewrap is also flatpak's runtime dep).
+bubblewrap
+firejail
+apparmor
+# Per-USB-device authorization (pairs with nyxus_usb_watch.py).
+usbguard
+# Kernel auditing (security daemon backend).
+audit
+# Encryption / keyring / signed packages.
+gnupg
+# seahorse DROPPED 2026-08-20 (owner): PGP GUI we hid. gnome-keyring is
+# the daemon (PKG-3) and is listed below. libsecret stays.
+libsecret
+openssl
+# Stateful firewall + zone-based config.
+firewalld
+# On-demand virus scanning — the engine behind Hemera Scan (WIP-654).
+# `clamscan` and `freshclam` ONLY. clamd/clamonacc (the on-access daemon)
+# ship in this package and are deliberately never enabled, never started and
+# never referenced: no real-time scanner sits between this build and every
+# open(2). Owner-approved 2026-08-15. Costs 30.65 MiB download / 181.29 MiB
+# installed (clamav 1.5.3-1); definitions are NOT in the package — freshclam
+# fetches them after install, which is why `nyxus-hemera defs` reports
+# "never downloaded" honestly instead of "0 days old".
+clamav
+# Accessibility stack (Settings → Accessibility backend).
+orca
+speech-dispatcher
+espeak-ng
+brltty
+at-spi2-core
+# Snapshot backups (Settings → Backup → Snapshots tab backend).
+# distrobox are AUR — handled by customize_airootfs.sh build step.
+snapper
+restic
+# TRK-3658 · timeshift comes from [extra], NOT from the AUR.
+# It was an `_aur_build timeshift` and it FAILED on the 2026-09-01 bake:
+#     error: target not found: libsoup
+# The AUR recipe still names libsoup, which Arch replaced with libsoup3, so
+# that build cannot resolve its own dependency and the package never landed.
+# The ISO therefore shipped Backup with nothing behind it — the app opens,
+# checks HAS_TIMESHIFT, finds nothing and degrades to a page that cannot take
+# a snapshot. verify-app-launch could not see it because degrading gracefully
+# is exactly what the app is written to do.
+# `extra/timeshift` is current (25.12.4-1) and needs no build at all.
+timeshift
+# TRK-3658 · ananicy-cpp comes from [extra] too, for the same reason.
+# `_aur_build ananicy-cpp` FAILED on the 2026-09-01 bake and it was not a
+# dependency problem - the AUR source does not COMPILE against current GCC:
+#     error: 'memset' is not a member of 'std'
+#     error: 'getpid' was not declared in this scope
+# which is the transitive-include tightening recent GCC shipped. The packaged
+# build (extra/ananicy-cpp 1.2.0-1) is current and needs no compiler of ours.
+# customize_airootfs.sh still enables ananicy-cpp.service; only the BUILD moves.
+ananicy-cpp
+# Encrypted off-site backup alternative.
+borg
+# Dev / containers / power-user.
+# Rootless containers.
+podman
+# Rust toolchain (modern AUR builds).
+rustup
+# neovim REMOVED 2026-08-22 (TRK-1252 / CS-1153): vim (base list) is the
+# terminal editor that ships; helix + micro stay below. Store shelf: Search.
+# Secondary browser.
+chromium
+# appimagelauncher is AUR-only — built from source by customize_airootfs.sh.
+# Wayland tools that back existing services + UI conventions.
+# Blue-light filter (backs nyxus-nightlight.service).
+wlsunset
+# Screenshot annotation (chained from grim/slurp).
+swappy
+# English OCR in nyxus-screenshot (--ocr and the picker checkbox).
+# tesseract itself does not pull tesseract-data-eng (only -osd + tessdata),
+# so without this line the checkbox enables nothing useful on a fresh ISO.
+tesseract
+tesseract-data-eng
+# QR / barcode lens (Super+Shift+Q → nyxus-lens qr → zbarimg).
+# Bound on a fresh ISO; without this line the key notifies
+# `pacman -S zbar` and copies nothing.
+zbar
+# Boot-time multi-OS detection (off by default in stock Arch).
+os-prober
+# Misc system polish.
+# ~/.cache/nyxus/*.log rotation.
+logrotate
+# Already listed above; grouping.
+# man page database.
+man-db
+# base man-pages corpus.
+man-pages
+
+# ── NYXUS Drop / KDE Connect (cross-device file + text share) ──────
+# DropPage in nyxus_settings.py auto-detects this and offers an install
+# fallback if missing. Shipping it stock so first-boot is zero-config.
+kdeconnect
+
+# ── NYXUS Audio EQ (EasyEffects + LV2 plug-ins) ────────────────────
+# SoundPage exposes preset switcher; presets ship in /etc/skel/.config
+# /easyeffects/output/. Autostarted as a gapplication-service so the
+# pipeline is hot before the user opens anything.
+easyeffects
+lsp-plugins-lv2
+calf
+# rnnoise model used by EasyEffects "Noise Reduction" preset.
+rnnoise
+
+# ── NYXUS Virt Manager (Tier B · 2026-05-14) — REMOVED 2026-08-22 ────────
+# qemu-desktop / libvirt / virt-manager / virt-viewer / edk2-ovmf / swtpm
+# REMOVED (TRK-1252 / CS-1153): a VM stack is not a daily-driver baseline
+# and nothing else on the image needs it (checked: no unit, no skel file, no
+# Settings QML page names libvirt/qemu; nyxus-virt-setup is the only caller
+# and it is the helper FOR this stack — retired 2026-08-22 with it, TRK-1257). Store shelf: Recommended lists Steam; virt-manager is a
+# Search away (`virt-manager`, pulls the stack as dependencies).
+# dnsmasq + iptables STAY: NetworkManager's hotspot / shared-connection mode
+# needs dnsmasq, and iptables(-nft) backs NM connection sharing + firewalld.
+dnsmasq
+iptables
+
+# ── NYXUS Containers (Tier B) ──────────────────────────────────────
+# podman is already shipped above. Add buildah/skopeo for image build
+# + transfer, distrobox for one-command rootless dev containers.
+buildah
+skopeo
+distrobox
+
+# ── Kernel policy (Suxyn v1) ──────────────────────────────────────
+# Stock Arch `linux` only. Custom kernels (Kage-Ryu / Aether) are not
+# this product. linux-lts / linux-zen / linux-hardened stay out.
+
+# ── NYXUS Gaming / Proton-GE (Tier B) ──────────────────────────────
+# steam REMOVED 2026-08-22 (TRK-1252 / CS-1153): a 32-bit runtime + launcher
+# not everyone wants on a daily driver; it is the first game tile on the
+# Store's Recommended shelf (com.valvesoftware.Steam on Flathub, pacman
+# `steam` from multilib). gamemode / mangohud / gamescope (above) stay — they
+# serve any game the Store installs. nyxus-protonup retired 2026-08-22 (TRK-1257).
+
+# ── NYXUS Editors bundle (Tier B) ──────────────────────────────────
+# code (open-source VS Code build) REMOVED 2026-08-22 (TRK-1252 / CS-1153):
+# an IDE is a developer's choice, not the baseline — Store shelf: Recommended
+# (com.visualstudio.code on Flathub, pacman `code`). helix = modern modal
+# editor. micro = nano replacement. Notes is the graphical editor.
+helix
+micro
+
+# ── NYXUS Tier C (rev 2026-05-14): security & network polish ───────
+# usbguard already shipped above (line 377). Adding strongSwan plug-in,
+# Secure Boot manager (sbctl), TPM2 userspace tools, MAC randomizer,
+# and dnscrypt-proxy for DNS-over-HTTPS.
+#
+# IMPORTANT: usbguard daemon ships with PresentDevicePolicy=allow and
+# an EMPTY rules.conf so it never locks the user out of their own USB
+# keyboard at install time. Per user pref: account-lockout / hardening
+# policies are opt-in post-install only. UsbPage exposes the toggle.
+networkmanager-strongswan
+sbctl
+tpm2-tools
+macchanger
+dnscrypt-proxy
+sound-theme-freedesktop
+qt5-svg
+
+# ── greeter stack — REQUIRED ───────────────────────────────────────
+# The ISO enables greetd. The greeter chain nyxus-greeter runs regreet under
+# cage, falling back to tuigreet (text). Without these three the ISO boots to
+# greetd with NO greeter binary = broken login. cage/regreet are Wayland,
+# which dodges the SDDM X11 hybrid-GPU crash. SDDM is not installed.
+greetd-regreet
+greetd-tuigreet
+cage
+
+# ── performance ────────────────────────────────────────────────────
+# sched_ext userspace schedulers. scx_lavd (latency-aware) is enabled via
+# /etc/default/scx + scx.service; runtime-swappable, reverts to EEVDF on stop.
+scx-scheds
+
+# ── desktop runtime libraries ──────────────────────────────────────
+# gtk3 backs GTK3 apps; webkit2gtk-4.1 and
+# libayatana-appindicator back webview-based apps and their tray icons.
+# The python set and sqlite are shared by the GTK4 application layer
+# (Settings, Files, Notepad, Store, Backup, Account). nftables backs the
+# firewall surface in Settings.
+webkit2gtk-4.1
+gtk3
+libayatana-appindicator
+python-aiohttp
+sqlite
+nftables
+python-sqlalchemy
+python-click
+python-structlog
+python-yaml
+libnotify
+
+# ── INSTALLER ────────────────────────────────────────────────────────
+# ★ THE FIX (2026-07-28): calamares is installed as a BINARY PACKAGE here,
+# not built from the AUR in the chroot.
+#
+# Four ISOs shipped with no installer because customize_airootfs.sh tried to
+# `makepkg` calamares inside the chroot, and that path kept breaking for a
+# different reason each time - first an unanswerable `sudo` password prompt
+# for the locked `nobody` user, then an empty chroot mirrorlist ("no servers
+# configured for repository: extra"), so kpmcore + yaml-cpp were unreachable.
+#
+# None of that is necessary: calamares is a plain binary in [blackarch],
+# which this profile's BUILD-TIME pacman.conf already enables, and both of its
+# problem dependencies are in [extra]:
+#     calamares -> blackarch      kpmcore -> extra      yaml-cpp -> extra
+# pacstrap installs it directly, so the installer no longer depends on the
+# chroot having working network, a build user, or a mirrorlist at all.
+#
+# The AUR `_aur_build calamares` call is left in place as a fallback - it
+# early-returns when `pacman -Qi calamares` already succeeds, so it becomes a
+# no-op rather than dead weight.
+calamares
+
+# ── desktop completeness (added 2026-08-03) ────────────────────────────
+# Each of these closes a gap found by scripts/audit.sh item 8. They are
+# small, and every one of them is the difference between a capability
+# existing and a capability working.
+# gnome-calculator : there was no calculator at all
+# gnome-keyring    : saved wifi/passwords had nowhere to live, so the user
+#                    got re-prompted for credentials on every login
+# dex              : reads ~/.config/autostart, which shipped with nothing
+#                    reading it — Settings wrote entries that never fired
+gnome-keyring
+dex
+
+# ── personal information (added 2026-08-03) ────────────────────────────
+# There was no mail client, no calendar and no contacts app of any kind.
+# A daily driver that cannot do email is not a daily driver.
+#
+# thunderbird over evolution/geary/kmail/claws-mail: it handles Gmail and
+# Outlook OAuth sign-in, which is the one thing that reliably defeats people
+# on the alternatives, and it carries calendar and contacts itself so one
+# package closes three gaps. evolution is the better Exchange/Outlook clone
+# but is heavier; geary is prettier but has no calendar.
+thunderbird
+
+# Desktop-native calendar and contacts on top, sharing evolution-data-server
+# so the quick-settings flyout can show real events later instead of an empty
+# month grid (design/mockups/set-notifications.png).
+
+# Clock, timers, alarms, world clocks — expected on every mainstream desktop.
+
+# ── replaced by NYXUS apps (2026-08-03) ──────────────────────────────
+# gnome-calculator       -> nyxus-calculator
+# gnome-clocks           -> nyxus-clock
+# gnome-calendar         -> nyxus-calendar
+# gnome-contacts         -> thunderbird carries contacts; a NYXUS one can follow
+# gnome-text-editor      -> nyxus-notepad
+# loupe                  -> nyxus-viewer
+# evolution-data-server  -> only existed for gnome-calendar/contacts
+# gnome-keyring is KEPT on purpose: it is a daemon implementing the Secret
+# Service API, not an app. There is no UI to theme, and credential storage
+# is one of the few things worth not hand-rolling.
+
+# ── archive support (2026-08-03) ─────────────────────────────────────
+# bsdtar is what NYXUS Archive reads and writes with — one binary that handles
+# zip, tar and every compressor, 7z, iso and rar, so there is no per-format
+# special casing to get subtly wrong. It was present on the build box only as
+# an implicit dependency, which is the "works on my machine" trap.
+libarchive
+# 7zip is already listed with the media/utility block above (line ~314); a
+# second entry here was the standing `duplicate packages: 7zip` WARN. pacman
+# tolerates the repeat, so nothing broke — but a warning nobody can ever clear
+# is a warning nobody reads, and this file has two other real gates keyed off
+# it. Listed once, near its first use.
+
+# file-roller  -> nyxus-archive (2026-08-03)
+
+grub-btrfs
+# inotify-tools is a HARD runtime requirement of grub-btrfsd.service, which
+# grub-btrfs ships and customize_airootfs.sh enables (`_nyx_enable
+# grub-btrfsd.service`) — the daemon's ExecStart is a shell loop around
+# `inotifywait` on the snapshot directory. It was never listed, so on the
+# 2026-08-17 ISO the unit was enabled and could never start: the live-VM audit
+# found no `inotifywait` binary and grub-btrfsd failing at every boot. Not
+# optional and not a nicety — without it the btrfs rollback entry only ever
+# appears on the next kernel update, never when a snapshot is taken.
+inotify-tools
+libreoffice-fresh

@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# Nyxus Suxyn session entry — greetd -> Hyprland -> Quickshell.
+# HARD RULE: GPU env is DETECTED. Do not ship LIBVA_DRIVER_NAME=nvidia /
+# __GLX_VENDOR_LIBRARY_NAME=nvidia as the only path. NVIDIA VA-API/GLX
+# is exported only on NVIDIA-only machines. AMD/Intel (and AMD+NVIDIA
+# hybrids) keep Mesa. nyxus-hwcaps / firstboot own the installed system.
+set -euo pipefail
+
+export PATH="${HOME}/.local/bin:${PATH}"
+case ":${PATH}:" in *:/usr/local/bin:*) ;; *) export PATH="${PATH}:/usr/local/bin" ;; esac
+case ":${PATH}:" in *:/usr/local/sbin:*) ;; *) export PATH="${PATH}:/usr/local/sbin" ;; esac
+
+export XDG_CURRENT_DESKTOP=Hyprland
+export XDG_SESSION_TYPE=wayland
+export XDG_SESSION_DESKTOP=Hyprland
+export MOZ_ENABLE_WAYLAND=1
+export ELECTRON_OZONE_PLATFORM_HINT=auto
+
+if command -v dbus-update-activation-environment >/dev/null 2>&1; then
+  dbus-update-activation-environment --systemd \
+    DISPLAY WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE \
+    XDG_SESSION_DESKTOP MOZ_ENABLE_WAYLAND ELECTRON_OZONE_PLATFORM_HINT \
+    NYXUS_ARCADE \
+    >/dev/null 2>&1 || true
+fi
+
+if command -v gsettings >/dev/null 2>&1; then
+  (
+    set +e +u +o pipefail
+    _gs_ini="${XDG_CONFIG_HOME:-${HOME}/.config}/gtk-3.0/settings.ini"
+    _gs_get() { [ -r "${_gs_ini}" ] && sed -n "s/^$1=//p" "${_gs_ini}" 2>/dev/null | head -n1; }
+    _gs_gtk="$(_gs_get gtk-theme-name)";           [ -n "${_gs_gtk}" ]    || _gs_gtk="adw-gtk3-dark"
+    _gs_icons="$(_gs_get gtk-icon-theme-name)";    [ -n "${_gs_icons}" ]  || _gs_icons="Papirus-Dark"
+    _gs_cursor="$(_gs_get gtk-cursor-theme-name)"; [ -n "${_gs_cursor}" ] || _gs_cursor="Adwaita"
+    _gs_csize="$(_gs_get gtk-cursor-theme-size)";  [ -n "${_gs_csize}" ]  || _gs_csize="24"
+    _gs_set() { timeout 5 gsettings set org.gnome.desktop.interface "$@" >/dev/null 2>&1 || true; }
+    _gs_set color-scheme 'prefer-dark'
+    _gs_set gtk-theme "${_gs_gtk}"
+    _gs_set icon-theme "${_gs_icons}"
+    _gs_set cursor-theme "${_gs_cursor}"
+    _gs_set cursor-size "${_gs_csize}"
+  ) >/dev/null 2>&1 &
+fi
+
+SESSION_LOG="${XDG_CACHE_HOME:-${HOME}/.cache}/nyxus/hyprland-session.log"
+mkdir -p "$(dirname "${SESSION_LOG}")" 2>/dev/null || true
+if [[ -t 1 ]]; then
+  printf '\033[H\033[2J\033[3J' >/dev/tty 2>/dev/null || clear 2>/dev/null || true
+fi
+
+# Hybrid AMD+NVIDIA: do not weld the whole session onto the dGPU.
+# The shell exec-once unsets PRIME offload for qs (hyprland.conf).
+if command -v lspci >/dev/null 2>&1; then
+  _disp="$(lspci 2>/dev/null | grep -iE "VGA|3D|Display" || true)"
+  if grep -qi nvidia <<<"${_disp}" && ! grep -qiE "AMD|ATI" <<<"${_disp}"; then
+    export LIBVA_DRIVER_NAME=nvidia
+    export __GLX_VENDOR_LIBRARY_NAME=nvidia
+    export NVD_BACKEND=direct
+  fi
+  unset -v _disp
+fi
+
+: "${NYXUS_SESSION_OOM:=100}"
+if [[ "${NYXUS_SESSION_OOM}" != "0" ]]; then
+  printf "%s\n" "${NYXUS_SESSION_OOM}" > /proc/self/oom_score_adj 2>/dev/null || true
+fi
+
+if grep -qE "(^| )nyxus\.safemode=1( |$)" /proc/cmdline 2>/dev/null \
+   && command -v nyxus-hypr-launch >/dev/null 2>&1; then
+  exec nyxus-hypr-launch >>"${SESSION_LOG}" 2>&1
+fi
+
+if command -v start-hyprland >/dev/null 2>&1; then
+  exec start-hyprland >>"${SESSION_LOG}" 2>&1
+elif command -v Hyprland >/dev/null 2>&1; then
+  exec Hyprland >>"${SESSION_LOG}" 2>&1
+else
+  echo "nyxus-session-start: Hyprland binary not found on PATH" >&2
+  exit 1
+fi

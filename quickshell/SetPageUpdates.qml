@@ -327,7 +327,7 @@ SetPage {
             radius: Theme.r2
             color: Theme.elevated
             border.width: 1.2
-            border.color: Theme.paintLayers.glacier[4]
+            border.color: Theme.lookSeam
 
             Rectangle {
                 anchors.left: parent.left

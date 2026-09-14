@@ -1,0 +1,15 @@
+NAME="Nyxus Suxyn"
+PRETTY_NAME="Nyxus Suxyn"
+ID=nyxus
+ID_LIKE=arch
+BUILD_ID=__BUILD_ID__
+ANSI_COLOR="38;5;51"
+HOME_URL="https://github.com/ikswognereisj-ctrl/Nyxus-Suxyn"
+DOCUMENTATION_URL="https://ikswognereisj-ctrl.github.io/Nyxus-Suxyn/"
+SUPPORT_URL="https://github.com/ikswognereisj-ctrl/Nyxus-Suxyn"
+BUG_REPORT_URL="https://github.com/ikswognereisj-ctrl/Nyxus-Suxyn/issues"
+LOGO=nyxus
+VARIANT="Suxyn Live ISO"
+VARIANT_ID=suxyn-live
+IMAGE_ID=nyxus-suxyn
+IMAGE_VERSION=__ISO_DATE__

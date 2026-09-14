@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Install Nyxus Suxyn
+Comment=Install this live image to disk
+Exec=calamares
+TryExec=calamares
+Icon=system-software-install
+Terminal=false
+Categories=System;Settings;

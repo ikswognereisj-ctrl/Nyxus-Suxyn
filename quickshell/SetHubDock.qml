@@ -405,7 +405,7 @@ Item {
                             radius: 17
                             color: "transparent"
                             border.width: 1
-                            border.color: Theme.paintLayers.glacier[4]
+                            border.color: Theme.lookSeam
                         }
                     }
 
@@ -627,7 +627,7 @@ Item {
                             border.width: 1
                             border.color: appCell.modelData.focused
                                           ? Theme.paintLayers.glacier[5]
-                                          : Theme.soften(Theme.paintLayers.glacier[4],
+                                          : Theme.soften(Theme.lookSeam,
                                                          appHov.hovered ? 0.9 : 0.4)
 
                             CrystalGem {
@@ -945,7 +945,7 @@ Item {
              : "transparent"
         border.width: 1
         border.color: stone.on ? Theme.paintLayers.glacier[5]
-                               : Theme.soften(Theme.paintLayers.glacier[4], 0.45)
+                               : Theme.soften(Theme.lookSeam, 0.45)
         Behavior on color { ColorAnimation { duration: Theme.durQuick } }
 
         Text {

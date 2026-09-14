@@ -559,7 +559,7 @@ Item {
         property vector4d cBodyA: root._v4(Theme.spectrumBody[0])
         property vector4d cBodyB: root._v4(Theme.spectrumBody[1])
         property vector4d cTip: root._v4(Theme.spectrumTip)
-        property vector4d cSpine: root._v4(Theme.paintLayers.glacier[4])
+        property vector4d cSpine: root._v4(Theme.lookSeam)
 
         // ── the LED cell and the reflection · TRK-3778 ──────────────────
         //   x  PITCH    px between cell centres — 6 gives 7 cells above the

@@ -136,6 +136,19 @@ PanelWindow {
         // is icy white with warm points as the exception (WIP-205).
         property vector4d uLook: Qt.vector4d(0.55, 0.90, 0.22, 1.0 + beatLift)
 
+        // The nebula follows the look (Settings ▸ Appearance ▸ Theme): ICE
+        // keeps the shipped teal→violet→plum artwork, MAGMA re-hues the same
+        // clouds from the ember ladder. Tokens are Theme.sky*; the shader
+        // reads unset uniforms as black, so all seven bind, always.
+        function _pal(c) { return Qt.vector4d(c.r, c.g, c.b, 1.0) }
+        property vector4d uPalA: _pal(Theme.skyCloudLow)
+        property vector4d uPalB: _pal(Theme.skyCloudMid)
+        property vector4d uPalC: _pal(Theme.skyCloudCrest)
+        property vector4d uPalD: _pal(Theme.skyCloudPeak)
+        property vector4d uPalFil: _pal(Theme.skyFilament)
+        property vector4d uPalDeepA: _pal(Theme.skyDeepA)
+        property vector4d uPalDeepB: _pal(Theme.skyDeepB)
+
         fragmentShader: Qt.resolvedUrl("shaders/starlight.frag.qsb")
 
         // A Timer, NOT a NumberAnimation: an animation redraws at the display's

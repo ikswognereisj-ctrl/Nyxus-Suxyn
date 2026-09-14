@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Live/installed greeter chain: tuigreet -> agreety -> session.
+# Sep 2 used nyxus-greeter; this image does not ship Core's regreet theme stack.
+set -euo pipefail
+SESSIONS=/usr/share/wayland-sessions
+CMD=/usr/local/bin/nyxus-session-start
+if command -v tuigreet >/dev/null 2>&1; then
+  exec tuigreet --time --remember --remember-session --sessions "${SESSIONS}" --cmd "${CMD}"
+fi
+if command -v agreety >/dev/null 2>&1; then
+  exec agreety --cmd "${CMD}"
+fi
+exec "${CMD}"

@@ -257,12 +257,12 @@ Item {
     // `rgba(0, 0, 0, a)`: a BLACK hairline, not an ice one.
     //
     // Not theory. The first cut of the login card wrote
-    // `Theme.soften(Theme.paintLayers.glacier[4], 0.60)` for its internal
+    // `Theme.soften(Theme.lookSeam, 0.60)` for its internal
     // divider and the live capture measured that row at RGB (2, 2, 4) against
     // a card ground of (5, 6, 9) — darker than the surface it divides, where
     // the intended colour composites to (49, 78, 103). Routing the rung
     // through a `color` property first is what makes `soften` see a colour.
-    readonly property color iceHairline:    Theme.paintLayers["glacier"][4]
+    readonly property color iceHairline:    Theme.lookSeam
     // TRK-3707 · the pale peak of the ramp, glacier[6]. The owner asked for
     // "some of that pal colors" on 2026-09-01, and this is the one place the
     // card spends it: a short hard tick on the head seam. Routed through a

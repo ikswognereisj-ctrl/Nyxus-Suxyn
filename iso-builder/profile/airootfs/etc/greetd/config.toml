@@ -1,0 +1,10 @@
+# Nyxus Suxyn greetd. Graphical greeter on the live stick and on disk.
+# HARD RULE: no [initial_session] autologin as gowski (or anyone).
+# The live user is `nyx`; Calamares creates the installed user.
+
+[terminal]
+vt = 1
+
+[default_session]
+command = "/usr/local/bin/nyxus-greeter"
+user = "greeter"

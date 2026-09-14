@@ -50,6 +50,17 @@ layout(std140, binding = 0) uniform buf {
     float uDensity;      // 0..2 — 1.0 is the shipped default look
     vec4 uRes;           // x,y item px · z shooting-star gate · w celestial-artwork gate
     vec4 uLook;          // x twinkleSpeed · y sparkle · z warmth · w master
+    // The nebula palette — Theme.skyCloud*/skyFilament/skyDeep*, so Settings
+    // ▸ Appearance ▸ Theme re-hues the sky with everything else. ICE keeps
+    // the shipped teal→violet→plum artwork; MAGMA takes the ember ladder.
+    // Unset uniforms read as BLACK, so both consumers must bind all seven.
+    vec4 uPalA;          // cloud low    (ice teal      / magma bright ember)
+    vec4 uPalB;          // cloud mid    (ice violet    / magma maroon)
+    vec4 uPalC;          // cloud crest  (ice orchid    / magma amber)
+    vec4 uPalD;          // cloud peak   (ice plum      / magma ember)
+    vec4 uPalFil;        // filament base(ice teal      / magma pale hot)
+    vec4 uPalDeepA;      // underpaint A (ice dark violet / magma wine dark)
+    vec4 uPalDeepB;      // underpaint B (ice deep teal / magma cooled rock)
 };
 
 float hash11(float p){ p=fract(p*0.1031); p*=p+33.33; p*=p+p; return fract(p); }
@@ -126,10 +137,10 @@ vec3 nebula(vec2 uv, out float backbone, out float artAlpha) {
     // measured stops, saturated on purpose — additive light desaturates.
     // The photo's dominant hue is BLUE: the streams run teal→indigo and
     // only their bright crests wash toward white
-    vec3 cloudCol = mix(vec3(0.039, 0.635, 0.839), vec3(0.478, 0.388, 0.941), smoothstep(0.30, 0.62, n));
-    cloudCol = mix(cloudCol, vec3(0.667, 0.431, 0.808), smoothstep(0.62, 0.82, n));
-    cloudCol = mix(cloudCol, vec3(0.682, 0.125, 0.424), smoothstep(0.82, 0.97, n));
-    vec3 filCol = mix(vec3(0.039, 0.635, 0.839), vec3(0.478, 0.388, 0.941), smoothstep(0.3, 0.7, n));
+    vec3 cloudCol = mix(uPalA.rgb, uPalB.rgb, smoothstep(0.30, 0.62, n));
+    cloudCol = mix(cloudCol, uPalC.rgb, smoothstep(0.62, 0.82, n));
+    cloudCol = mix(cloudCol, uPalD.rgb, smoothstep(0.82, 0.97, n));
+    vec3 filCol = mix(uPalFil.rgb, uPalB.rgb, smoothstep(0.3, 0.7, n));
     filCol = mix(filCol, vec3(0.81, 0.89, 1.00), braid * 0.55);
     // luminous amber-orange, the photo's river — gold ladder pushed toward
     // its saturated end so the paint's own dimming can't grey it to tan
@@ -138,7 +149,7 @@ vec3 nebula(vec2 uv, out float backbone, out float artAlpha) {
     // the UNDERPAINT — what the photo actually does: the whole band region
     // is painted deep blue-black first, and the streams live on that dark
     // ground. Without it, blue light over a pale wallpaper is grey forever.
-    vec3 deep = mix(vec3(0.055, 0.004, 0.325), vec3(0.008, 0.384, 0.510), smoothstep(0.25, 0.75, n));
+    vec3 deep = mix(uPalDeepA.rgb, uPalDeepB.rgb, smoothstep(0.25, 0.75, n));
     // paint coverage: the underpaint claims the band, the streams claim
     // their lines outright, nothing outside the artwork is touched
     artAlpha = clamp(band * 0.48 + cloud * 0.30 + filaments * 0.65 + river * 0.80, 0.0, 0.78);

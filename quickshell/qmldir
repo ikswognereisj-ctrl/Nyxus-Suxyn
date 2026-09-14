@@ -37,6 +37,7 @@ singleton DiagnosticBus   1.0 DiagnosticBus.qml
 singleton SettingsIndex   1.0 SettingsIndex.qml
 singleton UsbWatch        1.0 UsbWatch.qml
 singleton BatteryWatch    1.0 BatteryWatch.qml
+singleton LinkWatch       1.0 LinkWatch.qml
 singleton RecordWatch     1.0 RecordWatch.qml
 singleton UpdateWatch     1.0 UpdateWatch.qml
 singleton HyprApply       1.0 HyprApply.qml
@@ -94,6 +95,30 @@ Headliner     1.0 Headliner.qml
 # and the screensaver can all wear it. A PanelWindow cannot be parented into an
 # item tree, which is why the drawing half had to come out of Headliner.qml.
 HeadlinerSky  1.0 HeadlinerSky.qml
+Floor         1.0 Floor.qml
+FloorKiosk    1.0 FloorKiosk.qml
+FloorPoster   1.0 FloorPoster.qml
+Floor3D       1.0 Floor3D.qml
+FloorSign     1.0 FloorSign.qml
+FloorHero     1.0 FloorHero.qml
+FloorMarquee  1.0 FloorMarquee.qml
+FloorIsland   1.0 FloorIsland.qml
+FloorGlow     1.0 FloorGlow.qml
+FloorRocket   1.0 FloorRocket.qml
+FloorNeonName 1.0 FloorNeonName.qml
+FloorMovies   1.0 FloorMovies.qml
+FloorCeiling  1.0 FloorCeiling.qml
+FloorArcade   1.0 FloorArcade.qml
+FloorScreens  1.0 FloorScreens.qml
+FloorPosterArt 1.0 FloorPosterArt.qml
+FloorMusic     1.0 FloorMusic.qml
+FloorNowPlaying 1.0 FloorNowPlaying.qml
+FloorHub        1.0 FloorHub.qml
+FloorCover      1.0 FloorCover.qml
+FloorDoor       1.0 FloorDoor.qml
+FloorPageGames  1.0 FloorPageGames.qml
+FloorPageMovies 1.0 FloorPageMovies.qml
+FloorPageMusic  1.0 FloorPageMusic.qml
 # TRK-3082 — overlay popups crop this under the glass so they mix like
 # WidgetChip (Bottom layer over the sky), not like a hole over windows.
 SkyBehind     1.0 SkyBehind.qml
@@ -132,6 +157,7 @@ LiveMark      1.0 LiveMark.qml
 AppCard       1.0 AppCard.qml
 GlassTile     1.0 GlassTile.qml
 CrystalGem    1.0 CrystalGem.qml
+MagmaAppSeal  1.0 MagmaAppSeal.qml
 # The chamfer-aware fill. A card is a STACK (floor / Pane / swell) and
 # only the Pane can cut, so the plain-Rectangle layers need this or the
 # cut corner is painted over. See CutRect.qml's header.
@@ -141,6 +167,10 @@ Pool          1.0 Pool.qml
 Rail          1.0 Rail.qml
 ReactiveEdge  1.0 ReactiveEdge.qml
 Reflection    1.0 Reflection.qml
+# TRK-3830 — the tape's on/off lamp. Two instances on the bar (one per
+# face). A FILE, not an inline component: see TapeLamp.qml's header for
+# the capture that made that necessary.
+TapeLamp      1.0 TapeLamp.qml
 Sigil         1.0 Sigil.qml
 GlassEdge     1.0 GlassEdge.qml
 MirrorEdge    1.0 MirrorEdge.qml
@@ -197,6 +227,8 @@ SetPageStorage       1.0 SetPageStorage.qml
 SetPageNetwork       1.0 SetPageNetwork.qml
 SetPageFirewall      1.0 SetPageFirewall.qml
 SetPageAppearance    1.0 SetPageAppearance.qml
+SetPageLayerLab      1.0 SetPageLayerLab.qml
+LayerLabCard         1.0 LayerLabCard.qml
 SetPageDock          1.0 SetPageDock.qml
 SetPageWidgets       1.0 SetPageWidgets.qml
 SetPageDatetime      1.0 SetPageDatetime.qml
@@ -257,6 +289,7 @@ Weather       1.0 Weather.qml
 ClockApp      1.0 ClockApp.qml
 Screenshot    1.0 Screenshot.qml
 Help          1.0 Help.qml
+Brain         1.0 Brain.qml
 Hardware      1.0 Hardware.qml
 Sysmon        1.0 Sysmon.qml
 SetPageNotes       1.0 SetPageNotes.qml

@@ -1,0 +1,34 @@
+Nyxus Suxyn — live ISO hardware rules
+=====================================
+
+This stick is for ANYONE's PC. The machine that baked it is only the
+build host. Do not clone that chassis into the image.
+
+LIVE ISO (this squashfs)
+------------------------
+- Stock Arch `linux`. Never localmodconfig. Never strip modules.
+- Full `linux-firmware` (Intel / NVIDIA / AMD / Atheros / Realtek / …).
+  Do not drop blobs because the baker's laptop does not use them.
+- Live initramfs MODULES: common GPU set
+    i915 amdgpu nvidia nvidia_modeset nvidia_drm
+  or empty + no autodetect. NEVER the baker's
+  /etc/mkinitcpio.conf.d/20-nyxus-hardware.conf
+  (that file is AMD iGPU + NVIDIA dGPU on one Alienware).
+- Hyprland monitors: `monitor = , preferred, auto, 1`
+  NEVER `eDP-1, 1920x1200@165`.
+- GPU env (LIBVA_DRIVER_NAME, __GLX_VENDOR_LIBRARY_NAME) is decided at
+  session start from this machine's GPUs. Not an NVIDIA-only default.
+- Live user is `nyx`. Calamares creates the real user. Never `gowski`.
+- Hostname is `suxyn`. Never the baker's hostname.
+- No Wi-Fi secrets, no weather lat/lon, no Brain/notes.
+
+INSTALLED SYSTEM (after Calamares, or first boot)
+-------------------------------------------------
+- nyxus-hwdetect reads THAT machine's PCI bus and writes
+  /etc/mkinitcpio.conf.d/20-nyxus-hardware.conf
+- Calamares shellprocess@initramfs runs hwdetect, then mkinitcpio -P
+- First boot runs /etc/nyxus-firstboot.d/03-hardware-initramfs.sh
+  (no-op on live: /run/archiso is present)
+- nyxus-hwcaps drives Settings ▸ Hardware (hide fans if none)
+
+This file is the on-image copy of the baker's hard rules.

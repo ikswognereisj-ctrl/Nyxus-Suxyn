@@ -80,6 +80,11 @@ ShellRoot {
     // picked (SetPageBackground writes the prefix); not only nebula-veil.
     readonly property bool layeredSky: Prefs.skyWantsLayered
                                        && Prefs.layeredWallBg !== ""
+    // MAGMA world: Starlight (Headliner) is the stars. The lava planet is
+    // only the near plate. Never a photo of stars, never a flattened
+    // composite of the two.
+    readonly property bool magmaPlanet: Prefs.lookSet === "magma"
+                                        && Prefs.layeredWallFg !== ""
 
     // ── THE LIVING WALLPAPER ─────────────────────────────────────────────
     // His own galaxy picture with the swirls inside the band stirred by the
@@ -134,6 +139,17 @@ ShellRoot {
         }
     }
 
+    // THE FLOOR — multiplex lobby on HDMI (and every screen in arcadeMode).
+    // Transparent Top so Headliner + MAGMA planet stay the room. ES must
+    // not cover this.
+    Variants {
+        model: Quickshell.screens
+        Floor {
+            required property var modelData
+            screen: modelData
+        }
+    }
+
     // ── the Frame · ON HOLD on the owner's instruction, 2026-08-09 ──────
     // The focused window held in a channel of the same living paint the
     // horizon seam runs. On the 08-09 hardware boot it read as "a grey
@@ -176,7 +192,8 @@ ShellRoot {
     // something else quietly painted over cost 96% of the wallpaper, and
     // nothing in any file said which of the two was on top.
     Variants {
-        model: shellRoot.skyWantsHeadliner ? Quickshell.screens : []
+        model: (shellRoot.skyWantsHeadliner || shellRoot.magmaPlanet)
+               ? Quickshell.screens : []
         Headliner {
             required property var modelData
             screen: modelData
@@ -198,7 +215,8 @@ ShellRoot {
     // necessary: `Widgets.qml:470-495`, card contrast 178.57 -> 128.96 with a
     // sky on the chips' own level.
     Variants {
-        model: shellRoot.layeredSky ? Quickshell.screens : []
+        model: (shellRoot.layeredSky || shellRoot.magmaPlanet)
+               ? Quickshell.screens : []
         SkyForeground {
             required property var modelData
             screen: modelData
@@ -296,7 +314,8 @@ ShellRoot {
     // has not asked for that — with the living wallpaper off, the far half is
     // a still plate with an empty mask, and the solver never wakes.
     Variants {
-        model: (shellRoot.livingWallpaper || shellRoot.layeredSky)
+        model: (shellRoot.livingWallpaper
+                || (shellRoot.layeredSky && !shellRoot.magmaPlanet))
              ? Quickshell.screens : []
         LiveWall {
             required property var modelData
@@ -507,6 +526,7 @@ ShellRoot {
     ClockApp {}
     Screenshot {}
     Help {}
+    Brain {}
     Hardware {}
     Sysmon {}
 
@@ -536,6 +556,7 @@ ShellRoot {
             HyprApply.apply();
             UsbWatch.refresh();
             BatteryWatch.start();
+            LinkWatch.start();
             RecordWatch.start();
             UpdateWatch.start();
         }
@@ -619,6 +640,7 @@ ShellRoot {
         function clockapp(): string { Bus.openClockApp(); return "clock"; }
         function screenshot(): string { Bus.openScreenshot(); return "screenshot"; }
         function help(): string { Bus.openHelp(); return "help"; }
+        function brain(): string { Bus.openBrain(); return "brain"; }
         function hardware(): string { Bus.openHardware(); return "hardware"; }
         function sysmon(): string { Bus.openSysmon(); return "sysmon"; }
     }

@@ -58,8 +58,8 @@ FloatingWindow {
 
     readonly property int headerH: 48
     readonly property int edge: Theme.s6
-    readonly property color ice: Theme.paintLayers.glacier[5]
-    readonly property color iceHair: Theme.paintLayers.glacier[4]
+    readonly property color ice: Theme.lookPale
+    readonly property color iceHair: Theme.lookSeam
 
     // Safe: the alias target declares no children of its own.
     default property alias content: contentSlot.data
@@ -88,7 +88,13 @@ FloatingWindow {
                                             Theme.panelMid.b, Theme.panelMid.a)
         property vector4d look: Qt.vector4d(Theme.e2Rim, 0.42, 0.55, win.focusLevel)
         property vector4d state: Qt.vector4d(Math.max(0.02, Theme.rimDisp0
-            + Theme.rimDispGain * Math.max(0, Math.min(1, win.focusLevel))), 0, 0, 0)
+            + Theme.rimDispGain * Math.max(0, Math.min(1, win.focusLevel))),
+            Theme.lookMagma ? 0.90 : 0, 0, 0)
+        property vector4d sweep0: Theme.lookStop(0)
+        property vector4d sweep1: Theme.lookStop(1)
+        property vector4d sweep2: Theme.lookStop(2)
+        property vector4d sweep3: Theme.lookStop(3)
+        property vector4d sweep4: Theme.lookStop(4)
 
         Behavior on look {
             PropertyAnimation {

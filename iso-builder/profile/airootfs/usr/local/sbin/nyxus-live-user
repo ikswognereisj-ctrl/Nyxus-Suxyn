@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Create the live evaluation account `nyx` from skel.
+# HARD RULE: live user is nyx. Never gowski. Calamares creates the real user.
+# Live-only (unit ConditionDirectoryNotEmpty=/run/archiso).
+set -euo pipefail
+if id nyx >/dev/null 2>&1; then
+  exit 0
+fi
+groups=()
+for g in wheel audio video storage input lp network optical scanner power; do
+  getent group "$g" >/dev/null 2>&1 && groups+=("$g")
+done
+gopt=()
+((${#groups[@]})) && gopt=(-G "$(IFS=,; echo "${groups[*]}")")
+useradd -m -c "Nyxus Live" "${gopt[@]}" -s /bin/bash nyx
+echo "nyx:nyx" | chpasswd
+# skel copy is useradd -m; re-sync in case skel landed after the account
+if [[ -d /etc/skel ]]; then
+  cp -a /etc/skel/. /home/nyx/ 2>/dev/null || true
+  chown -R nyx:nyx /home/nyx
+fi
+exit 0

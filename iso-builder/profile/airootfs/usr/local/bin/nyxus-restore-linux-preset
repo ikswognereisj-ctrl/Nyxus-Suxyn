@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Restore the installed-system mkinitcpio preset.
+# The live image ships PRESETS=('archiso'). After unpackfs that would make
+# `mkinitcpio -P` rebuild a live initramfs on disk. Calamares
+# shellprocess@initramfs runs this BEFORE mkinitcpio -P.
+set -u
+PRESET=/etc/mkinitcpio.d/linux.preset
+cat > "${PRESET}" <<'EOF'
+# mkinitcpio preset file for the 'linux' package on an installed Nyxus Suxyn system.
+ALL_config="/etc/mkinitcpio.conf"
+ALL_kver="/boot/vmlinuz-linux"
+PRESETS=('default' 'fallback')
+default_image="/boot/initramfs-linux.img"
+fallback_image="/boot/initramfs-linux-fallback.img"
+fallback_options="-S autodetect"
+EOF
+chmod 0644 "${PRESET}"
+echo "[nyxus-restore-linux-preset] wrote ${PRESET} (default + fallback)"
+exit 0

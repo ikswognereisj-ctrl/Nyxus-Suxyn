@@ -1,0 +1,248 @@
+#!/usr/bin/env bash
+# NYXUS — the desktop shell supervisor (WIP-632)
+# © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+#
+# ── WHY THIS EXISTS ──────────────────────────────────────────────────────────
+# On the 2026-08-13 image earlyoom SIGKILLed `qs` at VmRSS 1.71 GB (3 GB VM,
+# welcome wizard + one window drove free memory under 10%). The bar, the Start
+# menu, the flyout and the launcher vanished — and STAYED gone for the rest of
+# the session, because the only thing that had ever started the shell was one
+# `exec-once` line in hyprland.conf that runs once at login. There was no
+# supervisor. Any 4 GB machine reproduces that shape.
+#
+# This script is that supervisor. hyprland.conf's shell `exec-once` now starts
+# THIS, and this starts the shell — so a shell that dies comes back.
+#
+# ── WHY NOT A systemd USER UNIT ──────────────────────────────────────────────
+# `Restart=on-failure` on a systemd --user unit is the obvious answer and it is
+# the wrong one for THIS profile. Four measured reasons, each already written
+# down somewhere in this tree:
+#
+#   1. graphical-session.target is never pushed here. Every user unit this
+#      profile ships is `WantedBy=graphical-session.target`, and Hyprland runs
+#      DIRECTLY — `hyprland-uwsm.desktop` is NoExtract'd in pacman.conf on
+#      purpose. nyxus-ws-wallpaperd.service says it in its own header: "even if
+#      enabled it would wait on graphical-session.target, which this build may
+#      never push". A shell unit wired that way would never start at all, and
+#      the failure would look exactly like the bug it was meant to fix.
+#   2. A unit NOT bound to that target has the opposite problem: the user
+#      manager outlives the session, so the shell would be restarted into a
+#      dead compositor after logout, and started before WAYLAND_DISPLAY has
+#      reached the manager's environment at login (that import happens from
+#      hyprland.conf / nyxus-session-start, after the manager is already up).
+#   3. `systemctl --user` ignores an overridden $HOME — the user manager is
+#      per-user, already running, and resolves $HOME from the user record
+#      (HANDOFF § Rules learned the hard way; it is how the preview session
+#      came up wearing the host's wallpaper). The nested preview
+#      (`scripts/suxyn-session --nested`) would be unsupervisable.
+#   4. WIP-642 made the autostart guard SESSION-scoped for exactly that
+#      reason. A per-user unit is per-USER, not per-session: two sessions on
+#      one machine share one unit and one restart counter.
+#
+# A child of the compositor has none of those problems: it inherits the
+# session's environment, it is scoped to the session that started it, it needs
+# no enablement step on the ISO, and it dies with the session.
+#
+# ── WHAT IT DOES NOT DO ──────────────────────────────────────────────────────
+# It is not a health check. It does not poll, it does not probe the shell, it
+# does not restart a shell that is merely slow. It blocks in `wait` while the
+# shell lives, and only wakes when the shell exits. Idle cost is one sleeping
+# bash.
+set -u
+
+# The supervised command. Defaults to the shell; taken as argv so the
+# hyprland.conf line still NAMES `qs` (build-iso.sh asserts the autostart line
+# mentions it, and that assert should keep meaning what it says).
+if [[ $# -gt 0 ]]; then
+  SHELL_CMD=("$@")
+else
+  SHELL_CMD=(qs)
+fi
+
+CACHE_DIR="${HOME}/.cache/nyxus"
+LOG="${CACHE_DIR}/shell.log"
+mkdir -p "${CACHE_DIR}" 2>/dev/null || true
+
+# The shell's log is APPENDED, never truncated (2026-08-12): until it existed,
+# `qs` inherited Hyprland's stdout/stderr, which under greetd are both
+# /dev/null, so every QML warning and shader failure was discarded at the
+# moment it happened. Supervisor lines land in the same file, marked, so the
+# restart history and the crash that caused it read in one place.
+log() { printf '[nyxus-shell-supervisor %s] %s\n' "$(date '+%F %T')" "$*" >>"${LOG}" 2>/dev/null || true; }
+
+# ── the OOM floor ────────────────────────────────────────────────────────────
+# WIP-632 asks for an oom_score_adj that gets the shell killed LAST instead of
+# first. The kernel sets the ceiling on how far we can go, and it was MEASURED
+# rather than recalled: an unprivileged process may only ever RAISE
+# oom_score_adj above its inherited oom_score_adj_min, which is 0 for every
+# process in a normal session. Writing a NEGATIVE value needs CAP_SYS_RESOURCE
+# and fails with EACCES here — verified on this hardware, both directions
+# (0 → -100 refused; 200 → 100 accepted, because 100 is still ≥ the 0 floor).
+#
+# So the ranking is built from the other end, by nyxus-session-start: it raises
+# the SESSION's baseline (Hyprland and everything the compositor spawns) to
+# NYXUS_SESSION_OOM before exec'ing the compositor, and this script pins the
+# shell back down to the 0 floor. Net effect with no privilege anywhere: the
+# shell scores lower than the compositor and lower than every app the session
+# launches, so both the kernel OOM killer and earlyoom reach it last.
+#
+# -500 is attempted first and is not dead code: it is what lands the moment
+# anything privileged in the login chain lowers oom_score_adj_min (a
+# greetd.service OOMScoreAdjust= drop-in would do it, and a privileged writer
+# sets _min as well as the value, which children inherit). When it is refused
+# the floor write still runs, so the mechanism degrades to "as low as this
+# session is allowed to go" and never to "unset".
+#
+# NOT -1000: that makes a process unkillable by the OOM killer outright, and
+# the shell is the thing that grew to 1.71 GB. An unkillable leak is a wedged
+# machine, which is worse than a missing bar.
+OOM_PREFERRED=-500
+OOM_FLOOR=0
+
+# ── the session guard (WIP-642) ──────────────────────────────────────────────
+# The guard is SESSION-scoped, not machine-scoped. It was `pgrep -x qs`, which
+# sees a `qs` owned by ANY session on the machine, so a nested preview beside a
+# live desktop came up shell-less every time. quickshell's own registry says
+# which display each instance serves; only a shell on THIS session's display
+# counts. grep -w so wayland-1 cannot match inside wayland-10.
+#
+# ⚠ The display is read HERE, at runtime, and that is the point of moving the
+# guard out of hyprland.conf: Hyprland substitutes $VARS in its config AT
+# PARSE TIME from its OWN environment, and a nested compositor's own
+# WAYLAND_DISPLAY is its PARENT'S socket — a literal $WAYLAND_DISPLAY in the
+# config baked in wayland-1, matched the parent's shell, and skipped forever.
+# A shell script has no such parser, so the variable means what it says.
+WL="$(printenv WAYLAND_DISPLAY 2>/dev/null || true)"
+
+serves_this_display() {
+  [[ -n "${WL}" ]] || return 1
+  qs list --all 2>/dev/null | grep -qw "wayland/${WL}"
+}
+
+# The session is over when the compositor's socket is gone. Checked once per
+# restart, never in a loop of its own — if the desktop went away there is
+# nothing to supervise and this process must not linger or respawn into it.
+session_alive() {
+  [[ -n "${XDG_RUNTIME_DIR:-}" ]] || return 0
+  [[ -S "${XDG_RUNTIME_DIR}/${WL}" ]]
+}
+
+if [[ -z "${WL}" ]]; then
+  log "no WAYLAND_DISPLAY in the environment — refusing to start a shell with nothing to draw on"
+  exit 0
+fi
+
+# BAR/WALLPAPER RACE (2026-07-26): exec-once lines fire in parallel, so the
+# shell's exclusive-zone surface can claim screen space before the wallpaper
+# autostart has a frame up — a brief solid box behind the bar on a cold boot.
+# Short head-start delay, not a bootstrap/network gate.
+sleep 0.6
+
+# ── the translation loader (TRK-1922, closes TRK-1581) ───────────────────────
+# The shell's 1299 qsTr() strings and the .qm the bake compiles into
+# ~/.config/quickshell/i18n/ were INERT until now, because Quickshell installs
+# no QTranslator — re-verified 2026-08-22 against quickshell 0.3.0-2 / Qt
+# 6.11.1: no QTranslator symbol in /usr/bin/qs, and qs builds on plain
+# QQmlEngine, not the QQmlApplicationEngine that would load an adjacent
+# i18n/*.qm by itself. A probe config with the catalogue sitting right next to
+# shell.qml printed English, twice, before this line existed.
+#
+# libnyxustranslator.so is a Qt GENERIC PLUGIN (source: shell/i18n/loader/).
+# Qt loads generic plugins named in QT_QPA_GENERIC_PLUGINS from inside
+# QGuiApplication's constructor — after QCoreApplication exists, before any QML
+# is parsed — so it can install the QTranslator with no cooperation from
+# Quickshell, no patch and no fork. The plugin resolves the language exactly as
+# nyxus_i18n.py does ($NYXUS_LANG → ~/.config/nyxus/locale.conf → $LANGUAGE →
+# $LANG), which is why Settings ▸ Personal ▸ Language now moves the SHELL too,
+# at its next start.
+#
+# THIS is the only place the variable is set, on purpose: it belongs to the
+# supervised shell, not to `qs ipc call` from a keybind. Appended, never
+# overwritten, so a generic plugin somebody else needs is not clobbered. If the
+# plugin is missing the variable is not set at all — Qt warns on every start
+# about a spec it cannot resolve, and a warning nobody can act on is noise.
+# English still renders in that case: the pre-TRK-1922 behaviour, logged.
+NYXUS_TRANSLATOR_PLUGIN="${NYXUS_TRANSLATOR_PLUGIN:-/usr/lib/qt6/plugins/generic/libnyxustranslator.so}"
+if [[ -f "${NYXUS_TRANSLATOR_PLUGIN}" ]]; then
+  if [[ -n "${QT_QPA_GENERIC_PLUGINS:-}" ]]; then
+    export QT_QPA_GENERIC_PLUGINS="${QT_QPA_GENERIC_PLUGINS},nyxustranslator"
+  else
+    export QT_QPA_GENERIC_PLUGINS="nyxustranslator"
+  fi
+  log "translation loader armed (QT_QPA_GENERIC_PLUGINS=${QT_QPA_GENERIC_PLUGINS})"
+else
+  log "no ${NYXUS_TRANSLATOR_PLUGIN} — the shell renders its source language (English)"
+fi
+
+# ── the crash-storm cap ──────────────────────────────────────────────────────
+# A shell that dies on a condition the restart cannot clear (WIP-643: opening
+# the launcher with zero outputs kills quickshell) would otherwise respawn
+# forever, and a hot loop under memory pressure is worse than no bar. More than
+# MAX_STARTS starts inside WINDOW seconds and the supervisor gives up LOUDLY,
+# in the log, naming the command to run by hand.
+MAX_STARTS=5
+WINDOW=60
+BACKOFF=2
+
+child=0
+cleanup() {
+  [[ "${child}" -gt 0 ]] && kill "${child}" 2>/dev/null
+  exit 0
+}
+trap cleanup TERM INT HUP
+
+starts=0
+window_start=$(date +%s)
+
+while :; do
+  if serves_this_display; then
+    # Someone already serves this display: the single-session/ISO duplicate
+    # case, or the owner started a shell by hand. Not ours to supervise.
+    log "a shell already serves wayland/${WL} — nothing to start"
+    exit 0
+  fi
+  if ! session_alive; then
+    log "wayland/${WL} is gone — session over, supervisor exiting"
+    exit 0
+  fi
+
+  now=$(date +%s)
+  if (( now - window_start > WINDOW )); then
+    window_start=${now}
+    starts=0
+  fi
+  starts=$(( starts + 1 ))
+  if (( starts > MAX_STARTS )); then
+    log "the shell has died ${MAX_STARTS} times in under ${WINDOW}s — giving up rather than hot-looping."
+    log "  restart it by hand with:  ${SHELL_CMD[*]}"
+    exit 1
+  fi
+
+  # The oom_score_adj write happens in the SUBSHELL that becomes the shell:
+  # /proc/self is the process that is about to exec, and the value survives
+  # exec. Doing it from here against a pid would race the exec.
+  (
+    printf '%s\n' "${OOM_PREFERRED}" > /proc/self/oom_score_adj 2>/dev/null \
+      || printf '%s\n' "${OOM_FLOOR}" > /proc/self/oom_score_adj 2>/dev/null \
+      || true
+    exec "${SHELL_CMD[@]}"
+  ) >>"${LOG}" 2>&1 &
+  child=$!
+  log "shell started (pid ${child}, oom_score_adj $(cat "/proc/${child}/oom_score_adj" 2>/dev/null || echo '?'))"
+
+  wait "${child}"
+  rc=$?
+  child=0
+
+  # Restart=on-failure, deliberately — the same semantics the systemd unit
+  # would have had. A clean exit 0 is somebody quitting the shell on purpose
+  # (a debug run, a preview teardown); restarting that would make the shell
+  # impossible to stop. A signal or a non-zero exit is the failure this script
+  # exists for — earlyoom's SIGKILL arrives as 137.
+  if (( rc == 0 )); then
+    log "shell exited 0 — deliberate, not restarting"
+    exit 0
+  fi
+  log "shell exited ${rc} — restarting in ${BACKOFF}s"
+  sleep "${BACKOFF}"
+done

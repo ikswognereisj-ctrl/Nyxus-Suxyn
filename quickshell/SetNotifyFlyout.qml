@@ -167,7 +167,7 @@ Item {
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.preferredHeight: 1
-                        color: Theme.soften(Theme.paintLayers.glacier[4], 0.55)
+                        color: Theme.soften(Theme.lookSeam, 0.55)
                     }
 
                     SwitchLine {

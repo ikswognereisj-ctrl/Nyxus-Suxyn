@@ -1,0 +1,11 @@
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Operation = Remove
+Type = Package
+Target = *
+
+[Action]
+Description = Remove live-only pacman hooks leftover from airootfs
+When = PostTransaction
+Exec = /usr/bin/rm -f /etc/pacman.d/hooks/uncomment-mirrors.hook /etc/pacman.d/hooks/zzzz99-remove-custom-hooks-from-airootfs.hook

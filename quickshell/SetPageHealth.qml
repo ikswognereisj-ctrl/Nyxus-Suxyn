@@ -385,7 +385,7 @@ SetPage {
                     // sanctioned heat-adjacent ink, and it stays legible
                     // beside the three glacier rungs.
                     stroke(Sys.histTemp, Theme.warn);
-                stroke(Sys.histNet, Theme.paintLayers.glacier[4]);
+                stroke(Sys.histNet, Theme.lookSeam);
             }
         }
     }

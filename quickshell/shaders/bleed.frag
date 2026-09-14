@@ -43,6 +43,9 @@ layout(std140, binding = 0) uniform buf {
     float qt_Opacity;
     vec4 geom;   // x,y = item px size · z = strength (1.0 = the CSS alphas)
     vec4 radii;  // px, in order: top-left, top-right, bottom-right, bottom-left
+    vec4 poolA;  // rgb + alpha — ICE plum / MAGMA gold
+    vec4 poolB;  // ICE teal / MAGMA ember
+    vec4 poolC;  // ICE plumBody / MAGMA black
 };
 
 // Signed distance to a rounded rect with per-corner radii, in pixels.
@@ -78,13 +81,12 @@ void main() {
     //   radial-gradient(ellipse 72% 38% at 52% 97%, rgba(137, 25, 85,0.085) …)
     // CSS gives ellipse EXTENT as a percentage of the box, which is a radius,
     // so the numbers transfer directly.
+    // Colour comes from GlassEdge (ICE plum/teal or MAGMA gold/ember/black).
+    // No ICE hex fallback — unset uniforms stay black.
     vec3 c = vec3(0.0);
-    c += pool(uv, vec2(0.17, 0.11), vec2(0.62, 0.48),
-              vec3(0.68235, 0.12549, 0.42353), 0.100, strength);   // #ae206c
-    c += pool(uv, vec2(0.83, 0.74), vec2(0.44, 0.58),
-              vec3(0.03922, 0.63529, 0.83922), 0.070, strength);   // #0aa2d6
-    c += pool(uv, vec2(0.52, 0.97), vec2(0.72, 0.38),
-              vec3(0.53725, 0.09804, 0.33333), 0.085, strength);   // #891654
+    c += pool(uv, vec2(0.17, 0.11), vec2(0.62, 0.48), poolA.rgb, poolA.a, strength);
+    c += pool(uv, vec2(0.83, 0.74), vec2(0.44, 0.58), poolB.rgb, poolB.a, strength);
+    c += pool(uv, vec2(0.52, 0.97), vec2(0.72, 0.38), poolC.rgb, poolC.a, strength);
 
     // Clip to the host's rounded rect. 1 px of feather so the bleed does not
     // draw a hard edge of its own just inside the Lip — it is the inside of the

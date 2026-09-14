@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Runs from Hyprland exec-once. No-op unless this is the Arcade session.
+[ "${NYXUS_ARCADE:-}" = 1 ] || exit 0
+# Cabinet should not idle-lock or dim the TV.
+pkill -x hypridle >/dev/null 2>&1 || true
+sleep 3
+if command -v blast-from-the-past >/dev/null 2>&1; then
+  exec blast-from-the-past
+fi
+exit 0

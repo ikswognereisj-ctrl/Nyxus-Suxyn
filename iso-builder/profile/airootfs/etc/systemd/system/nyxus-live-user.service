@@ -1,0 +1,14 @@
+[Unit]
+Description=Create Nyxus live user (nyx)
+Documentation=file:///etc/nyxus-build
+ConditionDirectoryNotEmpty=/run/archiso
+Before=greetd.service display-manager.service
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/nyxus-live-user
+
+[Install]
+WantedBy=multi-user.target

@@ -219,10 +219,10 @@ PanelWindow {
     // a swell as a dark box; WIP-265 moved density under the paint.
     // Magma none here. No sweep0 `#0aa2d6` fill. `#891955` never a fill.
     readonly property color iceElevated: Theme.elevated                 // #071318 — retired fill
-    readonly property color iceSeam:     Theme.paintLayers.glacier[4]   // #4f7fa6
-    readonly property color icePeak:     Theme.paintLayers.glacier[6]   // #eefcff
-    readonly property color iceHover:    Theme.paintLayers.glacier[5]   // #b7e6f2
-    readonly property color iceFocus:    Theme.paintLayers.glacier[0]   // #7fe8ff
+    readonly property color iceSeam:     Theme.lookSeam
+    readonly property color icePeak:     Theme.lookPeak
+    readonly property color iceHover:    Theme.lookPale
+    readonly property color iceFocus:    Theme.lookHot
 
     Pane {
         id: pane
@@ -309,7 +309,7 @@ PanelWindow {
         }
 
         // ── 4 · THE SEAM (TRK-3372) ─────────────────────────────────
-        // 1 px, `iceSeam` = glacier[4]. Declared at the top of this file
+        // 1 px, `iceSeam` = Theme.lookSeam. Declared at the top of this file
         // since TRK-3056 and never drawn: the popup had the floor, the
         // paint, the ramp and the edge, and stopped one layer short. The
         // chips it sits beside carry it, so this is the cue that made a

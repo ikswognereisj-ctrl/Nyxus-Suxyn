@@ -117,6 +117,8 @@ PanelWindow {
     // same reason.
     color: "black"
 
+    // Stars on every head including HDMI (Floor hub is glass over this sky).
+
     // Not a surface. It never takes a pointer event. (`LiveWall.qml` gives up
     // its empty mask to be stirred by the cursor; there is nothing here to
     // stir, so it keeps it — the WIP-7 lesson, where a stale mask ate every

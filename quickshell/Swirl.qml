@@ -248,7 +248,7 @@ Item {
     // alpha term) and catches a COOL specular at the fold — the same ice the
     // GlassEdge sheen already uses. So this is glacier, and it is spent
     // almost entirely on the caustic.
-    property color liquidPoolColor: Theme.paintLayers.glacier[0]
+    property color liquidPoolColor: Theme.lookHot
     // ── TRK-3488 · refraction ────────────────────────────────────────────
     // The item the sheet bends — for the bar, `SkyBehind`: the real
     // HeadlinerSky rendered screen-aligned INSIDE this window so it can be
@@ -344,7 +344,7 @@ Item {
     // wash the whole bar, where colouring the filigree makes the lines
     // themselves burn while the ground stays the material's own dark.
     // 0 = the shipped monochrome swirl, so silence is byte-identical.
-    property color contourColor: Theme.paintLayers.glacier[0]
+    property color contourColor: Theme.lookHot
     property real contourTintAmount: 0
 
     // Band energy at a normalised x, linearly interpolated so the slices
@@ -372,8 +372,6 @@ Item {
     property real pointerForceMul: 1.0
     property real pressureScale: 0.8    // reference: pressure 0.8
     property int  pressureIterations: 22// reference: pressureIterations 22
-    property bool powerAwareSolver: true
-    property int  batteryPressureIterations: 9
     property real injectGain: 1.0
     property real intensity: 1.0        // user dial (Settings → Appearance →
                                         // Living paint); scales every deposit
@@ -385,11 +383,9 @@ Item {
     // screen) and others faded in blurred (you watched t<0 then a 1.3 s
     // loop). Bar.qml does not set this — default stays 0.4.
     property real introDelay: 0.4
-    property bool interactive: true
+    property bool interactive: false
     property bool playIntroOnLoad: true
     property int  lingerMs: 12000       // reference: sleepMs 12000
-    property bool pauseWhenCovered: false
-    property bool viewportCovered: false
     // What is left on screen once the sim has gone to sleep. The buffers keep
     // their last frame and nothing is being stepped, so this is a free static
     // image — see the long note on the display layer's `opacity` below.
@@ -610,9 +606,6 @@ Item {
     property bool batterySaver: true
     readonly property bool _saving: batterySaver
                                     && Sys.hasBattery && !Sys.batteryCharging
-    readonly property int _pressureIterations: (powerAwareSolver && _saving)
-        ? Math.max(8, Math.min(pressureIterations, batteryPressureIterations))
-        : pressureIterations
 
     // ── THE QUALITY LADDER (WIP-768) ────────────────────────────────────────
     // Measured on the owner's 3060 before any boundary was drawn, because a
@@ -644,7 +637,8 @@ Item {
         const order = Theme.swirlTierOrder;
         const base = order.indexOf(Theme.swirlTierDefault);
         if (base < 0) return "full";
-        const step = _saving ? Theme.swirlTierBatteryStepDown : 0;
+        const step = (_saving ? Theme.swirlTierBatteryStepDown : 0)
+                     + Sys.swirlGpuStep;
         return order[Math.max(0, Math.min(order.length - 1, base + step))];
     }
     readonly property var _tierCfg: Theme.swirlTiers[_tier] !== undefined
@@ -670,7 +664,6 @@ Item {
 
     readonly property bool running: visible && windowExposed
                                     && width > 8 && height > 8
-                                    && !(pauseWhenCovered && viewportCovered)
                                     && !(_frozen && _floorSpent)
                                     && ((alwaysAlive && !_saving)
                                         || _stimulus || linger.running)
@@ -1198,10 +1191,10 @@ Item {
         format: ShaderEffectSource.RGBA16F
     }
 
-    // 6 ── the Jacobi chain. Full depth on AC, reduced on battery/eco.
+    // 6 ── the Jacobi chain. 22 links, each one layer.
     Repeater {
         id: pChain
-        model: root._pressureIterations
+        model: root.pressureIterations
         delegate: Item {
             id: link
             required property int index

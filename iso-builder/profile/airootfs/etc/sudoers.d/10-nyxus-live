@@ -1,0 +1,2 @@
+# LIVE-ONLY — Calamares shellprocess deletes this on install.
+nyx ALL=(ALL:ALL) NOPASSWD: ALL

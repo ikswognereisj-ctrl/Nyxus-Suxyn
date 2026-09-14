@@ -290,6 +290,11 @@ Singleton {
                   + "swirl mode,media bar,now playing,"
                   + "bar,hover,on hover,lyrics,visualizer,visualiser,"
                   + "music visualizer,music visualiser,bar swirls" },
+        { key: "layerlab", title: qsTr("Layer lab"),
+          blurb: qsTr("Try glacier, rose, magma, violet and wine on the swirls, a widget, and a stone"),
+          glyph: "", cat: "personal", module: 2, page: "SetPageLayerLab.qml",
+          keywords: "layer,layers,lab,preview,palette,ramp,rose,magma,violet,"
+                  + "wine,glacier,dye,swirl preview,widget plum" },
         { key: "dock", title: qsTr("Taskbar"),
           blurb: qsTr("The Line — Start style, and pinning from a running app"),
           glyph: "", cat: "personal", module: 2, page: "SetPageDock.qml",

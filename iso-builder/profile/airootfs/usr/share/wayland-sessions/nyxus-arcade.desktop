@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Blast From The Past
+Comment=Nyxus arcade cabinet — TV session
+Exec=nyxus-arcade-start
+Type=Application
+DesktopNames=Hyprland
+Keywords=arcade;blast;nyxus;retro;

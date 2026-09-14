@@ -10,6 +10,7 @@ Item {
     id: tile
 
     property string iconName: ""
+    property bool vectorMark: true
     property string label: ""
     property color coreTint: Theme.plumGlow
     property bool pip: false

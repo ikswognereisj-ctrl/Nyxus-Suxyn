@@ -97,7 +97,7 @@ Item {
     // put behind it. The scene now carries its own night.
     Rectangle {
         anchors.fill: parent
-        color: "#010306"
+        color: Theme.void_
     }
 
     // ── 1 · the sky ──────────────────────────────────────────────────────
@@ -134,6 +134,18 @@ Item {
         // Master pulled to 0.80 so the constellation above sits clearly on top
         // of the field rather than competing with it at equal brightness.
         property vector4d uLook: Qt.vector4d(0.55, 0.75, 0.22, 0.80)
+
+        // Same palette contract as Starlight.qml — the shader reads unset
+        // uniforms as black, so the scene binds the Theme.sky* set even
+        // though its artwork gate is off.
+        function _pal(c) { return Qt.vector4d(c.r, c.g, c.b, 1.0) }
+        property vector4d uPalA: _pal(Theme.skyCloudLow)
+        property vector4d uPalB: _pal(Theme.skyCloudMid)
+        property vector4d uPalC: _pal(Theme.skyCloudCrest)
+        property vector4d uPalD: _pal(Theme.skyCloudPeak)
+        property vector4d uPalFil: _pal(Theme.skyFilament)
+        property vector4d uPalDeepA: _pal(Theme.skyDeepA)
+        property vector4d uPalDeepB: _pal(Theme.skyDeepB)
 
         fragmentShader: Qt.resolvedUrl("shaders/starlight.frag.qsb")
         // ⚠ Qt.resolvedUrl, never a "qrc:" literal. A qrc path resolves to
@@ -205,7 +217,7 @@ Item {
                 height: 1
                 transformOrigin: Item.TopLeft
                 rotation: Math.atan2(by - ay, bx - ax) * 180 / Math.PI
-                color: "#96c4e0"
+                color: Theme.lookPale
                 opacity: 0.055                // see the header: too bright is the bug
                 antialiasing: true
             }
@@ -237,7 +249,7 @@ Item {
                 // Tint: the eyes ice, the outline a cooler white, matching the
                 // mark's own two-tone rather than inventing a third colour.
                 // Set on the Image so one baked sprite serves every star.
-                property color tint: isEye ? "#eaf7ff" : "#cfe4f2"
+                property color tint: isEye ? Theme.text : Theme.lookPale
 
                 opacity: isEye ? 0.98 : 0.78
 
@@ -275,7 +287,7 @@ Item {
         // place only if the margin is positive.
         anchors.topMargin: figure.box * 0.04
         text: qsTr("The Ocular")
-        color: "#96c4e0"
+        color: Theme.lookPale
         opacity: 0.30
         font.family: Theme.fontDisplay !== undefined ? Theme.fontDisplay : "sans-serif"
         font.pixelSize: Math.max(11, figure.box * 0.035)

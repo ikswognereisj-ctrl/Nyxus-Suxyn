@@ -107,7 +107,7 @@ Item {
     // do not move.
     property real tone: 0.35
     readonly property color markFocus: Theme.paintLayers.glacier[0]
-    readonly property color markSeam: Theme.paintLayers.glacier[4]
+    readonly property color markSeam: Theme.lookSeam
     // TRK-3060 — 5 px sheen only: glacier peak toward swirl teal glow.
     // Mix at the call site. Both args are already `property color`.
     readonly property color swirlPeak: Theme.mix(Theme.tokenAccentPeak, Theme.tealGlow, 0.30)

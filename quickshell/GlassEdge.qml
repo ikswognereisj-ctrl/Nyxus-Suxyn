@@ -196,6 +196,16 @@ Item {
         property vector4d geom: Qt.vector4d(width, height, edge.bleed, 0)
         property vector4d radii: Qt.vector4d(edge.radiusTL, edge.radiusTR,
                                              edge.radiusBR, edge.radiusBL)
+        // ICE: plum / teal / plum. MAGMA: gold / pale glacier / black.
+        property vector4d poolA: Theme.lookMagma
+            ? Qt.vector4d(0.969, 0.659, 0.231, 0.100)
+            : Qt.vector4d(0.682, 0.125, 0.424, 0.100)
+        property vector4d poolB: Theme.lookMagma
+            ? Qt.vector4d(Theme.lookSeam.r, Theme.lookSeam.g, Theme.lookSeam.b, 0.070)
+            : Qt.vector4d(0.039, 0.635, 0.839, 0.070)
+        property vector4d poolC: Theme.lookMagma
+            ? Qt.vector4d(0.020, 0.008, 0.012, 0.085)
+            : Qt.vector4d(0.537, 0.098, 0.333, 0.085)
     }
 
     // The Lip and the Sheen. Pixel heights, never a fraction of the host —

@@ -50,38 +50,53 @@ import QtQuick
 Singleton {
     id: theme
 
+    // ICE vs MAGMA: two house LAYERS. MAGMA replaces glacier FILLS (the
+    // 7-stop, the plum/sweep widgets wear). Outlines stay pale glacier so
+    // the look is ember + ice, not one colour.
+    readonly property bool lookMagma: Prefs.lookSet === "magma"
+    // ICE glacier, never remapped. paintLayers.glacier becomes magma when
+    // MAGMA is on; hairlines still read this.
+    readonly property var iceLayer: ["#7fe8ff", "#123a5e", "#0c1f66", "#274b7a", "#4f7fa6", "#b7e6f2", "#eefcff"]
+    // Floor hub wears BOTH layers at once (ice/plum + magma). Never remapped.
+    readonly property color iceTeal: "#0aa2d6"
+    readonly property color icePlum: "#ae206c"
+    readonly property color icePlumGlow: "#d765a2"
+    readonly property color iceCyan: "#7fe8ff"
+    readonly property color magmaEmber: "#ff7847"
+    readonly property color magmaGold: "#f7a83b"
+
     // ── the emission ladders ─────────────────────────────────────────
     // (V, S) per band, straight off the references:
     //   haze .22/.95 · deep .45/.92 · body .65/.88 · accent .90/.83 · glow .98/.42
     // Hue is ours; the ladder shape is measured. `teal` and `gold` keep their
     // exact shipped hexes so nothing in Agent A's half of the build desyncs
     // over a change too small to see.
-    readonly property color tealHaze:   "#012c3b"
-    readonly property color tealDeep:   "#026282"
-    readonly property color tealBody:   "#0582ad"
-    readonly property color teal:       "#0aa2d6"
-    readonly property color tealGlow:   "#5cc6ea"
+    readonly property color tealHaze:   lookMagma ? "#2a0a18" : "#012c3b"
+    readonly property color tealDeep:   lookMagma ? "#7a1e0c" : "#026282"
+    readonly property color tealBody:   lookMagma ? "#a33214" : "#0582ad"
+    readonly property color teal:       lookMagma ? "#ff7847" : "#0aa2d6"
+    readonly property color tealGlow:   lookMagma ? "#f7a83b" : "#5cc6ea"
 
-    readonly property color azureHaze:  "#000f1c"
-    readonly property color azureDeep:  "#01203e"
-    readonly property color azureBody:  "#03386b"
-    readonly property color azure:      "#064f95"
-    readonly property color azureGlow:  "#52a0ea"
+    readonly property color azureHaze:  lookMagma ? "#3a0c22" : "#000f1c"
+    readonly property color azureDeep:  lookMagma ? "#58100f" : "#01203e"
+    readonly property color azureBody:  lookMagma ? "#6d1a30" : "#03386b"
+    readonly property color azure:      lookMagma ? "#a33214" : "#064f95"
+    readonly property color azureGlow:  lookMagma ? "#ff7847" : "#52a0ea"
 
-    readonly property color indigoHaze: "#060125"
-    readonly property color indigoDeep: "#0e0153"
-    readonly property color indigoBody: "#160280"
-    readonly property color indigo:     "#1e03ad"
-    readonly property color indigoGlow: "#7a63f0"
+    readonly property color indigoHaze: lookMagma ? "#2a0a18" : "#060125"
+    readonly property color indigoDeep: lookMagma ? "#58100f" : "#0e0153"
+    readonly property color indigoBody: lookMagma ? "#6d1a30" : "#160280"
+    readonly property color indigo:     lookMagma ? "#a33214" : "#1e03ad"
+    readonly property color indigoGlow: lookMagma ? "#ff7847" : "#7a63f0"
 
-    readonly property color violetHaze: "#0f0415"
-    readonly property color violetDeep: "#280c3a"
-    readonly property color violetBody: "#38134f"
-    readonly property color violet:     "#521e72"
-    readonly property color violetGlow: "#aa6ece"
+    readonly property color violetHaze: lookMagma ? "#3a0c22" : "#0f0415"
+    readonly property color violetDeep: lookMagma ? "#58100f" : "#280c3a"
+    readonly property color violetBody: lookMagma ? "#6d1a30" : "#38134f"
+    readonly property color violet:     lookMagma ? "#a33214" : "#521e72"
+    readonly property color violetGlow: lookMagma ? "#ff7847" : "#aa6ece"
 
-    readonly property color plumHaze:   "#2e051b"
-    readonly property color plumDeep:   "#630e3c"
+    readonly property color plumHaze:   lookMagma ? "#58100f" : "#2e051b"
+    readonly property color plumDeep:   lookMagma ? "#7a1e0c" : "#630e3c"
     // #891955, not #891654 — corrected 2026-08-10. The 08-09 unification
     // (`accent.json._border_unified`) ruled that the resting solid and the
     // sweep's plum end were meant to be ONE colour and moved the app layer
@@ -93,15 +108,15 @@ Singleton {
     // disagree: a Quickshell panel edge against a GTK window edge. The
     // shift is 3/255 on green and 1/255 on blue; nobody would have caught
     // it by eye, which is exactly why it needed to be caught by a value.
-    readonly property color plumBody:   "#891955"
-    readonly property color plum:       "#ae206c"
-    readonly property color plumGlow:   "#d765a2"
+    readonly property color plumBody:   lookMagma ? "#050203" : "#891955"
+    readonly property color plum:       lookMagma ? "#ff7847" : "#ae206c"
+    readonly property color plumGlow:   lookMagma ? "#f7a83b" : "#d765a2"
 
-    readonly property color goldHaze:   "#251604"
-    readonly property color goldDeep:   "#50310b"
-    readonly property color goldBody:   "#764a12"
-    readonly property color gold:       "#9b621b"
-    readonly property color goldGlow:   "#d8a464"
+    readonly property color goldHaze:   lookMagma ? "#2a0a18" : "#251604"
+    readonly property color goldDeep:   lookMagma ? "#7a1e0c" : "#50310b"
+    readonly property color goldBody:   lookMagma ? "#a33214" : "#764a12"
+    readonly property color gold:       lookMagma ? "#ff7847" : "#9b621b"
+    readonly property color goldGlow:   lookMagma ? "#f7a83b" : "#d8a464"
 
     // ── ramps · light → dark, for gradient bodies ────────────────────
     readonly property var tealRamp:   [tealGlow, teal, tealDeep]
@@ -119,13 +134,19 @@ Singleton {
     // THE SIGNATURE. Panel rims, glow edges, focus, active indicators, and the
     // hue axis of the living paint. Five stops at the accent band, so the
     // whole sweep is emissive rather than one bright end and one dusty one.
-    readonly property color sweep0: "#0aa2d6"
-    readonly property color sweep1: "#064f95"
-    readonly property color sweep2: "#1e03ad"
-    readonly property color sweep3: "#521e72"
-    readonly property color sweep4: "#891955"
+    // MAGMA sweep is the ember falloff (amber → rust → dark), matching
+    // sweepStops below. The pale-glacier HAIRLINE rule (lookSeam) covers
+    // thin outlines only — broad area light (dock pools, ticks, glows)
+    // off an ice stop read as leftover ICE on the magma floor.
+    readonly property color sweep0: lookMagma ? "#ff7847" : "#0aa2d6"
+    readonly property color sweep1: lookMagma ? "#a33214" : "#064f95"
+    readonly property color sweep2: lookMagma ? "#4a100c" : "#1e03ad"
+    readonly property color sweep3: lookMagma ? "#1a0806" : "#521e72"
+    readonly property color sweep4: lookMagma ? "#050203" : "#891955"
     readonly property var sweepColors: [sweep0, sweep1, sweep2, sweep3, sweep4]
-    readonly property var sweepStops: ["#0aa2d6", "#064f95", "#1e03ad", "#521e72", "#891955"]
+    readonly property var sweepStops: lookMagma
+        ? ["#ff7847", "#a33214", "#4a100c", "#1a0806", "#050203"]
+        : ["#0aa2d6", "#064f95", "#1e03ad", "#521e72", "#891955"]
 
     // ══ THE DRIFT · the paint never wears the same colour twice ═════════
     // Owner ruling, 2026-08-09, watching the live shell:
@@ -328,12 +349,18 @@ Singleton {
     //   ⛔ Editing a stop here recolours the paint. The owner's standing rule
     //   is that the swirls are never touched. Change `accent.json` if a stop
     //   ever legitimately moves, and expect the gate to make you do both.
-    readonly property var paintLayers: ({
-        "rose":    ["#0aa2d6", "#064f95", "#1e03ad", "#521e72", "#891955", "#d765a2", "#ffb3d9"],
-        "magma":   ["#f7a83b", "#7a1e0c", "#58100f", "#6d1a30", "#a33214", "#ff7847", "#ffd9a8"],
-        "glacier": ["#7fe8ff", "#123a5e", "#0c1f66", "#274b7a", "#4f7fa6", "#b7e6f2", "#eefcff"],
-        "violet":  ["#b06cff", "#2a1157", "#3b0f6e", "#55127a", "#a63fa1", "#ed9bf7", "#f3d1ff"]
-    })
+    readonly property var paintLayers: {
+        var ice = theme.iceLayer;
+        // MAGMA house: magma in one corner, black in the other, they bleed.
+        // Same BRIGHT/dark/dark/dark/mid/bright/BRIGHT ladder as glacier.
+        var mag = ["#f7a83b", "#0a0404", "#050203", "#1a0806", "#58100f", "#ff7847", "#ffb080"];
+        return {
+            "rose":    ["#0aa2d6", "#064f95", "#1e03ad", "#521e72", "#891955", "#d765a2", "#ffb3d9"],
+            "magma":   mag,
+            "glacier": theme.lookMagma ? mag : ice,
+            "violet":  ["#b06cff", "#2a1157", "#3b0f6e", "#55127a", "#a63fa1", "#ed9bf7", "#f3d1ff"]
+        };
+    }
 
     // ── THE ANALYSER'S COLOUR — TRK-3717 ────────────────────────────────
     // ⚠ THIS BLOCK HELD A FULL 13-STOP RAINBOW AND THE OWNER WITHDREW IT.
@@ -391,11 +418,16 @@ Singleton {
     // is 2 px of a column whose mean drawn height is ~44 px: measured share
     // of lit area is in measure-spectrum-colour.py and reported in the
     // ledger. If that number ever climbs, the tip height is the lever.
-    readonly property var spectrumBody: [
+    readonly property var spectrumBody: lookMagma ? [
+        "#58100f",  // magma dark — the kick
+        "#eefcff"   // ice peak — the air
+    ] : [
         "#b7e6f2",  // glacier[5] ice PALE  — the kick
         "#eefcff"   // glacier[6] ice PEAK  — the air
     ]
-    readonly property color spectrumTip: "#ff7847"   // magma[5], the hot rung
+    // ICE: magma tip on glacier body. MAGMA: ice tip on gold body, so the
+    // analyser does not melt into the ember bar.
+    readonly property color spectrumTip: lookMagma ? "#7fe8ff" : "#ff7847"
 
     // ── THE FREQUENCY RAMP — TRK-3778 ───────────────────────────────────
     // ⚠ THIS SUPERSEDES THE BODY GRADIENT ABOVE FOR THE FIELD'S HUE, and it
@@ -485,7 +517,18 @@ Singleton {
     // the same material as the widgets above it. What changed is that the
     // floor of the ramp is lifted off the ground: the quietest column is now
     // a visible seam colour rather than near-void.
-    readonly property var spectrumRamp: [
+    readonly property var spectrumRamp: lookMagma ? [
+        "#1a0806",  // sub-bass — magma dark
+        "#58100f",  // magma[4]
+        "#7a1e0c",
+        "#a33214",
+        "#ff7847",  // magma[5]
+        "#f7a83b",  // gold
+        "#ffb080",  // magma[6], last warm stop before the hard step
+        "#7fe8ff",  // glacier[0] — pale glacier on the air
+        "#b7e6f2",  // glacier[5]
+        "#eefcff"   // glacier[6] catch-light
+    ] : [
         "#3a6b95",  // the sub-bass — lifted clear of the ground
         "#4f7fa6",  // glacier[4]   accent-hairline · the seam
         "#5f9ec4",
@@ -712,6 +755,18 @@ Singleton {
         plum,                    // #ae206c plum brt    — H 328, lin 0.111 · = tokenAccentPinned
         plumGlow                 // #d765a2 plum BRIGHT — H 328, lin 0.264 · = accentSolidHalo
     ]
+    // Magma analogue of paintPlumHorizon. Same 7-stop ladder: BRIGHT /
+    // dark / dark / dark / mid / bright / BRIGHT. Warm end is magma[4]
+    // #a33214 (lookWidgetBorder) then magma[5] #ff7847. No plum.
+    readonly property var paintMagmaHorizon: [
+        "#f7a83b",
+        "#0a0404",
+        "#050203",
+        "#1a0806",
+        "#58100f",
+        "#ff7847",
+        "#ffb080"
+    ]
     // ── TWO VIOLET STOPS, AND THE TARGET IS MEASURED OFF THE BAR ────────
     // ⚠ THIS WAS CUT TO ONE VIOLET STOP AND PUT BACK. The reason is worth
     // recording, because the mistake was a judgement made without a number.
@@ -753,7 +808,54 @@ Singleton {
     // Owner 2026-09-10: "the swirls need to be pale glacier". PAINT dye
     // only — shadow modes still read Prefs.swirlMode. glacier[0] #7fe8ff
     // stays banned as dye; paintPaleGlacier already omits it.
-    readonly property var paintRamp: paintPaleGlacier
+    //
+    // swirl_preview is a LOOK, not a shipped layer. paintLayers stays four
+    // (13q37). Furniture (glass, glacier[0] caustic) does not follow this.
+    function paleFromLayer(name) {
+        var L = paintLayers[name];
+        if (!L || L.length < 7)
+            return paintPaleGlacier;
+        return [L[5], L[1], L[2], L[3], L[4], L[5], L[6]];
+    }
+    readonly property var paintPaleWine: [
+        "#e8b8c8",
+        "#2a0a18",
+        "#3a0c22",
+        "#5c1838",
+        "#8a3060",
+        "#e8b8c8",
+        "#fceef4"
+    ]
+    // lookMagma is declared at the top of this file. glacier IS the magma
+    // 7-stop when MAGMA is on, so lookLayer is always paintLayers.glacier.
+    readonly property var lookLayer: paintLayers.glacier
+    // MAGMA hairline is pale glacier (#b7e6f2), not magma[4]. Fills stay ember.
+    readonly property color lookSeam: lookMagma ? iceLayer[5] : lookLayer[4]
+    // ICE stays 1 px. MAGMA needs 2 or the glacier line vanishes into ember.
+    readonly property int lookOutlineW: lookMagma ? 2 : 1
+    readonly property color lookPale: lookLayer[5]
+    readonly property color lookPeak: lookLayer[6]
+    readonly property color lookHot:  lookLayer[0]
+    readonly property color lookDark: lookLayer[1]
+    readonly property color lookWidgetBorder: lookMagma ? iceLayer[5] : plumBody
+    readonly property color lookIce: lookHot
+    readonly property var lookSweep: [sweep0, sweep1, sweep2, sweep3, sweep4]
+    readonly property var lookRimSweep: lookMagma ? paintMagmaHorizon : paintPlumHorizon
+    function lookStop(i) {
+        var s = lookSweep[i];
+        var c = (s && s.r !== undefined) ? s : Qt.color(s);
+        return Qt.vector4d(c.r, c.g, c.b, 1.0);
+    }
+    readonly property var paintRamp: {
+        if (lookMagma)
+            return theme.lookLayer;
+        var k = Prefs.swirlPreview;
+        if (k === "wine")
+            return theme.paintPaleWine;
+        if (k === "rose" || k === "magma" || k === "violet")
+            return theme.paleFromLayer(k);
+        return theme.paintPaleGlacier;
+    }
 
     // ══ THE EMBER ANCHOR (WIP-700) · what "warmer" means, once ══════════
     // The owner asked for a paint that runs "warmer under cpu load cooler
@@ -1134,9 +1236,9 @@ Singleton {
     // #141a30, a blue-GREY at S 0.58 and the muddiest colour in the build,
     // sitting behind every hover state. Same darkness, real chroma — now the
     // same real chroma as the apps.
-    readonly property color void_:     "#020506"
-    readonly property color surface:   "#040b0e"
-    readonly property color elevated:  "#071318"
+    readonly property color void_:     lookMagma ? "#0a0404" : "#020506"
+    readonly property color surface:   lookMagma ? "#120605" : "#040b0e"
+    readonly property color elevated:  lookMagma ? "#1a0806" : "#071318"
 
     // ── text ─────────────────────────────────────────────────────────
     readonly property color text:      "#edf1ff"
@@ -1231,9 +1333,15 @@ Singleton {
     // of the editor behind it through the app grid — WIP-19's exact defect,
     // reached from the other direction. These sit as light as they can go
     // while a Swell still covers what is under it.
-    readonly property color glassFill:       Qt.rgba(0.010, 0.026, 0.040, 0.46)
-    readonly property color glassFillStrong: Qt.rgba(0.010, 0.026, 0.040, 0.66)
-    readonly property color glassScrim:      Qt.rgba(0.006, 0.008, 0.035, 0.72)
+    readonly property color glassFill:       lookMagma
+        ? Qt.rgba(0.040, 0.012, 0.008, 0.46)
+        : Qt.rgba(0.010, 0.026, 0.040, 0.46)
+    readonly property color glassFillStrong: lookMagma
+        ? Qt.rgba(0.040, 0.012, 0.008, 0.66)
+        : Qt.rgba(0.010, 0.026, 0.040, 0.66)
+    readonly property color glassScrim:      lookMagma
+        ? Qt.rgba(0.035, 0.010, 0.008, 0.72)
+        : Qt.rgba(0.006, 0.008, 0.035, 0.72)
     // ── THE BORDER IS SOLID, AND IT IS ROSE ──────────────────────────
     // Owner: "the border of whatever were solid then the inside were glass",
     // and separately, the standing rule in § THE RATION below: glass carries,
@@ -1258,7 +1366,7 @@ Singleton {
     // and the one on accentSolidLow were simply never moved with it. A stale
     // comment beside a correct value is how WIP-117 shipped — every later
     // reader had a written reason not to check the one thing that was wrong.)
-    readonly property color glassBorder:     plumBody
+    readonly property color glassBorder:     lookWidgetBorder
     readonly property color glassGlow:       soften(teal, 0.30)
     readonly property color glassGlowViolet: soften(violet, 0.28)
 
@@ -1304,9 +1412,15 @@ Singleton {
     // section — it is why the cut edge of a fish tank, a mirror or a window
     // pane reads teal — and that happens to be where this palette starts, so
     // the material and the sweep agree without being made to.
-    readonly property color shelfDeep: Qt.rgba(0.012, 0.032, 0.040, 0.34)
-    readonly property color shelfMid:  Qt.rgba(0.010, 0.026, 0.034, 0.20)
-    readonly property color shelfNone: Qt.rgba(0.006, 0.008, 0.028, 0.0)
+    readonly property color shelfDeep: lookMagma
+        ? Qt.rgba(0.050, 0.016, 0.010, 0.34)
+        : Qt.rgba(0.012, 0.032, 0.040, 0.34)
+    readonly property color shelfMid:  lookMagma
+        ? Qt.rgba(0.042, 0.014, 0.008, 0.20)
+        : Qt.rgba(0.010, 0.026, 0.034, 0.20)
+    readonly property color shelfNone: lookMagma
+        ? Qt.rgba(0.035, 0.010, 0.008, 0.0)
+        : Qt.rgba(0.006, 0.008, 0.028, 0.0)
     // The top of the pane, and the reason it needed a token of its own: with
     // the old top-heavy veil removed, the Shelf's own top stop was
     // `shelfNone` — alpha 0 — so the upper third of the bar had NO BODY AT
@@ -1355,15 +1469,29 @@ Singleton {
     // that alpha 1 is a wall and a glass value at either end is a bug on
     // sight. These sit where the window is gone but the surface is still
     // something light passes into.
-    readonly property color swellGroundTop:  Qt.rgba(0.006, 0.014, 0.020, 0.84)
-    readonly property color swellGroundMid:  Qt.rgba(0.005, 0.011, 0.017, 0.89)
-    readonly property color swellGroundFoot: Qt.rgba(0.004, 0.008, 0.014, 0.93)
+    readonly property color swellGroundTop:  lookMagma
+        ? Qt.rgba(0.055, 0.016, 0.010, 0.84)
+        : Qt.rgba(0.006, 0.014, 0.020, 0.84)
+    readonly property color swellGroundMid:  lookMagma
+        ? Qt.rgba(0.045, 0.012, 0.008, 0.89)
+        : Qt.rgba(0.005, 0.011, 0.017, 0.89)
+    readonly property color swellGroundFoot: lookMagma
+        ? Qt.rgba(0.035, 0.010, 0.006, 0.93)
+        : Qt.rgba(0.004, 0.008, 0.014, 0.93)
 
-    readonly property color paintGroundTop:  Qt.rgba(0.004, 0.010, 0.016, 0.00)
-    readonly property color paintGroundMid:  Qt.rgba(0.004, 0.010, 0.016, 0.78)
-    readonly property color paintGroundFoot: Qt.rgba(0.003, 0.006, 0.012, 0.93)
+    readonly property color paintGroundTop:  lookMagma
+        ? Qt.rgba(0.040, 0.012, 0.008, 0.00)
+        : Qt.rgba(0.004, 0.010, 0.016, 0.00)
+    readonly property color paintGroundMid:  lookMagma
+        ? Qt.rgba(0.040, 0.012, 0.008, 0.78)
+        : Qt.rgba(0.004, 0.010, 0.016, 0.78)
+    readonly property color paintGroundFoot: lookMagma
+        ? Qt.rgba(0.030, 0.008, 0.006, 0.93)
+        : Qt.rgba(0.003, 0.006, 0.012, 0.93)
 
-    readonly property color shelfTop:  Qt.rgba(0.012, 0.032, 0.040, 0.15)
+    readonly property color shelfTop:  lookMagma
+        ? Qt.rgba(0.050, 0.016, 0.010, 0.15)
+        : Qt.rgba(0.012, 0.032, 0.040, 0.15)
 
     // ══ THE MATERIAL FORMULA (2026-08-08, owner-directed) ═══════════════
     // The owner, after the first full hardware boot of the rose build:
@@ -1407,9 +1535,15 @@ Singleton {
     // These are therefore NEW stops rather than edits: identical hue, higher
     // alpha. 0.15 → 0.27, 0.20 → 0.34, 0.34 → 0.48. Used by the three panels
     // and by nothing else, so the bar cannot move when these do.
-    readonly property color panelTop:  Qt.rgba(0.012, 0.032, 0.040, 0.27)
-    readonly property color panelMid:  Qt.rgba(0.010, 0.026, 0.034, 0.34)
-    readonly property color panelDeep: Qt.rgba(0.012, 0.032, 0.040, 0.48)
+    readonly property color panelTop:  lookMagma
+        ? Qt.rgba(0.050, 0.016, 0.010, 0.27)
+        : Qt.rgba(0.012, 0.032, 0.040, 0.27)
+    readonly property color panelMid:  lookMagma
+        ? Qt.rgba(0.042, 0.014, 0.008, 0.34)
+        : Qt.rgba(0.010, 0.026, 0.034, 0.34)
+    readonly property color panelDeep: lookMagma
+        ? Qt.rgba(0.050, 0.016, 0.010, 0.48)
+        : Qt.rgba(0.012, 0.032, 0.040, 0.48)
 
     // ── TRK-1784 · tokenAccentGround — the SELECTED ground ───────────────
     // ICEPLATE measured the selected fill at 2.10:1 against the ice plate,
@@ -1497,7 +1631,9 @@ Singleton {
     // is simply the body tint at several times the concentration. Same hue as
     // `shelfTop`, roughly four times the density: it darkens a bright backdrop
     // and tints a dark one, so the edge exists over any wallpaper.
-    readonly property color glassLipTint: Qt.rgba(0.010, 0.040, 0.048, 0.52)
+    readonly property color glassLipTint: lookMagma
+        ? Qt.rgba(0.048, 0.016, 0.010, 0.52)
+        : Qt.rgba(0.010, 0.040, 0.048, 0.52)
 
     // ── the Glaze · light standing INSIDE the pane ───────────────────
     // The bar reads as glass at a body alpha of 0.15 and a Swell read as a
@@ -1510,9 +1646,15 @@ Singleton {
     // The foot deepens toward the body's own green-teal rather than toward
     // black, because §3.5's rule is that this palette has no dull darks: a
     // shadow here is a saturated colour. `GlassEdge.qml` draws all three.
-    readonly property color glazeTop:  Qt.rgba(0.60, 0.86, 0.92, 0.050)
-    readonly property color glazeMid:  Qt.rgba(0.30, 0.55, 0.60, 0.012)
-    readonly property color glazeFoot: Qt.rgba(0.010, 0.048, 0.056, 0.130)
+    readonly property color glazeTop:  lookMagma
+        ? Qt.rgba(0.97, 0.66, 0.23, 0.050)
+        : Qt.rgba(0.60, 0.86, 0.92, 0.050)
+    readonly property color glazeMid:  lookMagma
+        ? Qt.rgba(0.63, 0.29, 0.16, 0.012)
+        : Qt.rgba(0.30, 0.55, 0.60, 0.012)
+    readonly property color glazeFoot: lookMagma
+        ? Qt.rgba(0.039, 0.016, 0.016, 0.130)
+        : Qt.rgba(0.010, 0.048, 0.056, 0.130)
 
     // ══ THE SWELL BODY — the second thickness (WIP-259, 2026-08-10) ═════
     // The owner has reported the Start menu's labels as too dim THREE times.
@@ -1573,9 +1715,15 @@ Singleton {
     // default). Inline chips do not get it either — a chip is a chip of the
     // same glass, not another slab, and stacking a second body inside a Swell
     // is how you get a black card on a grey card.
-    readonly property color swellTop:  Qt.rgba(0.010, 0.030, 0.040, 0.68)
-    readonly property color swellMid:  Qt.rgba(0.008, 0.022, 0.030, 0.76)
-    readonly property color swellFoot: Qt.rgba(0.006, 0.016, 0.024, 0.82)
+    readonly property color swellTop:  lookMagma
+        ? Qt.rgba(0.040, 0.016, 0.010, 0.68)
+        : Qt.rgba(0.010, 0.030, 0.040, 0.68)
+    readonly property color swellMid:  lookMagma
+        ? Qt.rgba(0.030, 0.012, 0.008, 0.76)
+        : Qt.rgba(0.008, 0.022, 0.030, 0.76)
+    readonly property color swellFoot: lookMagma
+        ? Qt.rgba(0.024, 0.008, 0.006, 0.82)
+        : Qt.rgba(0.006, 0.016, 0.024, 0.82)
 
     // There is deliberately no inline-card body token. The cards inside a
     // Swell (the vitals block, Now Playing, Quick) already carry their own
@@ -1984,7 +2132,7 @@ Singleton {
     // plain, too bla" (owner, 08-05), so shrinking the icon is a road already
     // walked and rejected. Closing the gap around it groups the dock without
     // making anything smaller.
-    readonly property int  dockSlot:      56
+    readonly property int  dockSlot:      64
     readonly property real dockIdle:      0.86
     // The Reflection: each icon's own light falling into the seam below it.
     // Kept well under half the icon's height — a full mirror reads as a
@@ -2030,12 +2178,12 @@ Singleton {
     // task 11, not task 0.
 
     // accent roles — glacier[i], rev 3 §1.2
-    readonly property color tokenAccentInteractive:  "#7fe8ff"   // glacier[0] · primary interactive: focus, on-state, active edge, progress fill
-    readonly property color tokenAccentDeep:         "#274b7a"   // glacier[3] · the pressed / selected ground
-    readonly property color tokenAccentHairline:     "#4f7fa6"   // glacier[4] · DEMOTED: 1px dividers only, never a fill
-    readonly property color tokenAccentPrimary:      "#b7e6f2"   // glacier[5] · selection / identity
-    readonly property color tokenAccentPeak:         "#eefcff"   // glacier[6] · top of the glow ladder, the focus-ring hue
-    readonly property color tokenAccentPinned:       "#ae206c"   // PINNED, not derived · 3.14:1 · edges and fills only, NEVER text
+    readonly property color tokenAccentInteractive:  lookLayer[0]
+    readonly property color tokenAccentDeep:         lookLayer[3]
+    readonly property color tokenAccentHairline:     lookLayer[4]
+    readonly property color tokenAccentPrimary:      lookLayer[5]
+    readonly property color tokenAccentPeak:         lookLayer[6]
+    readonly property color tokenAccentPinned:       plum
 
     // ambient clamp — COMPLETION_SPEC §3, owner Ruling 2. NOT void.
     // peak_luminance_max is enforced NOWHERE today: swirl_view.frag
@@ -2091,12 +2239,14 @@ Singleton {
     // scale, on every surface — which is why you can tell where something
     // happened from its colour.
     function sweepAt(f) {
-        var n = sweepColors.length - 1;
+        var stops = lookSweep;
+        var n = stops.length - 1;
         var x = Math.max(0, Math.min(1, f)) * n;
         var i = Math.floor(x);
-        if (i >= n) return sweepColors[n];
+        if (i >= n) return stops[n];
         var t = x - i;
-        var a = sweepColors[i], b = sweepColors[i + 1];
+        var a = (stops[i].r !== undefined) ? stops[i] : Qt.color(stops[i]);
+        var b = (stops[i + 1].r !== undefined) ? stops[i + 1] : Qt.color(stops[i + 1]);
         return Qt.rgba(a.r + (b.r - a.r) * t,
                        a.g + (b.g - a.g) * t,
                        a.b + (b.b - a.b) * t, 1.0);

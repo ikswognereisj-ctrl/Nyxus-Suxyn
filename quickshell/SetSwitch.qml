@@ -157,11 +157,11 @@ Item {
             color: "transparent"
             border.width: 1
             border.color: !sw.enabled
-                    ? Theme.soften(Theme.paintLayers.glacier[4], 0.30)
+                    ? Theme.soften(Theme.lookSeam, 0.30)
                     : (sw.checked
                        ? Theme.soften(sw.markOn, tap.pressed ? 0.95
                                               : (hov.hovered ? 0.85 : 0.72))
-                       : Theme.soften(Theme.paintLayers.glacier[4],
+                       : Theme.soften(Theme.lookSeam,
                                       tap.pressed ? 0.95
                                     : (hov.hovered ? 0.84 : 0.70)))
             Behavior on border.color { ColorAnimation { duration: Theme.durQuick } }

@@ -584,7 +584,7 @@ SetPage {
     SetCard {
         heading: qsTr("System sounds")
         tone: page.tone
-        note: qsTr("Interface sounds above are the live pack. This leftover is saved, not applied, and there is no Sound Pack page under Personalization.")
+        note: qsTr("Suxyn ice bell — the live pack. Test is the instrument arpeggio; Preview all plays every event.")
 
         SetRow {
             title: qsTr("GTK sound pack")
@@ -598,7 +598,19 @@ SetPage {
             glyph: ""
             tone: page.tone
             busy: testSound.running
+            enabled: !previewAll.running
             onClicked: testSound.running = true
+        }
+
+        SetButton {
+            Layout.leftMargin: Theme.s4
+            text: qsTr("Preview all")
+            glyph: ""
+            tone: page.tone
+            busy: previewAll.running
+            busyText: qsTr("Playing the pack…")
+            enabled: !testSound.running
+            onClicked: previewAll.running = true
         }
     }
 
@@ -681,18 +693,32 @@ SetPage {
     Process {
         id: testSound
         running: false
-        command: ["sh", "-c",
-            'for f in /usr/share/sounds/nyxus/notification.ogg '
-          + '/usr/share/sounds/nyxus/notification.wav '
-          + '/usr/share/sounds/freedesktop/stereo/message.oga; do '
-          + '[ -r "$f" ] && exec paplay "$f"; done; '
-          + 'echo "no system sound file found" >&2; exit 1']
+        command: ["env", page.execPath, "nyxus-sound", "theme-demo"]
         stderr: StdioCollector {
             onStreamFinished: {
                 if (String(this.text).trim() !== "")
                     console.warn("Sound: test tone — " + String(this.text).trim());
             }
         }
+    }
+
+    // Walks the user-override stereo dir (the live pack). nyxus-sound
+    // list-events only sees /usr/share (root-owned, 24 names); paplay of
+    // each wav is how Preview all hears the full ice-bell set, including
+    // stems the dispatcher remaps (boot, lock, notification, …).
+    Process {
+        id: previewAll
+        running: false
+        command: ["sh", "-c",
+            'd="${XDG_DATA_HOME:-$HOME/.local/share}/sounds/nyxus/stereo"; '
+          + '[ -d "$d" ] || d="/usr/share/sounds/nyxus/stereo"; '
+          + 'find "$d" -maxdepth 1 -type f -name "*.wav" -printf "%f\\n" '
+          + '| sed "s/\\.wav$//" | sort -u '
+          + '| grep -vE "^(desktop-login|desktop-logout|screenshot)$" '
+          + '| while read -r evt; do '
+          + 'paplay "$d/$evt.wav" >/dev/null 2>&1 || nyxus-sound --ui-gain 100 "$evt" || true; '
+          + 'sleep 0.6; '
+          + 'done']
     }
 
     // ── audit-0908 · TRK-3968 ───────────────────────────────────────────

@@ -154,7 +154,7 @@ Item {
                     rotation: Math.atan2(by - ay, bx - ax) * 180 / Math.PI
                     // glacier[4] -> glacier[5] at 0.68 = #96c5da; the file
                     // used to spell #96c4e0, within 6/255 on one channel.
-                    color: Theme.mix(Theme.paintLayers.glacier[4], Theme.paintLayers.glacier[5], 0.68)
+                    color: Theme.mix(Theme.lookSeam, Theme.paintLayers.glacier[5], 0.68)
                     // LockOcular's exact value. Its header earned it: brighter
                     // reads as a diagram drawn ON the sky instead of a figure
                     // found IN it.

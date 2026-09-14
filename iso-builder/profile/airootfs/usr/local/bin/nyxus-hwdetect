@@ -1,0 +1,188 @@
+#!/usr/bin/env bash
+# ============================================================================
+# nyxus-hwdetect — derive the initramfs MODULES set from the hardware that is
+#                  ACTUALLY present, and write it as a mkinitcpio drop-in
+#
+# Runs in two places, and is the same code in both (the two-path rule this
+# repo has been bitten by repeatedly — a fix that exists on the Calamares
+# path and not the first-boot one is half a fix):
+#
+#   · Calamares, inside the target chroot, from shellprocess@initramfs,
+#     immediately BEFORE the `mkinitcpio -P` that step already runs. The
+#     install therefore produces a correct initramfs the first time and
+#     costs no extra rebuild.
+#   · First boot, from /etc/nyxus-firstboot.d/03-hardware-initramfs.sh, which
+#     rebuilds ONCE if and only if this script changed the drop-in. That
+#     covers the cases Calamares cannot: an ISO dd'd straight to a disk, a
+#     disk moved into another machine, an eGPU appearing.
+#
+# ── WHY THIS EXISTS ────────────────────────────────────────────────────────
+# /etc/mkinitcpio.conf shipped a HARDCODED
+#
+#     MODULES=(i915 amdgpu nvidia nvidia_modeset nvidia_uvm nvidia_drm)
+#
+# which is the owner's own Alienware (AMD iGPU + NVIDIA dGPU) written into
+# every image. On that machine it is right. On ANY OTHER machine it is a
+# "works on my machine" ISO in the precise sense:
+#
+#   · An Intel-only laptop pulls ~28 MB of amdgpu + nvidia firmware into
+#     every initramfs it will never load (measured; the figure is the
+#     existing comment's own, docs/HARDWARE_BRINGUP_SUXYN.md).
+#   · A machine with no NVIDIA card makes `mkinitcpio -P` emit
+#     "module not found: nvidia" warnings on every kernel update, which is
+#     how a real error later gets scrolled past.
+#   · A VM (virtio-gpu / qxl / vmwgfx) gets none of the modules it needs
+#     early, which is the black-screen-until-userspace class of defect.
+#
+# ── WHY A DROP-IN AND NOT AN EDIT OF mkinitcpio.conf ───────────────────────
+# mkinitcpio reads /etc/mkinitcpio.conf then every /etc/mkinitcpio.conf.d/
+# *.conf in LEXICAL order, and each assignment REPLACES the previous one for
+# that variable only. So 20-nyxus-hardware.conf declaring MODULES= wins over
+# the base file's MODULES= while leaving HOOKS= entirely alone — it never
+# touches the line 10-nyxus-plymouth.conf owns (plymouth after kms, WIP-618)
+# and never collides with nyxus-fde-wire, which splices `encrypt` into HOOKS
+# lines and ignores files that declare no HOOKS. Editing mkinitcpio.conf in
+# place would fight both of them. This is the same reasoning nyxus-fde-wire
+# records for going the OTHER way, and the difference is the variable: HOOKS
+# is order-sensitive and co-owned, MODULES is a set with one owner.
+#
+# ── IDEMPOTENT BY CONTRACT ─────────────────────────────────────────────────
+# Writes the drop-in only when the derived set DIFFERS from what is already
+# there, and reports which happened through its EXIT CODE:
+#
+#     0  drop-in already correct — caller must NOT rebuild
+#     10 drop-in written/changed — caller SHOULD rebuild, exactly once
+#     1  detection failed — caller must leave the initramfs alone
+#
+# That is what makes the owner's "regenerates the initramfs once" literal:
+# the rebuild is the CALLER's, gated on 10, so a second boot with unchanged
+# hardware costs nothing.
+#
+# © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+# ============================================================================
+set -uo pipefail
+
+DROPIN="${NYXUS_HWDETECT_DROPIN:-/etc/mkinitcpio.conf.d/20-nyxus-hardware.conf}"
+SYSFS="${NYXUS_HWDETECT_SYSFS:-/sys/bus/pci/devices}"
+DRY=0
+[[ "${1:-}" == "--print" ]] && DRY=1
+
+log() { printf '[nyxus-hwdetect] %s\n' "$*"; }
+
+# ── module availability ────────────────────────────────────────────────────
+# A module named in MODULES that does not exist makes mkinitcpio warn on
+# EVERY kernel update. nvidia in particular is a DKMS/out-of-tree module that
+# is present on the owner's build and absent on a nouveau or VM install, so
+# every candidate is filtered through modinfo against the kernel we are
+# actually building for. In a Calamares chroot that is the target's kernel,
+# which is the correct one to ask.
+KVER="${NYXUS_HWDETECT_KVER:-}"
+if [[ -z "${KVER}" ]]; then
+  # Prefer an installed kernel's own modules tree over `uname -r`: inside the
+  # installer chroot `uname -r` is the LIVE ISO's kernel, not the target's.
+  for _d in /usr/lib/modules/*/; do
+    [[ -d "${_d}kernel" ]] || continue
+    KVER="$(basename "${_d}")"
+  done
+fi
+have_module() {
+  [[ -n "${KVER}" ]] || return 1
+  modinfo -k "${KVER}" "$1" >/dev/null 2>&1
+}
+
+# ── read the PCI bus ───────────────────────────────────────────────────────
+# sysfs rather than lspci: pciutils is not guaranteed inside the chroot, and
+# sysfs is the same data without the dependency. class 0x03xxxx == display.
+vendors=""
+if [[ -d "${SYSFS}" ]]; then
+  for dev in "${SYSFS}"/*; do
+    [[ -r "${dev}/class" && -r "${dev}/vendor" ]] || continue
+    cls="$(<"${dev}/class")"
+    [[ "${cls}" == 0x03* ]] || continue
+    vendors+=" $(<"${dev}/vendor")"
+  done
+else
+  log "FATAL ${SYSFS} is unreadable — cannot detect hardware"
+  exit 1
+fi
+
+# A machine with no display-class PCI device at all is not a machine we can
+# derive a GPU set for. Bail rather than write an empty MODULES that would
+# silently strip early KMS from a working install.
+if [[ -z "${vendors// /}" ]]; then
+  log "FATAL no display-class PCI device found — refusing to write a MODULES set"
+  exit 1
+fi
+
+# ── derive the set ─────────────────────────────────────────────────────────
+# ORDER IS LOAD-BEARING and is the existing comment's rule, kept verbatim in
+# effect: integrated GPU drivers come BEFORE nvidia_*, so that on a hybrid
+# machine card0 binds to the iGPU (TRK-1205, Alienware 15). Building the
+# array in this fixed sequence is what preserves it — never sort this.
+mods=()
+add() { have_module "$1" && mods+=("$1"); }
+
+case " ${vendors} " in *" 0x8086 "*) add i915  ;; esac   # Intel
+case " ${vendors} " in *" 0x1002 "*) add amdgpu;; esac   # AMD  (ATI id)
+case " ${vendors} " in *" 0x1022 "*) add amdgpu;; esac   # AMD  (AMD  id)
+case " ${vendors} " in *" 0x1a03 "*) add ast   ;; esac   # ASPEED server BMC
+
+# Virtual display adapters — the VM class the hardcoded set served not at all.
+case " ${vendors} " in *" 0x1af4 "*) add virtio_gpu;; esac  # virtio (KVM)
+case " ${vendors} " in *" 0x15ad "*) add vmwgfx    ;; esac  # VMware
+case " ${vendors} " in *" 0x1234 "*) add bochs     ;; esac  # QEMU stdvga
+
+# NVIDIA last, so the iGPU rule above holds. The proprietary stack is only
+# named when it is actually installed; otherwise nouveau covers the card.
+case " ${vendors} " in
+  *" 0x10de "*)
+    if have_module nvidia; then
+      add nvidia; add nvidia_modeset; add nvidia_uvm; add nvidia_drm
+    else
+      add nouveau
+    fi
+    ;;
+esac
+
+if (( ${#mods[@]} == 0 )); then
+  log "FATAL derived an empty module set from vendors:${vendors} — refusing to write"
+  exit 1
+fi
+
+derived="MODULES=(${mods[*]})"
+
+if (( DRY )); then
+  printf '%s\n' "${derived}"
+  exit 0
+fi
+
+# ── write only on change ───────────────────────────────────────────────────
+current=""
+[[ -r "${DROPIN}" ]] && current="$(grep -E '^MODULES=' "${DROPIN}" 2>/dev/null || true)"
+
+if [[ "${current}" == "${derived}" ]]; then
+  log "unchanged: ${derived} — no initramfs rebuild needed"
+  exit 0
+fi
+
+mkdir -p "$(dirname "${DROPIN}")" || { log "FATAL cannot create $(dirname "${DROPIN}")"; exit 1; }
+{
+  echo "# ==========================================================================="
+  echo "# NYXUS · initramfs MODULES, DERIVED FROM THIS MACHINE — do not hand-edit."
+  echo "#"
+  echo "# Written by /usr/local/bin/nyxus-hwdetect. Regenerated whenever the"
+  echo "# detected hardware stops matching this line; see that script for why the"
+  echo "# order is fixed (integrated GPU before nvidia_*, TRK-1205) and why this"
+  echo "# is a drop-in rather than an edit of /etc/mkinitcpio.conf."
+  echo "#"
+  echo "# Generated: $(date -u '+%Y-%m-%d %H:%M:%SZ')"
+  echo "# Kernel queried for module availability: ${KVER:-<unknown>}"
+  echo "# Display-class PCI vendors seen:${vendors}"
+  echo "# ==========================================================================="
+  echo "${derived}"
+} > "${DROPIN}" || { log "FATAL could not write ${DROPIN}"; exit 1; }
+
+chmod 0644 "${DROPIN}"
+log "wrote ${DROPIN}: ${derived}"
+log "was: ${current:-<no previous MODULES line>}"
+exit 10

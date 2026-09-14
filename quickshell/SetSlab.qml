@@ -208,9 +208,10 @@ Item {
         visible: slab.seam
         radius: slab.cornerRadius
         color: "transparent"
-        borderWidth: 1
-        borderColor: Theme.soften(Theme.paintLayers.glacier[4],
-                                  slab.lifted ? 0.85 : 0.45)
+        borderWidth: Theme.lookOutlineW
+        borderColor: Theme.soften(Theme.lookSeam,
+                                  slab.lifted ? 0.85
+                                  : (Theme.lookMagma ? 0.62 : 0.45))
         Behavior on borderColor { ColorAnimation { duration: Theme.durQuick } }
     }
 

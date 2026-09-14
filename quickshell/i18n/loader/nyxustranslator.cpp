@@ -1,4 +1,5 @@
 // NYXUS Suxyn — the shell's translation loader (TRK-1920, closes TRK-1581).
+// © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
 //
 // ── WHY THIS EXISTS ─────────────────────────────────────────────────────────
 // TRK-1578 wrapped 1299 user-visible strings in qsTr() and TRK-1580 taught the

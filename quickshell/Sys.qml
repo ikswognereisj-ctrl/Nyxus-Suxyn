@@ -708,6 +708,16 @@ Singleton {
     // `lm_sensors` is already on the ISO; this reads hwmon sysfs, not
     // `sensors`. No new package.
     property bool hasGpu: false
+    // nv | amd | igpu | none | unknown — swirl auto-tier uses this so an
+    // Intel-only laptop does not run the 3060 "full" 60 Hz dye budget.
+    property string gpuClass: "unknown"
+    readonly property int swirlGpuStep: {
+        if (sys.gpuClass === "igpu")
+            return 1;
+        if (sys.gpuClass === "none")
+            return 2;
+        return 0;
+    }
     property bool hasFans: false
     property bool hasNet: false
     property int gpuPercent: 0
@@ -854,7 +864,17 @@ Singleton {
             + "{f=1} END{exit f?0:1}' /proc/net/dev && net=1; "
             + "temp=0; for f in /sys/class/hwmon/hwmon*/temp*_input; do "
             + "[ -r \"$f\" ] && temp=1 && break; done; "
-            + "echo $fans $gpu $net $temp"]
+            + "gpuclass=none; "
+            + "[ -d /proc/driver/nvidia ] && gpuclass=nv; "
+            + "if [ \"$gpuclass\" = none ]; then "
+            + "  for p in /sys/class/drm/card*/device/gpu_busy_percent; do "
+            + "    [ -r \"$p\" ] && gpuclass=amd && break; done; "
+            + "fi; "
+            + "if [ \"$gpuclass\" = none ]; then "
+            + "  for p in /sys/class/drm/card*/gt/gt0/rps_act_freq_mhz; do "
+            + "    [ -r \"$p\" ] && gpuclass=igpu && break; done; "
+            + "fi; "
+            + "echo $fans $gpu $net $temp $gpuclass"]
         stdout: StdioCollector {
             onStreamFinished: {
                 var p = this.text.trim().split(" ");
@@ -864,6 +884,8 @@ Singleton {
                 sys.hasNet = p[2] === "1";
                 if (p.length > 3)
                     sys.hasTemp = p[3] === "1";
+                if (p.length > 4 && p[4].length)
+                    sys.gpuClass = p[4];
             }
         }
     }

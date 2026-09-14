@@ -290,6 +290,7 @@ Singleton {
         id: carryView
         path: rooms.enabled ? rooms.carryFile : ""
         watchChanges: true
+        printErrors: false
         onFileChanged: reload()
         onLoaded: rooms.setCarry(text().trim())
         onLoadFailed: rooms.setCarry("")  // idle: no carry file yet

@@ -38,6 +38,8 @@ AppWindow {
     property var eqBands: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     property var eqPresets: ["Flat", "Bass Boost", "Bass Cut", "Treble Boost", "Vocal", "Acoustic", "Rock", "Pop", "Jazz", "Classical", "Electronic", "Dance", "Hip-Hop", "Loudness", "Night"]
     property bool eqApplied: false
+    property bool eqDirty: false
+    property bool eqWantPreset: false
     property bool autoMixes: SettingsStore.boolValue("app_media_auto_mixes", true)
     property bool shuffle: SettingsStore.boolValue("app_media_shuffle", false)
     property var queue: []
@@ -91,15 +93,24 @@ AppWindow {
     function refreshCare() { careProc.running = false; careProc.running = true; }
     function loadEq() { eqGet.running = false; eqGet.running = true; }
     function writeEq(applyPreset) {
+        if (applyPreset)
+            win.eqWantPreset = true;
+        if (eqSet.running) {
+            win.eqDirty = true;
+            return;
+        }
+        var ap = win.eqWantPreset;
+        win.eqWantPreset = false;
+        win.eqDirty = false;
         var payload = JSON.stringify({
             enabled: win.eqEnabled,
             preset: win.eqPreset,
             bands: win.eqBands,
-            applyPreset: !!applyPreset
+            applyPreset: !!ap
         });
+        win.eqApplied = false;
         eqSet.command = ["python3", win.io(), "eq-set", payload];
-        eqSet.running = false;
-        eqSet.running = true;
+        eqKick.restart();
     }
     function playList(list, start) {
         var paths = [];
@@ -115,6 +126,8 @@ AppWindow {
         }
         if (!paths.length) return;
         win.queue = rows;
+        Bus.mediaOpen = true;
+        Bus.mediaCrestDocked = false;
         playProc.command = ["python3", win.io(), "play", JSON.stringify({
             paths: paths, start: start || 0, shuffle: win.shuffle
         })];
@@ -195,7 +208,6 @@ AppWindow {
         id: listProc
         running: false
         command: ["python3", win.io()]
-        onExited: function (code) { if (code !== 0) console.warn("[Media] library scan exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -219,7 +231,6 @@ AppWindow {
         id: eqGet
         running: false
         command: ["python3", win.io(), "eq-get"]
-        onExited: function (code) { if (code !== 0) console.warn("[Media] eq read exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -230,6 +241,7 @@ AppWindow {
                         win.eqBands = j.bands;
                     if (j.presets && j.presets.length)
                         win.eqPresets = j.presets;
+                    win.eqApplied = j.applied === true || j.onPlayer === true;
                 } catch (e) { }
             }
         }
@@ -238,19 +250,26 @@ AppWindow {
     Process {
         id: eqSet
         running: false
-        command: ["python3", win.io(), "eq-get"]
-        onExited: function (code) { if (code !== 0) console.warn("[Media] eq apply exited code " + code); }
+        command: ["python3", win.io(), "eq-set", "{}"]
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
                     var j = JSON.parse(String(this.text));
                     win.eqApplied = j.applied === true;
-                    if (j.bands && j.bands.length === 10)
-                        win.eqBands = j.bands;
-                    if (j.preset)
-                        win.eqPreset = j.preset;
-                } catch (e) { }
+                    if (j.applyPreset) {
+                        if (j.bands && j.bands.length === 10)
+                            win.eqBands = j.bands;
+                        if (j.preset)
+                            win.eqPreset = j.preset;
+                    }
+                } catch (e) {
+                    win.eqApplied = false;
+                }
             }
+        }
+        onExited: function () {
+            if (win.eqDirty)
+                win.writeEq(false);
         }
     }
 
@@ -259,18 +278,21 @@ AppWindow {
         interval: 220
         onTriggered: win.writeEq(false)
     }
+    Timer {
+        id: eqKick
+        interval: 0
+        onTriggered: eqSet.running = true
+    }
 
     Process {
         id: playProc
         running: false
         command: ["python3", win.io(), "play", "{}"]
-        onExited: function (code) { if (code !== 0) console.warn("[Media] playback command exited code " + code); }
     }
     Process {
         id: careProc
         running: false
         command: ["python3", win.io(), "care"]
-        onExited: function (code) { if (code !== 0) console.warn("[Media] care read exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 try { win.care = JSON.parse(String(this.text)); } catch (e) { }
@@ -281,7 +303,6 @@ AppWindow {
         id: autoProc
         running: false
         command: ["python3", win.io(), "auto", "on"]
-        onExited: function (code) { if (code !== 0) console.warn("[Media] automix toggle exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: win.refresh()
         }
@@ -300,7 +321,7 @@ AppWindow {
             radius: Theme.r1
             color: Theme.elevated
             borderWidth: 1
-            borderColor: Theme.soften(Theme.paintLayers.glacier[4], 0.85)
+            borderColor: Theme.soften(Theme.lookSeam, 0.85)
         }
         Text {
             anchors.verticalCenter: parent.verticalCenter
@@ -348,7 +369,7 @@ AppWindow {
                     color: tile.art.length ? "transparent" : Theme.elevated
                     radius: Theme.r2
                     border.width: 1
-                    border.color: Theme.soften(Theme.paintLayers.glacier[4], 0.45)
+                    border.color: Theme.soften(Theme.lookSeam, 0.45)
                 }
             }
             Text {
@@ -391,7 +412,7 @@ AppWindow {
             radius: Theme.r1
             color: "transparent"
             border.width: 1
-            border.color: Theme.soften(Theme.paintLayers.glacier[4], 0.55)
+            border.color: Theme.soften(Theme.lookSeam, 0.55)
         }
         Text {
             id: lab
@@ -453,7 +474,7 @@ AppWindow {
                         y: parent.height / 2 - 1
                         width: 10
                         height: 2
-                        color: Theme.soften(Theme.paintLayers.glacier[4], 0.7)
+                        color: Theme.soften(Theme.lookSeam, 0.7)
                     }
                 }
                 MouseArea {
@@ -713,7 +734,8 @@ AppWindow {
                                 width: parent.width
                                 spacing: Theme.s5
                                 Repeater {
-                                    model: win.page === "home" ? win.kept.slice(0, 8) : win.kept
+                                    model: win.page === "home" ? win.kept.slice(0, 8)
+                                         : (win.page === "kept" ? win.kept : [])
                                     CoverTile {
                                         required property var modelData
                                         art: modelData.art
@@ -761,7 +783,8 @@ AppWindow {
                                 width: parent.width
                                 spacing: Theme.s5
                                 Repeater {
-                                    model: win.page === "home" ? win.albums.slice(0, 8) : win.shownAlbums
+                                    model: win.page === "home" ? win.albums.slice(0, 8)
+                                         : (win.page === "albums" ? win.shownAlbums : [])
                                     CoverTile {
                                         required property var modelData
                                         art: modelData.art
@@ -791,7 +814,7 @@ AppWindow {
                                 font.features: ({ "tnum": 1 })
                             }
                             Repeater {
-                                model: win.shownTracks
+                                model: win.page === "songs" ? win.shownTracks : []
                                 Item {
                                     required property var modelData
                                     required property int index
@@ -935,7 +958,7 @@ AppWindow {
                                 wrapMode: Text.WordWrap
                             }
                             Repeater {
-                                model: win.genres
+                                model: win.page === "genres" ? win.genres : []
                                 Column {
                                     required property var modelData
                                     width: pageInner.width
@@ -997,7 +1020,7 @@ AppWindow {
                                 }
                             }
                             Repeater {
-                                model: win.mixes
+                                model: win.page === "mixes" ? win.mixes : []
                                 Item {
                                     required property var modelData
                                     width: pageInner.width
@@ -1046,7 +1069,7 @@ AppWindow {
                                 font.pixelSize: Theme.tCaption
                             }
                             Repeater {
-                                model: win.queue
+                                model: win.page === "queue" ? win.queue : []
                                 delegate: Item {
                                     required property var modelData
                                     required property int index
@@ -1088,7 +1111,7 @@ AppWindow {
                             }
                             GhostBtn { label: qsTr("Scan again"); onTapped: win.refreshCare() }
                             Repeater {
-                                model: win.care.missing || []
+                                model: win.page === "care" ? (win.care.missing || []) : []
                                 delegate: Text {
                                     required property var modelData
                                     width: parent.width
@@ -1100,7 +1123,7 @@ AppWindow {
                                 }
                             }
                             Repeater {
-                                model: win.care.dups || []
+                                model: win.page === "care" ? (win.care.dups || []) : []
                                 delegate: Text {
                                     required property var modelData
                                     width: parent.width

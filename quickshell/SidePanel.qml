@@ -297,7 +297,7 @@ PanelWindow {
     // 2026-08-19 · owner: glacier/ice chrome only, drop rose.
     readonly property color iceInteractive: Theme.paintLayers.glacier[0]
     readonly property color icePrimary:     Theme.paintLayers.glacier[5]
-    readonly property color iceHairline:    Theme.paintLayers.glacier[4]
+    readonly property color iceHairline:    Theme.lookSeam
     // Owner 2026-08-19 palette map: magma = record / destructive;
     // violet = notifications / unread. Ice stays on rest / hover / Settings.
     readonly property color magmaInteractive: Theme.paintLayers.magma[0]
@@ -548,6 +548,7 @@ PanelWindow {
     // bar once; panel/rail Theme.s5 is the equal 12 px air, same as Start.
     margins.bottom: 0
     color: "transparent"
+    visible: !Prefs.arcadeMode
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "nyxus-side"
     WlrLayershell.keyboardFocus: root.expanded ? WlrKeyboardFocus.OnDemand
@@ -849,8 +850,8 @@ PanelWindow {
                 // two panels different colours from each other at every
                 // instant while both are always changing — the half of
                 // HORIZON §2.2 that survives the ruling.
-                sweepLo: Theme.driftLo(0.45)
-                sweepHi: Theme.driftHi(0.45)
+                sweepLo: Theme.lookMagma ? 0.0 : Theme.driftLo(0.45)
+                sweepHi: Theme.lookMagma ? 1.0 : Theme.driftHi(0.45)
                 sweepGamma: 1.0
                 audioBass: Beat.bass
                 audioMid: Beat.mid
@@ -897,8 +898,8 @@ PanelWindow {
             anchors.fill: parent
             radius: Theme.r3
             color: "transparent"
-            borderWidth: 1
-            borderColor: Theme.soften(Theme.paintLayers.glacier[4], 0.45)
+            borderWidth: Theme.lookOutlineW
+            borderColor: Theme.soften(Theme.lookSeam, 0.45)
         }
 
         // Owner 2026-08-19: edge motion when the flyout OPENS — same
@@ -1318,8 +1319,8 @@ PanelWindow {
                 // and its panel are one surface at two widths, and HORIZON
                 // §2.2 keys hue to HORIZONTAL position — both live on the
                 // right edge, so they wear the same slice of the drift.
-                sweepLo: Theme.driftLo(0.45)
-                sweepHi: Theme.driftHi(0.45)
+                sweepLo: Theme.lookMagma ? 0.0 : Theme.driftLo(0.45)
+                sweepHi: Theme.lookMagma ? 1.0 : Theme.driftHi(0.45)
                 sweepGamma: 1.0
                 audioBass: Beat.bass
                 audioMid: Beat.mid
@@ -1367,7 +1368,7 @@ PanelWindow {
             bottomRightRadius: Theme.r0
             bottomLeftRadius: Theme.r2
             border.width: 1
-            border.color: Theme.soften(Theme.paintLayers.glacier[4], 0.45)
+            border.color: Theme.soften(Theme.lookSeam, 0.45)
         }
 
         ColumnLayout {

@@ -37,7 +37,7 @@ Item {
     // Kept so pages can still pass `tone: page.tone`. The card body is
     // uncoloured glass — key-place colour lives on the controls, not a
     // per-card wash. Row seams are glacier[4], never rose glassBorder.
-    readonly property color iceHairline: Theme.paintLayers.glacier[4]
+    readonly property color iceHairline: Theme.lookSeam
 
     // Rows go here. Dedicated container, nothing else declared into it — the
     // `Pane.qml` self-parenting crash note applies to every default alias in

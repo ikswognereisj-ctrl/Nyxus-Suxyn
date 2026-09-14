@@ -38,7 +38,7 @@ Item {
                         ? SettingsStore.value(choice.key, choice.defaultValue)
                         : choice.defaultValue
 
-    readonly property color iceHairline: Theme.paintLayers.glacier[4]
+    readonly property color iceHairline: Theme.lookSeam
     // Typed wrappers — paintLayers rungs are hex strings; Theme.soften
     // reads .r/.g/.b. Passing a string is the PQ 08-21 NaN-black cut.
     readonly property color markWash: Theme.paintLayers.glacier[3]

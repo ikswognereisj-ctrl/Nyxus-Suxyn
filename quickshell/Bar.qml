@@ -60,6 +60,10 @@ import QtQuick.Effects
 PanelWindow {
     id: bar
 
+    // HDMI TV is the arcade glass. Nyxus chrome stays on the laptop.
+    readonly property bool onTv: bar.screen && String(bar.screen.name || "").indexOf("HDMI") === 0
+    visible: !bar.onTv && !Prefs.arcadeMode
+
     // ── icon size, bar-local ────────────────────────────────────────────────
     // Owner 2026-09-07: "can we make all the icons on the left and right side
     // a little bigger".
@@ -69,8 +73,8 @@ PanelWindow {
     // fix the bar. These are derived FROM it so the bar still tracks the
     // theme's scale — one step up, not a new invented number.
     readonly property int barIconPx:  Math.round(Theme.dockIcon * 1.40)   // 30 -> 42
-    readonly property int barTrayPx:  20                                   // was 17
-    readonly property int barTrayCell: 23                                  // was 20
+    readonly property int barTrayPx:  22                                   // was 17
+    readonly property int barTrayCell: 26                                  // was 20
 
     // Flush to three edges. Not inset, not floating, no margins: the chrome
     // IS the screen edge. `exclusiveZone` covers the whole zone, so a
@@ -100,18 +104,19 @@ PanelWindow {
     // Owner 2026-09-10: the bar has to read as the same glass as the
     // widget chips. Lip on — the 08-18 exception (no top boundary) is
     // what made it a dark strip instead of a pane.
-    property bool keepLip: true
+    property bool keepLip: false
     // Air above the chrome so the dock name can pop up like a lyric
     // and not sit inside the stone. Exclusive zone stays chromeH.
     readonly property int captionAir: 22
-    readonly property real _screenScale: Math.max(0.85, Math.min(1.20,
-        Math.min((bar.screen ? bar.screen.width : 1920) / 1920,
-                 (bar.screen ? bar.screen.height : 1200) / 1200)))
-    // Same air between every icon and its fall. Sigil used 0 (touching);
-    // dock used the gem box which looked gapped. One number.
+    // Same air between every icon and its fall. s4 (8px) is the gap the
+    // ICE bar shipped with — s5 butted the fall into the stone.
     readonly property int reflectGap: Theme.s4
-    implicitHeight: Theme.chromeH + bar.dissolveH
-                    + Math.max(18, Math.round(bar.captionAir * bar._screenScale))
+    readonly property bool barMirrors: true
+    // How much of the fall has to land ON the chrome. 48px gems in an 84px
+    // strip clip a full-height Reflection off the bottom of the window;
+    // this is the floor we keep clear so the contact band stays visible.
+    readonly property int reflectShow: 24
+    implicitHeight: Theme.chromeH + bar.dissolveH + bar.captionAir
     exclusiveZone: Theme.chromeH
     exclusionMode: ExclusionMode.Normal
     color: "transparent"
@@ -270,7 +275,7 @@ PanelWindow {
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
         height: 6
         z: 999
-        color: "#0d060d"
+        color: Theme.lookMagma ? "#0a0404" : "#0d060d"
     }
 
     // ── THE TOP DISSOLVES ───────────────────────────────────────────────
@@ -307,8 +312,9 @@ PanelWindow {
         // surface blocks ~93% of that seam — TRK-3487. Shelf tokens
         // (α 0.15 / 0.20 / 0.34) let the swirls show through.
         gradient: Gradient {
-            GradientStop { position: 0.00; color: Theme.shelfTop }
-            GradientStop { position: 0.42; color: Theme.shelfMid }
+            GradientStop { position: 0.00; color: Theme.shelfNone }
+            GradientStop { position: 0.22; color: Theme.shelfTop }
+            GradientStop { position: 0.55; color: Theme.shelfMid }
             GradientStop { position: 1.00; color: Theme.shelfDeep }
         }
     }
@@ -634,7 +640,7 @@ PanelWindow {
         glaze: 0
         body: 0
         wash: 0
-        edging: 0.70
+        edging: bar.keepLip ? 0.70 : 0
         // ── the bevel comes off the top edge ─────────────────────────
         // Owner ruling, 2026-08-18. This is a REVERSAL of a written rule,
         // not an application of one, and it is worth saying so here where
@@ -653,15 +659,9 @@ PanelWindow {
         topEdge: bar.keepLip ? 1.0 : 0.0
     }
 
-    // 1 px glacier[4] seam — the same hairline the widget chips carry.
-    Rectangle {
-        anchors { left: parent.left; right: parent.right }
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: Theme.chromeH - 1
-        height: 1
-        z: bar.zChrome
-        color: Theme.soften(Theme.paintLayers.glacier[4], 0.80)
-    }
+    // No top hairline. Owner: the bar's top dissolves into the wallpaper;
+    // a glacier seam here is a hard edge. Widgets keep lookOutlineW; this
+    // surface does not.
 
     // The content scrim (§4.2's layer stack: body → paint → SCRIM → content).
     // The paint is allowed to reach up behind the Sigil, the Row and the
@@ -1161,6 +1161,7 @@ PanelWindow {
         Item {
             id: sigil
             z: bar.zChrome
+            clip: false
             anchors {
                 left: parent.left
                 leftMargin: Theme.s7
@@ -1247,11 +1248,13 @@ PanelWindow {
             // Behaviors — and it is BOUND to the same `lit`, so the
             // reflection lights up with the real one instead of drifting.
             Reflection {
+                visible: bar.barMirrors
                 x: mark.x
                 anchors.top: mark.bottom
                 anchors.topMargin: bar.reflectGap
                 width: sigil.width
                 height: mark.height
+                gain: 1.35
                 Sigil {
                     id: markMirror
                     anchors.left: parent.left
@@ -1314,7 +1317,8 @@ PanelWindow {
                 leftMargin: Theme.s9
                 bottom: parent.bottom
             }
-            height: Theme.chromeH - 26
+            height: Theme.chromeH + bar.captionAir
+            clip: false
             spacing: Theme.s1
 
             // Which slot the pointer is over, by index, or -1. The dock's
@@ -1338,6 +1342,7 @@ PanelWindow {
                     readonly property string entryKey: modelData.key
                     width: Theme.dockSlot
                     height: row.height
+                    clip: false
 
                     // Where a slot sits across the screen decides its colour — the
                     // same rule the paint under it obeys.
@@ -1391,6 +1396,7 @@ PanelWindow {
                     // Start gems. Bar chrome / spectrum / MediaCrest untouched.
                     Item {
                         id: icon
+                        clip: false
                         anchors.horizontalCenter: parent.horizontalCenter
                         y: slot.height - 22 - height - (slot.hovered ? Theme.dockLift : 0)
                         width: bar.barIconPx + 12
@@ -1459,6 +1465,7 @@ PanelWindow {
                     // node in the same place. Proof it is unchanged:
                     // `docs/proof/bar-mirror-0907/`.
                     Reflection {
+                        visible: true
                         anchors.horizontalCenter: parent.horizontalCenter
                         y: icon.y + icon.height + bar.reflectGap
                         width: icon.width
@@ -1470,17 +1477,32 @@ PanelWindow {
                             xScale: slot.mag
                             yScale: slot.mag
                         }
-                        // Same stone as the dock, not the flat theme plate.
-                        // A second CrystalGem (not a ShaderEffectSource of
-                        // `icon`) — Reflection.qml's WIP-245 rule.
-                        CrystalGem {
+                        // Mirrored APP MARK, not a second CrystalGem: a
+                        // ShaderEffect inside Reflection's hidden capture
+                        // box renders nothing on this stack (probed live
+                        // 2026-09-14 — a plain Rectangle shows, the gem does
+                        // not), which is why the dock's falls went dark.
+                        // Every other Reflection in the build mirrors plain
+                        // content (sigil Image, clock Text, tray Images);
+                        // the dock now does the same.
+                        Image {
                             anchors.fill: parent
-                            hot: slot.hovered
-                            on: slot.modelData.focused || slot.modelData.running
-                            tint: slot.tone
-                            lookX: slot.lookX
-                            lookY: slot.lookY
-                            iconName: slot.modelData.icon
+                            source: Quickshell.iconPath(slot.modelData.icon, "application-x-executable")
+                            sourceSize.width: 128
+                            sourceSize.height: 128
+                            fillMode: Image.PreserveAspectFit
+                            mipmap: false
+                            asynchronous: true
+                            // The mirror is the RAW theme icon — glacier
+                            // palette and all. Under MAGMA that would throw
+                            // ice light onto the floor under ember stone, so
+                            // the fall is re-lit amber (luminance kept, hue
+                            // forced). ICE mirrors the icon untouched.
+                            layer.enabled: Theme.lookMagma
+                            layer.effect: MultiEffect {
+                                colorization: 1.0
+                                colorizationColor: Theme.magmaEmber
+                            }
                         }
                     }
 
@@ -1748,6 +1770,7 @@ PanelWindow {
                         // makes a mirrored `sweep2` rule a dim trace under a
                         // bright one instead of a second bright one.
                         Reflection {
+                            visible: bar.barMirrors
                             y: desks.mirrorY
                             anchors.horizontalCenter: parent.horizontalCenter
                             width: desk.width
@@ -1827,6 +1850,7 @@ PanelWindow {
                     // and its content fills the box — the reference case the
                     // pips' boxes are derived from.
                     Reflection {
+                        visible: bar.barMirrors
                         y: desks.mirrorY
                         anchors.horizontalCenter: parent.horizontalCenter
                         width: taskBtn.width
@@ -1968,6 +1992,7 @@ PanelWindow {
                     // (owner, 2026-08-14: the mirror "needs to also be
                     // complete"). Reflection.qml is the dock recipe packaged.
                     Reflection {
+                        visible: bar.barMirrors
                         anchors.top: trayIcon.bottom
                         anchors.topMargin: bar.reflectGap
                         anchors.horizontalCenter: trayIcon.horizontalCenter
@@ -2155,29 +2180,8 @@ PanelWindow {
                         tone: gauge.lit ? Theme.text : Theme.textMuted
                     }
 
-                    // ── the vitals' reflection ─────────────── TRK-3826 ──
-                    // Owner, 2026-09-07: "everything else on the right side
-                    // ... dont have the mirrored imaige underneath it".
-                    // These three were the last icons on the plate standing
-                    // on nothing — the SystemTray items beside them have had
-                    // the fall since 2026-08-14, which is what made the two
-                    // halves of the tray read as different builds.
-                    //
-                    // ⚠ THE REFLECTION IS HERE AND NOT IN `Vitals.qml`,
-                    // deliberately. Vitals is a `Row`, so a child added to
-                    // it is LAID OUT BY IT — a reflection declared inside
-                    // would take a fourth slot in the row and push the
-                    // battery sideways. It belongs to the call site, which
-                    // owns the box the row sits in.
-                    //
-                    // ⚠ AND IT IS A SECOND `Vitals`, NOT COPIED SHAPES. The
-                    // three indicators are ~200 lines of `Shape`/`PathAngleArc`
-                    // geometry, and hand-copying them here is the drift
-                    // failure this whole row exists to fix. The instance is
-                    // bound to the same `tone`, so it lights with the Gauge,
-                    // and to the same `Sys` state, so the mirrored battery
-                    // reads the real charge.
                     Reflection {
+                        visible: bar.barMirrors
                         anchors.top: vitalsRow.bottom
                         anchors.topMargin: bar.reflectGap
                         anchors.left: vitalsRow.left
@@ -2381,10 +2385,10 @@ PanelWindow {
             // `scripts/verify-time-format.py` greps for format strings, so a
             // second literal here is exactly what it exists to catch.
             Reflection {
+                visible: bar.barMirrors && midClockCol.visible
                 anchors.top: midClockCol.bottom
                 anchors.topMargin: bar.reflectGap
                 anchors.horizontalCenter: midClockCol.horizontalCenter
-                visible: midClockCol.visible
                 width: midClockCol.width
                 height: midClockCol.height
                 Column {
@@ -2447,10 +2451,10 @@ PanelWindow {
             // exactly when the owner is watching it. Same flip-the-column
             // rule as the clock above, for the same text-over-text reason.
             Reflection {
+                visible: bar.barMirrors && midNotice.visible
                 anchors.top: midNotice.bottom
                 anchors.topMargin: bar.reflectGap
                 anchors.horizontalCenter: midNotice.horizontalCenter
-                visible: midNotice.visible
                 strength: midNotice.opacity
                 width: midNotice.width
                 height: midNotice.height
@@ -2577,7 +2581,7 @@ PanelWindow {
                         text: Sys.playerPlaying ? "" : ""
                         font.family: Theme.fIcon
                         font.pixelSize: Theme.tHead
-                        color: Theme.paintLayers.glacier[0]
+                        color: Theme.lookHot
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: Sys.playerTogglePlaying() }
                     }
@@ -2816,7 +2820,6 @@ PanelWindow {
     readonly property var chromeKeepOut: {
         const out = [];
         const zs = bar.chromeZones;
-        const maxX = Math.max(1, bar.width);
         for (let i = 0; i < zs.length; i++) {
             const it = zs[i];
             // ⚠ x/width/visible are read explicitly, not merely used inside
@@ -2831,9 +2834,7 @@ PanelWindow {
             const p0 = it.mapToItem(null, 0, 0);
             if (!p0)
                 continue;
-            const x0 = Math.max(0, Math.min(maxX, p0.x));
-            const x1 = Math.max(x0, Math.min(maxX, p0.x + it.width));
-            out.push([x0, x1]);
+            out.push([p0.x, p0.x + it.width]);
         }
         return out;
     }

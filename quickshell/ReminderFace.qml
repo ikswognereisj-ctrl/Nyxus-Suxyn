@@ -33,7 +33,7 @@ Item {
     }
 
     readonly property color iceElevated: Theme.elevated
-    readonly property color iceSeam:     Theme.paintLayers.glacier[4]
+    readonly property color iceSeam:     Theme.lookSeam
     readonly property color icePeak:     Theme.paintLayers.glacier[6]
     readonly property color iceHover:    Theme.paintLayers.glacier[5]
     readonly property color iceFocus:    Theme.paintLayers.glacier[0]

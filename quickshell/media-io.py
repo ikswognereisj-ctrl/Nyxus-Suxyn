@@ -2,6 +2,7 @@
 """Library, mixes, play, and EasyEffects EQ for Media.qml."""
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import socket
@@ -18,10 +19,12 @@ CACHE = Path.home() / ".cache/nyxus"
 GENRE_CACHE = CACHE / "media-genre.json"
 PLAYLIST = CACHE / "media-queue.m3u8"
 SOCK = CACHE / "media.sock"
+EQ_LOCK = CACHE / "media-eq.lock"
 EE_DIRS = (
     Path.home() / ".local/share/easyeffects/output",
     Path.home() / ".config/easyeffects/output",
 )
+EE_SOCK = Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}") / "EasyEffectsServer"
 
 # Fifteen 10-band curves. First ten match GTK nyxus_media.py; five more
 # so the Tone page has a full preset row like the owner remembers.
@@ -72,7 +75,7 @@ def _load_cfg() -> dict:
 
 def _save_cfg(cfg: dict) -> None:
     CFG.parent.mkdir(parents=True, exist_ok=True)
-    tmp = CFG.with_suffix(".json.tmp")
+    tmp = CFG.with_name(f"{CFG.stem}.{os.getpid()}.tmp")
     tmp.write_text(json.dumps(cfg, indent=2) + "\n")
     tmp.replace(CFG)
 
@@ -403,6 +406,106 @@ def cmd_list() -> None:
     }, sys.stdout)
 
 
+def _eq_af(enabled: bool, bands: list[float]) -> str:
+    """ffmpeg equalizer chain for mpv. Used only when EasyEffects is down."""
+    if not enabled:
+        return ""
+    parts = []
+    for i, g in enumerate(bands):
+        try:
+            gain = float(g)
+        except (TypeError, ValueError):
+            continue
+        if abs(gain) < 0.05:
+            continue
+        parts.append(f"equalizer=f={EQ_FREQS[i]}:t=q:width=1:g={gain:.2f}")
+    return ",".join(parts)
+
+
+def _apply_eq_to_mpv(enabled: bool, bands: list[float]) -> bool:
+    return _mpv_cmd(["set_property", "af", _eq_af(enabled, bands)])
+
+
+def _eq_from_cfg() -> tuple[bool, list[float]]:
+    cfg = _load_cfg()
+    bands = cfg.get("eq_bands")
+    if not isinstance(bands, list) or len(bands) != 10:
+        bands = list(EQ_PRESETS.get(str(cfg.get("eq_preset") or "Flat"), EQ_PRESETS["Flat"]))
+    return bool(cfg.get("eq_enabled", True)), [float(x) for x in bands]
+
+
+def _ee_talk(lines: list[str], want_reply: bool = False) -> str | None:
+    """Talk to the already-running Easy Effects 8 local server.
+
+    Never spawn `easyeffects`: a second Qt instance SIGSEGVs on teardown
+    (coredump 2026-09-10 / 2026-09-12) and nyxus-crashd fires notify-send.
+    """
+    if not EE_SOCK.exists():
+        return None
+    blob = "".join(x if x.endswith("\n") else x + "\n" for x in lines).encode()
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(1.0)
+    try:
+        s.connect(str(EE_SOCK))
+        s.sendall(blob)
+        if not want_reply:
+            return ""
+        data = b""
+        while True:
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            data += chunk
+            if b"\n" in data:
+                break
+        return data.decode("utf-8", "replace").strip()
+    except OSError:
+        return None
+    finally:
+        try:
+            s.close()
+        except OSError:
+            pass
+
+
+def _apply_eq_to_easyeffects(enabled: bool, bands: list[float]) -> bool:
+    """Set live equalizer#0 gains on the running service. No GUI, no -l."""
+    probe = _ee_talk(["get_property:output:equalizer:0:bypass"], want_reply=True)
+    if probe is None:
+        return False
+    if probe.startswith("error_"):
+        _ee_talk(["load_preset:output:nyxus-media-eq"])
+        probe = _ee_talk(["get_property:output:equalizer:0:bypass"], want_reply=True)
+        if probe is None or probe.startswith("error_"):
+            return False
+    cmds = [
+        f"set_property:output:equalizer:0:bypass:{'true' if not enabled else 'false'}",
+    ]
+    split = _ee_talk(["get_property:output:equalizer:0:splitChannels"], want_reply=True)
+    channels = ["left"]
+    if split == "true":
+        channels.append("right")
+    for ch in channels:
+        for i, g in enumerate(bands[:10]):
+            gain = 0.0 if not enabled else float(g)
+            cmds.append(f"set_property:output:equalizer:0:{ch}:band{i}Gain:{gain:.3f}")
+    if _ee_talk(cmds) is None:
+        return False
+    check = _ee_talk(["get_property:output:equalizer:0:left:band0Gain"], want_reply=True)
+    if check is None or check.startswith("error_"):
+        return False
+    return True
+
+
+def _apply_eq(enabled: bool, bands: list[float]) -> bool:
+    """EasyEffects socket first (system output). mpv lavfi only if EE is down."""
+    if _apply_eq_to_easyeffects(enabled, bands):
+        if SOCK.exists():
+            _apply_eq_to_mpv(False, bands)
+        return True
+    return _apply_eq_to_mpv(enabled, bands)
+
+
 def _mpv_cmd(cmd: list) -> bool:
     try:
         s = socket.socket(socket.AF_UNIX)
@@ -413,6 +516,34 @@ def _mpv_cmd(cmd: list) -> bool:
         return True
     except OSError:
         return False
+
+
+def _kill_stale_players() -> None:
+    """Stop every mpv bound to our IPC socket. Unlinking the socket does not
+    kill them — that is how a pile of headless players kept audio going with
+    no window (owner, third time)."""
+    marker = str(SOCK)
+    me = os.getpid()
+    for ent in os.listdir("/proc"):
+        if not ent.isdigit():
+            continue
+        pid = int(ent)
+        if pid == me:
+            continue
+        try:
+            raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+        except OSError:
+            continue
+        cmd = raw.replace(b"\0", b" ").decode("utf-8", "replace")
+        if "mpv" in cmd and marker in cmd:
+            try:
+                os.kill(pid, 15)
+            except OSError:
+                pass
+    try:
+        SOCK.unlink()
+    except OSError:
+        pass
 
 
 def cmd_care() -> None:
@@ -471,30 +602,46 @@ def cmd_play() -> None:
     lines = ["#EXTM3U"]
     lines.extend(paths)
     PLAYLIST.write_text("\n".join(lines) + "\n")
-    try:
-        SOCK.unlink()
-    except OSError:
-        pass
+    # Reuse the live player if it still answers. NEVER unlink the socket
+    # first: that makes IPC fail, starts a second mpv, and the old one
+    # keeps playing with no window.
+    enabled, bands = _eq_from_cfg()
+    ee_live = _apply_eq_to_easyeffects(enabled, bands)
+    af = "" if ee_live else _eq_af(enabled, bands)
     if _mpv_cmd(["loadlist", str(PLAYLIST), "replace"]):
         _mpv_cmd(["playlist-play-index", start])
+        if not ee_live:
+            _apply_eq_to_mpv(enabled, bands)
         json.dump({"ok": True, "n": len(paths), "via": "ipc"}, sys.stdout)
         return
-    env = os.environ.copy()
+    _kill_stale_players()
+    argv = [
+        "mpv", "--no-video", "--force-window=no",
+        "--idle=yes", "--keep-open=no",
+        f"--input-ipc-server={SOCK}",
+        f"--playlist-start={start}",
+        "--title=Media",
+        str(PLAYLIST),
+    ]
+    if af:
+        argv.insert(-1, f"--af={af}")
+    mpris = Path("/usr/lib/mpv/scripts/mpris.so")
+    if mpris.is_file():
+        argv[1:1] = [f"--script={mpris}"]
     subprocess.Popen(
-        [
-            "mpv", "--no-video", "--force-window=no",
-            "--idle=yes", "--keep-open=no",
-            f"--input-ipc-server={SOCK}",
-            f"--playlist-start={start}",
-            "--title=Media",
-            str(PLAYLIST),
-        ],
+        argv,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,
-        env=env,
+        env=os.environ.copy(),
     )
     json.dump({"ok": True, "n": len(paths), "via": "mpv"}, sys.stdout)
+
+
+def cmd_stop() -> None:
+    _mpv_cmd(["stop"])
+    _kill_stale_players()
+    json.dump({"ok": True}, sys.stdout)
 
 
 def cmd_auto(on: bool) -> None:
@@ -515,11 +662,14 @@ def cmd_eq_get() -> None:
     bands = cfg.get("eq_bands")
     if not isinstance(bands, list) or len(bands) != 10:
         bands = list(EQ_PRESETS.get(str(cfg.get("eq_preset") or "Flat"), EQ_PRESETS["Flat"]))
+    on_player = _mpv_cmd(["get_property", "pause"])
     json.dump({
         "enabled": bool(cfg.get("eq_enabled", True)),
         "preset": str(cfg.get("eq_preset") or "Custom"),
         "bands": [float(x) for x in bands],
         "presets": list(EQ_PRESETS.keys()),
+        "applied": on_player or "eq_bands" in cfg or "eq_preset" in cfg,
+        "onPlayer": on_player,
     }, sys.stdout)
 
 
@@ -568,7 +718,11 @@ def _write_easyeffects(enabled: bool, bands: list[float]) -> None:
 
 def cmd_eq_set() -> None:
     raw = sys.argv[2] if len(sys.argv) > 2 else sys.stdin.read()
-    req = json.loads(raw)
+    try:
+        req = json.loads(raw)
+    except json.JSONDecodeError as e:
+        json.dump({"ok": False, "applied": False, "error": str(e)}, sys.stdout)
+        return
     enabled = bool(req.get("enabled", True))
     preset = str(req.get("preset") or "Custom")
     bands = [float(x) for x in (req.get("bands") or EQ_PRESETS["Flat"])]
@@ -578,30 +732,43 @@ def cmd_eq_set() -> None:
         bands = list(EQ_PRESETS[preset])
         if preset != "Flat":
             enabled = True
-    cfg = _load_cfg()
-    cfg["eq_enabled"] = enabled
-    cfg["eq_preset"] = preset
-    cfg["eq_bands"] = bands
-    _save_cfg(cfg)
-    _write_easyeffects(enabled, bands)
     applied = False
     err = ""
+    lock_fh = None
     try:
-        r = subprocess.run(
-            ["easyeffects", "-l", "nyxus-media-eq"],
-            capture_output=True, text=True, timeout=8,
-        )
-        applied = r.returncode == 0
-        if not applied:
-            err = (r.stderr or r.stdout or "").strip()[-200:]
+        CACHE.mkdir(parents=True, exist_ok=True)
+        lock_fh = open(EQ_LOCK, "a")
+        fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+        cfg = _load_cfg()
+        cfg["eq_enabled"] = enabled
+        cfg["eq_preset"] = preset
+        cfg["eq_bands"] = bands
+        _save_cfg(cfg)
+        try:
+            _write_easyeffects(enabled, bands)
+        except OSError:
+            pass
+        applied = _apply_eq(enabled, bands)
     except Exception as e:
         err = str(e)
+        applied = False
+    finally:
+        if lock_fh is not None:
+            try:
+                fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass
+            try:
+                lock_fh.close()
+            except OSError:
+                pass
     json.dump({
         "ok": True,
         "enabled": enabled,
         "preset": preset,
         "bands": bands,
         "applied": applied,
+        "applyPreset": bool(req.get("applyPreset")),
         "error": err,
         "presets": list(EQ_PRESETS.keys()),
     }, sys.stdout)
@@ -615,6 +782,8 @@ if __name__ == "__main__":
         cmd_eq_set()
     elif op == "play":
         cmd_play()
+    elif op == "stop":
+        cmd_stop()
     elif op == "care":
         cmd_care()
     elif op == "auto":

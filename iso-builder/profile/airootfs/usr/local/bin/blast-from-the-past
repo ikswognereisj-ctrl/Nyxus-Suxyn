@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# BLAST FROM THE PAST — EmulationStation + Blast theme on the HDMI cabinet.
+# Library is mounted, never copied. Optional remote is ~/.config/nyxus/arcade-library.conf
+set -euo pipefail
+
+ROMS="${HOME}/Games/roms"
+THEME="${HOME}/.emulationstation/themes/blast-from-the-past"
+LIB_CONF="${XDG_CONFIG_HOME:-$HOME/.config}/nyxus/arcade-library.conf"
+
+mkdir -p "$ROMS"
+
+if [[ -f "$LIB_CONF" ]]; then
+  SOURCE="" HOST="" REMOTE="" LOCAL=""
+  while IFS='=' read -r k v || [[ -n "${k:-}" ]]; do
+    k="${k%%#*}"; k="${k%"${k##*[![:space:]]}"}"
+    [[ -z "$k" ]] && continue
+    v="${v#"${v%%[![:space:]]*}"}"
+    v="${v%"${v##*[![:space:]]}"}"
+    v="${v#\"}"; v="${v%\"}"
+    case "$k" in
+      SOURCE) SOURCE=$v ;;
+      HOST) HOST=$v ;;
+      REMOTE) REMOTE=$v ;;
+      LOCAL) LOCAL=$v ;;
+    esac
+  done < "$LIB_CONF"
+  if [[ -n "$LOCAL" ]]; then
+    ROMS="${LOCAL/#\~/$HOME}"
+    mkdir -p "$ROMS"
+  fi
+  if [[ "$SOURCE" == "sshfs" && -n "$HOST" && -n "$REMOTE" ]]; then
+    if ! mountpoint -q "$ROMS"; then
+      if ssh -o ConnectTimeout=4 -o BatchMode=yes "$HOST" "test -d $(printf '%q' "$REMOTE")" 2>/dev/null; then
+        echo "Mounting ${HOST}:${REMOTE} → $ROMS"
+        sshfs -o reconnect,idmap=user "${HOST}:${REMOTE}" "$ROMS"
+      else
+        echo "${HOST} not reachable — wheel still loads; lists stay empty until the library is mounted."
+      fi
+    fi
+  fi
+fi
+
+POS="0,0"
+RES_W=1920
+RES_H=1080
+DISP=0
+if command -v hyprctl >/dev/null && command -v python3 >/dev/null; then
+  # 4K preferred mode made the wheel unreadably small on the Vizio.
+  hyprctl keyword monitor HDMI-A-1,1920x1080@60,auto,1 >/dev/null 2>&1 || \
+    hyprctl keyword monitor HDMI-A-1,preferred,auto,1 >/dev/null 2>&1 || true
+  sleep 0.4
+  mapfile -t geo < <(hyprctl -j monitors 2>/dev/null | python3 -c '
+import json, sys
+try:
+    ms = json.load(sys.stdin)
+except Exception:
+    raise SystemExit(0)
+if not ms:
+    raise SystemExit(0)
+hdmi = [m for m in ms if str(m.get("name", "")).startswith("HDMI")]
+m = hdmi[0] if hdmi else ms[0]
+names = [str(x.get("name", "")) for x in ms]
+idx = names.index(str(m.get("name", ""))) if str(m.get("name", "")) in names else 0
+print("%s,%s" % (int(m.get("x", 0)), int(m.get("y", 0))))
+print(int(m.get("width", 1920)))
+print(int(m.get("height", 1080)))
+print(int(idx))
+' || true)
+  if [[ ${#geo[@]} -ge 4 ]]; then
+    POS="${geo[0]}"
+    RES_W="${geo[1]}"
+    RES_H="${geo[2]}"
+    DISP="${geo[3]}"
+    # Cap the wheel at 1080p even if the mode change did not stick.
+    if [[ "$RES_W" -gt 1920 ]]; then
+      RES_W=1920
+      RES_H=1080
+    fi
+  fi
+fi
+
+if ! command -v emulationstation >/dev/null; then
+  echo "EmulationStation is not installed:"
+  echo "  yay -S emulationstation retroarch"
+  echo "Theme expected at: $THEME"
+  exit 1
+fi
+
+export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-x11}"
+export SDL_VIDEO_WINDOW_POS="${SDL_VIDEO_WINDOW_POS:-$POS}"
+export SDL_VIDEO_FULLSCREEN_DISPLAY="${SDL_VIDEO_FULLSCREEN_DISPLAY:-$DISP}"
+exec emulationstation --resolution "$RES_W" "$RES_H" --windowed

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# BLAST FROM THE PAST — own Hyprland session (greetd / wayland-sessions)
+set -euo pipefail
+export PATH="${HOME}/.local/bin:/usr/local/bin:${PATH}"
+export NYXUS_ARCADE=1
+export XDG_CURRENT_DESKTOP=Hyprland
+export XDG_SESSION_TYPE=wayland
+export XDG_SESSION_DESKTOP=Hyprland
+export MOZ_ENABLE_WAYLAND=1
+exec nyxus-session-start

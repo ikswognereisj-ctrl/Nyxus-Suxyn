@@ -163,7 +163,14 @@ Item {
         // yzw reserved; keep x > 0 or the shader reads the whole vector as
         // unset and falls back to the shipped gain.
         property vector4d state: Qt.vector4d(Math.max(0.02, pane.dispersion),
-                                             0, 0, 0)
+                                             Theme.lookMagma ? 0.90 : 0, 0, 0)
+        // Theme.lookSweep — ice is teal→plum, magma is ember. Unset
+        // uniforms in pane.frag read as black, not the ICE plum rim.
+        property vector4d sweep0: Theme.lookStop(0)
+        property vector4d sweep1: Theme.lookStop(1)
+        property vector4d sweep2: Theme.lookStop(2)
+        property vector4d sweep3: Theme.lookStop(3)
+        property vector4d sweep4: Theme.lookStop(4)
 
         Behavior on look {
             // vector4d interpolates componentwise, so rim / crown / bloom /

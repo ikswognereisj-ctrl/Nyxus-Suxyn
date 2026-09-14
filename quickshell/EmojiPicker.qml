@@ -283,7 +283,7 @@ PanelWindow {
             color: "transparent"
             antialiasing: true
             border.width: 1
-            border.color: Theme.soften(Theme.paintLayers.glacier[4], 0.45)
+            border.color: Theme.soften(Theme.lookSeam, 0.45)
         }
 
         ColumnLayout {

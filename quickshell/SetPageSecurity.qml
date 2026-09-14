@@ -28,7 +28,7 @@ SetPage {
     blurb: qsTr("Lock this session, see what the firmware reports, and what may reach the machine.")
 
     readonly property color iceOn: Theme.paintLayers.glacier[5]
-    readonly property color iceHair: Theme.paintLayers.glacier[4]
+    readonly property color iceHair: Theme.lookSeam
 
     property var posture: ({})
     property var hemera: ({})

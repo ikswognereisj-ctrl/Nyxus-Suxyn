@@ -1,0 +1,10 @@
+Nyxus Suxyn live image build stamp
+==================================
+iso            : __ISO_NAME__
+built          : __STAMP__
+source commit  : __COMMIT__  (branch: __BRANCH__)
+kernel baked   : stock linux only
+iso label      : NYXUS_SUXYN
+
+NEW image of this Alienware edition — not a recover of nyxus-suxyn-2026.09.02.
+If this commit is not what you expect, you are booting a STALE image — rebake.

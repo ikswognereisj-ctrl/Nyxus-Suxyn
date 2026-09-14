@@ -197,7 +197,7 @@ PanelWindow {
     WlrLayershell.namespace: "nyxus-frost"
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
     color: "transparent"
-    visible: win.on
+    visible: win.on && !Prefs.arcadeMode && !(win.screen && String(win.screen.name || "").indexOf("HDMI") === 0)
 
     // Never takes a pointer event — see the header. Without this the pane
     // would swallow the click that focuses the window it is sitting on.

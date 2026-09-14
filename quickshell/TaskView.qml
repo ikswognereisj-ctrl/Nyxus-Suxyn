@@ -248,7 +248,7 @@ PanelWindow {
             bottomRightRadius: Theme.r0
             bottomLeftRadius: Theme.r0
             border.width: 1
-            border.color: Theme.soften(Theme.paintLayers.glacier[4], 0.45)
+            border.color: Theme.soften(Theme.lookSeam, 0.45)
         }
 
         // Swallow clicks so the dismiss MouseArea behind does not close us

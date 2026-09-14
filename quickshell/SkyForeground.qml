@@ -108,7 +108,7 @@ PanelWindow {
     // that far left of the card's visible edge — so clearing the card is not
     // enough; the keep-out has to clear the chip's surface. Read from Theme,
     // not typed in, so it tracks the pad the chips actually use.
-    readonly property int holeX: keepOutLeft < 0
+    readonly property int holeX: (root.onTv || keepOutLeft < 0)
         ? screenW
         : Math.max(0, Math.min(screenW, keepOutLeft - Theme.bloomPad))
     readonly property int holeY: keepOutTop < 0 ? 0 : Math.max(0, keepOutTop)
@@ -121,7 +121,10 @@ PanelWindow {
     anchors { left: true; right: true; top: true; bottom: true }
     exclusionMode: ExclusionMode.Ignore
     exclusiveZone: 0
-    WlrLayershell.layer: WlrLayer.Bottom
+    // Background, not Bottom: nyxus-desktop icons also live on Bottom, and a
+    // qs reload remapped this plate on top of them. Declared after Headliner
+    // so the planet still sits on the stars, under the icons and chips.
+    WlrLayershell.layer: WlrLayer.Background
     WlrLayershell.namespace: "nyxus-sky-foreground"
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
     color: "transparent"
@@ -136,6 +139,7 @@ PanelWindow {
     property bool artBroken: false
     onArtworkChanged: root.artBroken = false
 
+    readonly property bool onTv: root.screen && String(root.screen.name || "").indexOf("HDMI") === 0
     visible: root.artEnabled && root.artwork !== "" && !root.artBroken
              && root.screenW > 0 && root.screenH > 0
 
@@ -157,8 +161,6 @@ PanelWindow {
             width: root.screenW
             height: root.screenH
             source: root.artwork
-            // Must match LiveWall: same Fit, same origin, so -fg registers
-            // with -bg. Crop would zoom 16:10 plates (hyprlock-eye).
             fillMode: Image.PreserveAspectFit
             asynchronous: true
             cache: true

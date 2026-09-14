@@ -52,8 +52,9 @@ PanelWindow {
                                   && !Bus.mediaCrestDocked
                                   && !Bus.launcherOpen && !Bus.powerOpen
                                   && !Bus.flyoutOpen
+    readonly property bool onTv: root.screen && String(root.screen.name || "").indexOf("HDMI") === 0
 
-    visible: root.shown
+    visible: root.shown && !root.onTv && !Prefs.arcadeMode
     mask: Region { item: root.shown ? card : null }
 
     anchors { left: true; right: true; bottom: true }
@@ -66,7 +67,7 @@ PanelWindow {
 
     readonly property color iceInteractive: Theme.paintLayers.glacier[0]
     readonly property color icePrimary: Theme.paintLayers.glacier[5]
-    readonly property color iceHairline: Theme.paintLayers.glacier[4]
+    readonly property color iceHairline: Theme.lookSeam
     readonly property color iceOn: Theme.paintLayers.glacier[3]
     readonly property color icePeak: Theme.paintLayers.glacier[6]
 
@@ -296,8 +297,8 @@ PanelWindow {
             radius: Theme.r3
             color: "transparent"
             antialiasing: true
-            border.width: 1
-            border.color: Theme.soften(Theme.paintLayers.glacier[4], 0.45)
+            border.width: Theme.lookOutlineW
+            border.color: Theme.soften(Theme.lookSeam, 0.55)
         }
 
         // Ice hairline on the floor of the card — a player, not a notice.
@@ -703,8 +704,8 @@ PanelWindow {
                         anchors.fill: parent
                         enabled: MediaSource.canSeek
                         cursorShape: Qt.PointingHandCursor
-                        onPressed: root.seekAt(mouse.x, track.width)
-                        onPositionChanged: if (pressed) root.seekAt(mouse.x, track.width)
+                        onPressed: function (mouse) { root.seekAt(mouse.x, track.width); }
+                        onPositionChanged: function (mouse) { if (pressed) root.seekAt(mouse.x, track.width); }
                     }
                 }
                 Text {

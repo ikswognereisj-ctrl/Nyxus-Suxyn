@@ -52,9 +52,9 @@ FloatingWindow {
     implicitWidth: 960
     implicitHeight: 640
 
-    readonly property color iceInteractive: Theme.paintLayers.glacier[0]
-    readonly property color icePrimary: Theme.paintLayers.glacier[5]
-    readonly property color iceHairline: Theme.paintLayers.glacier[4]
+    readonly property color iceInteractive: Theme.lookHot
+    readonly property color icePrimary: Theme.lookPale
+    readonly property color iceHairline: Theme.lookSeam
 
     // ── state, all of it from a real probe ───────────────────────────────
     property int updateCount: -1        // -1 = not checked yet

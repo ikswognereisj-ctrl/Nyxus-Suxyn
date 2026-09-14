@@ -63,6 +63,7 @@ PanelWindow {
     WlrLayershell.namespace: "nyxus-launcher"
     exclusionMode: ExclusionMode.Ignore
     color: "transparent"
+    visible: !Prefs.arcadeMode
 
     // The real login name — the same call the Flyout's user card uses, so
     // the two surfaces cannot disagree about who is logged in.
@@ -76,7 +77,7 @@ PanelWindow {
     // magma = power. Violet is notifications (Toasts / flyout), not here.
     readonly property color iceInteractive: Theme.paintLayers.glacier[0]
     readonly property color icePrimary:     Theme.paintLayers.glacier[5]
-    readonly property color iceHairline:    Theme.paintLayers.glacier[4]
+    readonly property color iceHairline:    Theme.lookSeam
     readonly property color magmaInteractive: Theme.paintLayers.magma[0]
 
     // ── the apps ─────────────────────────────────────────────────────────
@@ -128,6 +129,26 @@ PanelWindow {
         { name: qsTr("Calendar"),       icon: "nyxus-calendar" ,          exec: "@calendar",              cat: "apps"   },
         { name: qsTr("Weather"),        icon: "nyxus-weather"     ,       exec: "@weather",               cat: "apps"   },
         { name: qsTr("Store"),          icon: "nyxus-store"            ,  exec: "@store",                 cat: "apps"   },
+        // TRK-3756/3757, 2026-09-06 -- the owner's two built apps ("i built a
+        // couple apps i need to make sure those have app icons and that
+        // they are real apps"). Both were sitting on his machine with no
+        // .desktop, no icon and no roster tile -- invisible to Start and to
+        // 13q37's roster check either way. Added here AND to 13q13's ROSTER
+        // in verify-profile.sh, the same two-place addition WIP-306 (Media)
+        // and WIP-461 (Help) made -- a tile here with no roster entry fails
+        // 13q13 as "extra"; a roster entry with no tile here fails 13q37.
+        //
+        // THEY SIT HERE, INSIDE THE apps GROUP, AND NOT AT THE END OF THE
+        // ARRAY. Appended after the tools group on 2026-09-07 they were
+        // present, correct, and drew in the grid's LAST row -- below the
+        // fold of a 240px-floored Flickable, so the first thing the owner
+        // saw after the deploy was a Start menu that still did not show
+        // his apps. Order in this array IS the visible order; a tile the
+        // user has to scroll to find has not been added as far as he is
+        // concerned.
+        { name: qsTr("Helm"),           icon: "nyxus-helm",               exec: "nyxus-helm",             cat: "apps"   },
+        { name: qsTr("Gen Studio"),     icon: "nyxus-gen-studio",         exec: "nyxus-gen-studio",       cat: "apps"   },
+
         // ONE player: nyxus-media (WIP-306 / TRK-931). Audacious is still
         // packaged (PKG-5, replaceable) but is not a Start tile — two tiles
         // (Media vs Music) is why the owner thought there was no player.
@@ -155,6 +176,18 @@ PanelWindow {
         // ROSTER must have a tile here — so the next app cannot land the same
         // way this one did.
         { name: qsTr("Help"),           icon: "nyxus-help",               exec: "@help",                  cat: "system" },
+        // TRK-3752 — Brain, the local assistant, commissioned by the owner
+        // on 2026-09-06: "i was suppose to have an AI that knew my system
+        // and i could ask it whatever with a chat box". Every piece of it
+        // already existed on his machine (Ollama, three pulled models, and
+        // ~/nyxus-brain-corpus) and none of it was reachable, so the tile
+        // is the deliverable as much as the window is — the same reasoning
+        // the Help row above records.
+        //
+        // `system`, not `tools`: it answers about THIS machine, so it sits
+        // with Settings and Hardware rather than with the calculator. Its
+        // accent is coral for exactly that reason — see APP_ACCENTS.
+        { name: qsTr("Brain"),          icon: "nyxus-brain",              exec: "@brain",                 cat: "system", keys: "ai assistant chat ask question llm ollama" },
         { name: qsTr("Hardware"),       icon: "nyxus-control",                      exec: "@hardware",              cat: "system" },
         // WIP-463 / GAP-945: gnome-disk-utility. Arch extra desktop id is
         // org.gnome.DiskUtility.desktop (Exec=gnome-disks). The GNOME extra
@@ -217,7 +250,8 @@ PanelWindow {
         if (s.indexOf("chromium") >= 0) return Theme.azure;
         if (s.indexOf("thunderbird") >= 0) return Theme.plumGlow;
         if (s.indexOf("ghostty") >= 0) return Theme.tokenAccentHairline;
-
+        if (s.indexOf("helm") >= 0) return Theme.plum;
+        if (s.indexOf("gen-studio") >= 0) return Theme.plumGlow;
         if (s.indexOf("hardware") >= 0 || s.indexOf("control") >= 0)
             return Theme.goldGlow;
         if (s.indexOf("sysmon") >= 0) return Theme.tokenAccentPrimary;
@@ -515,8 +549,8 @@ PanelWindow {
             anchors.fill: parent
             radius: gchip.radius
             color: "transparent"
-            borderWidth: 1
-            borderColor: Theme.soften(Theme.paintLayers.glacier[4], gchip.seamA)
+            borderWidth: Theme.lookOutlineW
+            borderColor: Theme.soften(Theme.lookSeam, gchip.seamA)
             Behavior on borderColor { ColorAnimation { duration: Theme.durQuick } }
         }
     }
@@ -877,6 +911,13 @@ PanelWindow {
             Bus.appLaunched();
             return;
         }
+        if (cmd === "@brain" || String(cmd || "").indexOf("nyxus-brain") !== -1
+                || String(cmd || "").indexOf("nyxus_brain") !== -1) {
+            Bus.launcherOpen = false;
+            Bus.openBrain();
+            Bus.appLaunched();
+            return;
+        }
         if (cmd === "@hardware" || String(cmd || "").indexOf("nyxus-control") !== -1
                 || String(cmd || "").indexOf("nyxus_control") !== -1) {
             Bus.launcherOpen = false;
@@ -960,7 +1001,6 @@ PanelWindow {
             + "    seen.add(f)\n"
             + "    print('%s\\t%s\\t%d\\t%s' % (os.path.basename(f), os.path.basename(os.path.dirname(f)), os.path.getmtime(f), f))\n"
             + "    if len(seen)>=4: break\n"]
-        onExited: function (code) { if (code !== 0) console.warn("[Launcher] recents scan exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 var out = [];
@@ -994,7 +1034,6 @@ PanelWindow {
             + "for label,sub in want:\n"
             + "    p=os.path.join(h,sub) if sub else h\n"
             + "    if os.path.isdir(p): print('%s\\t%s' % (label,p))\n"]
-        onExited: function (code) { if (code !== 0) console.warn("[Launcher] places scan exited code " + code); }
         stdout: StdioCollector {
             onStreamFinished: {
                 var out = [];
@@ -1152,7 +1191,8 @@ PanelWindow {
     // deck), so its width takes the panel's 264 + one s6 gutter on top of
     // the old 760. Height is unchanged; the availW/availH clamp still rules.
     readonly property int swellHeight: Math.min(root.daily ? 560 : 760, availH)
-    readonly property int swellWidth: Math.min(root.daily ? 1040 : 1040, availW)
+    readonly property int swellWidth: Math.min(
+        (root.daily && !Theme.lookMagma) ? 1040 : 760, availW)
     readonly property int layerW: swellWidth + Theme.bloomPad
     readonly property int layerH: swellHeight + Theme.bloomPad
 
@@ -1197,7 +1237,6 @@ PanelWindow {
     // plus hidden content (the card, below) once the sink animation and a
     // drain beat have passed. Unmapping is the murder weapon; we took it
     // away.
-    visible: true
     readonly property bool contentShown: Bus.launcherOpen || unmapLinger.running
     Timer { id: unmapLinger; interval: 650 }
     Connections {
@@ -1389,101 +1428,50 @@ PanelWindow {
                 // there is no double dye -- one stroke per frame either way.
                 interactive: true
                 playIntroOnLoad: true
-                // ── the levels, and why they are NOT the bar's ──────────
-                // First cut set all four to the bar's numbers literally, put
-                // it on screen, and the page went milky white under the hand:
-                // the app list was unreadable and the filaments vanished into
-                // a slab. That is Bar.qml's own lesson arriving from the other
-                // direction — dye saturation, not gain, is what kills
-                // structure — and it bites harder here for a reason worth
-                // writing down: the bar is 72 px of a 168 px paint item, most
-                // of it off-screen, so its field is CLIPPED. This one is a
-                // ~760 px page, ~8× the visible area, fed by a pointer that
-                // roams all of it instead of skimming one edge. Same dye per
-                // splat, eight times the dwell, and the field floods.
-                //
-                // So the brightness the owner asked for is bought with
-                // `opacity` — which is what lets the dark glass show BETWEEN
-                // the strands, and therefore what makes filaments read — while
-                // the dye itself is cut back until the cores stop railing.
-                // Second cut, and the owner's words are the specification:
-                // "it's really bright when the swirls start going and you
-                //  really can't see them like you should — it's almost like
-                //  looking at a bright light."
-                //
-                // Both halves of that are ONE fault. A blown core is not a
-                // bright filament, it is a filament with its structure clipped
-                // off: every value above the rail lands on the same white, so
-                // the strand, its edge and the gap beside it become one shape.
-                // You cannot see them BECAUSE it is bright. Turning the light
-                // down is what makes them appear.
-                introStrength: 0.22     // a big panel wants a softer opening
-                opacity: 0.85           // the bar's, unchanged: contrast
-                exposure: 0.92          // headroom, so cores hold structure
-                injectGain: 0.38        // the flood knob: dye per stroke
-                // 0.62 of FOUR segments was position 2.48 (indigo into violet).
-                // swirl_splat.frag now has SIX, and sweepHi is a fraction of the
-                // whole ramp, so the same colour is 2.48/6 = 0.413. Left at 0.62
-                // this panel would have silently slid into the new rose stops --
-                // the launcher is the teal end of the screen ON PURPOSE and this
-                // keeps it exactly where it was. HORIZON §2.2: hue is a function
-                // of horizontal position, so the Start surface is teal for the
-                // same reason the clock end is plum. "Like the bar" was about
-                // how much you can SEE, not about which end of the sweep.
-                // ── the Drift (Theme.qml § THE DRIFT) ────────────────
-                // Was a fixed slice ending at 0.413 — the teal end, because
-                // HORIZON §2.2 made hue a coordinate. The owner has since
-                // asked for the colour to keep moving through the theme
-                // instead, so the slice is now the shell-wide drift read at
-                // this surface's own offset. Offset 0.0 is the reference the
-                // other surfaces are spaced from.
-                sweepLo: Theme.driftLo(0.0)
-                sweepHi: Theme.driftHi(0.0)
-                sweepGamma: 1.0
-                // ── the strand size ─────────────────────────────────
-                // Owner, 2026-08-09: "the start menu swirls, can you make it
-                // smaller like you did the other one so the swirls itself
-                // aren't so huge." The Flyout got this treatment first (see
-                // SidePanel.qml § the narrow-panel correction) and it is the
-                // same knob: `impulseRadius` is NORMALISED, so the ported
-                // default of 0.245 is a ~255 px dab across this 1040 px page.
-                // 0.075 puts it at ~78 px — strands you can see the shape of,
-                // rather than one blob per stroke.
-                impulseRadius: 0.075
-                // swirl-live.html's `pill` preset: curl 32, force 4400,
-                // densityDissipation 0.30, splatRadius 0.060, simShort 80.
-                curlAmp: 0.64
-                force: 4400
-                // 0.30 was the strip's. On the page it let every stroke
-                // ACCUMULATE — the wash behind your hand never cleared, so a
-                // few seconds of moving around built the slab back up whatever
-                // the injection was. Faster dissipation is what turns a stroke
-                // into a TRAIL that closes behind you, which is the thing that
-                // actually reads as liquid.
-                // ── keeping it ALIVE with no hand on it ─────────────
-                // The paint kept disappearing whenever the owner stopped
-                // moving, and `interactive: true` alone did not fix it: a
-                // PARKED pointer injects nothing (a stroke is computed from
-                // MOTION), so the only thing feeding the field between
-                // gestures is the ambient stirrers -- and at decayRate 0.46
-                // the dye was dissipating faster than they could lay it down.
-                // The field was not switched off; it was being erased.
-                //
-                // decayRate eases back, and the stirrers get real force, so
-                // the surface is always moving on its own and your hand adds
-                // to a live field instead of starting one from black. This is
-                // the owner's "the swirls activate at all times".
-                decayRate: 0.38
-                ambientAmp: 0.95
-                // The strip was 80. A full page is ~8× the area, and at 80 the
-                // filaments came out as fat blobs because the sim grid, not the
-                // solver, was the limit. 128 keeps the strand width the bar has.
-                simShort: 128
-                bloom: 0.80
+                alwaysAlive: true
+                batterySaver: false
+                restOpacity: 1.0
+                maxStepHz: 72
+                // Exact bar recipe (BarSeam.qml). impulseRadius is a fraction
+                // of THIS item's height, so the bar's 0.10 is ~17 px on a
+                // 168 px strip and ~58 px on Start — that is why the first
+                // port looked huge. Scale to the bar's paint height so a
+                // strand is the same number of pixels here as on the bar.
+                paintMode: Theme.lookMagma
+                    ? "paint"
+                    : Prefs.swirlMode
+                ramp: PaintMood.ramp
+                introStrength: 0.55
+                opacity: 0.85
+                exposure: 0.92
+                saturation: Theme.lookMagma ? 1.22 : 1.0
+                sheen: Theme.lookMagma ? 0.35 : 0.18
+                injectGain: Theme.lookMagma ? 0.70 : 0.38
+                sweepLo: 0
+                sweepHi: 1.0
+                sweepGamma: Theme.lookMagma ? 1.35 : 1.0
+                impulseRadius: (Theme.lookMagma ? 0.10 : 0.15)
+                               * Theme.paintH / Math.max(height, Theme.paintH)
+                curlAmp: Theme.lookMagma ? 0.64 : 1.55
+                force: 5600
+                decayRate: 0.36
+                ambientAmp: 0.86
+                ambientVortex: 0.90
+                ambientCurrentX: 0.042
+                ambientCurrentY: 0.032
+                ambientEvenSweep: true
+                ambientDye: 0.48
+                velocityDecay: 0.12
+                pointerForceMul: 1.21
+                simShort: 96
+                bloom: Theme.lookMagma ? 0.80 : 0.45
                 audioBass: Beat.bass
                 audioMid: Beat.mid
                 audioHigh: Beat.high
                 audioPulse: Beat.pulse
+                audioKick: Beat.kick
+                audioDrive: 4.5
+                audioDyeKick: 1.6
                 musicActive: Beat.hot
             }
         }
@@ -1578,8 +1566,8 @@ PanelWindow {
             anchors.fill: parent
             radius: Theme.r3
             color: "transparent"
-            borderWidth: 1
-            borderColor: Theme.soften(Theme.paintLayers.glacier[4], 0.45)
+            borderWidth: Theme.lookOutlineW
+            borderColor: Theme.soften(Theme.lookSeam, 0.45)
         }
 
         // Colour may move; legibility may not (accent.json _swirl rule 5).
@@ -2461,6 +2449,7 @@ PanelWindow {
             // MeterRow the SYSTEM desktop widget language uses.
             // TRK-3370 — side column card onto the widgets' stack.
             GlassChip {
+                visible: !Theme.lookMagma
                 Layout.fillHeight: true
                 Layout.preferredWidth: 264
                 edging: 0.85
@@ -3133,6 +3122,7 @@ PanelWindow {
                 // ── right: the machine, at a glance ──────────────────────
                 // TRK-3370 — side column card onto the widgets' stack.
                 SetSlab {
+                    visible: !Theme.lookMagma
                     Layout.fillHeight: true
                     Layout.preferredWidth: 284
                     level: 1

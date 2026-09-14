@@ -94,8 +94,9 @@
 // light in it) and below the content.
 //
 // 2026-08-19 owner: YES — this is the living BLUE edge they asked
-// about (the "glass thing"). Rim filaments, glacier/ice only. Not
-// Swirl, not Bar shaders, not Hyprland window decoration (Beat).
+// about (the "glass thing"). Rim filaments follow Theme.lookHot /
+// lookPale / lookPeak. Not Swirl, not Bar shaders, not Hyprland
+// window decoration (Beat).
 //
 // 2026-08-19 owner: this is the motion on START / the flyout when they
 // OPEN — filaments and a focus sweep that travel the RIM only, not a
@@ -247,19 +248,10 @@ Item {
     // measure at, which is the agreement the material asks for.
     property real fieldScale: 64
 
-    // ══ THE FILAMENT'S COLOUR · ICE, ON PURPOSE ══════════════════════════
-    // The token still says the filament takes the active paint layer. Owner
-    // 2026-08-19 overrode that for THIS rim: glacier/ice only, no magma or
-    // violet. `paintRamp` stays the face-swirl picker. No hex is written
-    // here — the stops are `Theme.paintLayers.glacier` [0]/[5]/[6].
+    // Filament follows the look set. ICE = glacier[0]/[5]/[6]; MAGMA uses
+    // the matching magma rungs. Face paint stays `paintRamp`.
     function _rampAt(t) {
-        // THIS RIM IS ICE. paintRamp follows Prefs.swirlLayer (rose / magma
-        // / glacier / violet) — that is the FACE paint. Owner 2026-08-19:
-        // the living edge is glacier only, #b7e6f2 / #7fe8ff language, no
-        // magma or violet on the rim. Bright rungs only so a dark steel
-        // stop cannot open a hole at a bend under source-over.
-        var g = Theme.paintLayers.glacier;
-        var ice = [g[0], g[5], g[6]];
+        var ice = [Theme.lookHot, Theme.lookPale, Theme.lookPeak];
         var n = ice.length - 1;
         var x = Math.max(0, Math.min(1, t)) * n;
         var i = Math.floor(x);
@@ -557,7 +549,7 @@ Item {
     // else, and every state edge in these two surfaces is drawn by
     // `StateEdge.qml` on a control inside it, never on this ring.
     readonly property color _seamColor:
-        Theme.soften(Theme.tokenAccentHairline, 0.22)
+        Theme.soften(Theme.lookSeam, 0.22)
 
     // ══ LAYER 1 · THE FILAMENT · a thin ring, ridge-extracted ═════════════
     // A Canvas, not a stack of Rectangles, for one reason: the ridge has to be
@@ -737,7 +729,7 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: "transparent"
-        border.width: 1
+        border.width: Theme.lookOutlineW
         border.color: mat._seamColor
         topLeftRadius: mat.radiusTL
         topRightRadius: mat.radiusTR

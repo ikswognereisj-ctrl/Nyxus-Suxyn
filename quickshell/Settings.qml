@@ -179,7 +179,7 @@ FloatingWindow {
     // (owner 2026-08-19 ~20:42). Hub LAYOUT is unchanged.
     readonly property color iceInteractive: Theme.paintLayers.glacier[0]
     readonly property color icePrimary:     Theme.paintLayers.glacier[5]
-    readonly property color iceHairline:    Theme.paintLayers.glacier[4]
+    readonly property color iceHairline:    Theme.lookSeam
     readonly property color icePeak:        Theme.tokenAccentPeak
     readonly property color magmaMark:      Theme.paintLayers.magma[5]
     readonly property color glacierText:    Theme.paintLayers.glacier[5]

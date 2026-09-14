@@ -6,10 +6,11 @@
 // PER-CORNER radii draws four things at once:
 //
 //   body   — the dark translucent fill. Colour never goes behind text.
-//   rim    — a 1px DISPERSIVE edge. Not a border colour: the signature sweep
+//   rim    — a 1px DISPERSIVE edge. Not a border colour: Theme.lookSweep
 //            distributed around the perimeter by the edge normal, so the
-//            top-left of any surface catches teal and the bottom-right
-//            catches plum — as if the galaxy sweep were the light and the rim
+//            top-left of any surface catches the look's bright stop and the
+//            bottom-right catches the look's rim (plum on ice, magma[5] on
+//            magma) — as if the galaxy sweep were the light and the rim
 //            were a prism. This is the detail that makes unrelated surfaces
 //            look like one product.
 //
@@ -52,23 +53,27 @@ layout(std140, binding = 0) uniform buf {
     vec4 body;    // fill rgba, straight (premultiplied below)
     vec4 look;    // x rim · y crown · z bloom alpha · w focus (0..1)
     vec4 state;   // x dispersion gain (1.0 = shipped) · yzw reserved
+    vec4 sweep0;  // Theme.lookSweep[0]  ice teal / magma bright
+    vec4 sweep1;
+    vec4 sweep2;
+    vec4 sweep3;
+    vec4 sweep4;  // ice plum #891955 / magma[5]  — the widget rim
 };
 
-// The signature sweep, accent.json _gradient.sweep. Hardcoded here for the
-// same reason swirl_splat.frag hardcodes it: a .qsb has no access to QML.
-// If the palette moves, both shaders move with it.
-const vec3 S0 = vec3(0.039, 0.635, 0.839);   // #0aa2d6 teal
-const vec3 S1 = vec3(0.024, 0.310, 0.584);   // #064f95 azure
-const vec3 S2 = vec3(0.118, 0.012, 0.678);   // #1e03ad indigo
-const vec3 S3 = vec3(0.322, 0.118, 0.447);   // #521e72 violet
-const vec3 S4 = vec3(0.537, 0.098, 0.333);   // #891955 plum
-
+// Live colour is Theme.lookSweep via uniforms. Do not fall back to the
+// ice plum rim — that kept MAGMA widgets showing the first layer in the
+// corners. Unset uniforms read as black, not #891955.
 vec3 sweepColor(float t) {
+    vec3 a = sweep0.rgb;
+    vec3 b = sweep1.rgb;
+    vec3 c = sweep2.rgb;
+    vec3 d = sweep3.rgb;
+    vec3 e = sweep4.rgb;
     t = clamp(t, 0.0, 1.0) * 4.0;
-    if (t < 1.0) return mix(S0, S1, t);
-    if (t < 2.0) return mix(S1, S2, t - 1.0);
-    if (t < 3.0) return mix(S2, S3, t - 2.0);
-    return mix(S3, S4, t - 3.0);
+    if (t < 1.0) return mix(a, b, t);
+    if (t < 2.0) return mix(b, c, t - 1.0);
+    if (t < 3.0) return mix(c, d, t - 2.0);
+    return mix(d, e, t - 3.0);
 }
 
 // p centred, y DOWN. b = half extent. r = TL, TR, BR, BL.
@@ -107,7 +112,8 @@ void main() {
 
     // ── rim ──────────────────────────────────────────────────────────
     float focus = clamp(look.w, 0.0, 1.0);
-    float rimW  = 1.15 + 0.55 * focus;
+    // state.y is extra rim width in px (MAGMA glacier outline). 0 = shipped.
+    float rimW  = 1.15 + 0.55 * focus + max(state.y, 0.0);
     float rimBand = clamp(1.0 - abs(d + 0.75) / rimW, 0.0, 1.0);
     rimBand = rimBand * rimBand * (3.0 - 2.0 * rimBand);
     // light from above: the top edge of anything is its brightest edge

@@ -24,6 +24,8 @@ Singleton {
 
     // ── living paint (Swirl.qml; Settings → Appearance → Living paint) ──
     readonly property bool swirlEnabled: adapter.swirl_enabled
+    // BLAST session: Hyprland + sky + cabinet, no Nyxus chrome.
+    readonly property bool arcadeMode: Quickshell.env("NYXUS_ARCADE") === "1"
     readonly property real swirlIntensity: adapter.swirl_intensity
     readonly property bool swirlMusic: adapter.swirl_music
     // TRK-3711 · the bar's music visualiser. Its OWN key, on the owner's
@@ -65,7 +67,37 @@ Singleton {
     // always wears glacier. Motion: "ambient" or "interactive". Off is
     // swirl_enabled, the master switch.
     readonly property string swirlLayer: "glacier"
+    // Preview-only dye for the living paint. Not a fifth paintLayers entry.
+    // glacier = house. wine / violet = look at the bar, then put it back.
+    readonly property string swirlPreview: {
+        var k = adapter.swirl_preview;
+        if (k === "rose" || k === "magma" || k === "violet" || k === "wine")
+            return k;
+        return "glacier";
+    }
     readonly property string swirlMotion: adapter.swirl_motion
+    // Two complete looks, like light/dark. ice = house (glacier paint,
+    // plum widget rims). magma = ember paint and ember widget rims.
+    // NYXUS/ALIEN still owns mark, lock, sounds.
+    readonly property string lookSet:
+        adapter.look_set === "magma" ? "magma" : "ice"
+
+    // Window rims live in Hyprland, not Theme. Push the active layer there
+    // so MAGMA does not leave ice/plum compositor chrome.
+    function applyHyprLook() {
+        const magma = prefs.lookSet === "magma";
+        hyprLook.command = [
+            "sh", "-c",
+            magma
+                ? "hyprctl keyword general:col.active_border 'rgba(f7a83bff) rgba(050203ff) 45deg' && hyprctl keyword general:col.inactive_border 'rgba(050203a6)' && cat > \"$HOME/.config/gtk-4.0/look-override.css\" <<'EOF'\n:root { --accent-color: #ff7847; --accent-fg-color: #1a0806; }\n@define-color accent_color #ff7847;\n@define-color accent_bg_color #050203;\n@define-color theme_selected_bg_color #58100f;\nEOF"
+                : "hyprctl keyword general:col.active_border 'rgba(4f7fa6a6)' && hyprctl keyword general:col.inactive_border 'rgba(4f7fa673)' && cat > \"$HOME/.config/gtk-4.0/look-override.css\" <<'EOF'\n:root { --accent-color: #7fe8ff; --accent-fg-color: #020506; }\n@define-color accent_color #7fe8ff;\n@define-color accent_bg_color #040b0e;\n@define-color theme_selected_bg_color #274b7a;\nEOF"
+        ];
+        hyprLook.running = false;
+        hyprLook.running = true;
+    }
+    onLookSetChanged: prefs.applyHyprLook()
+    Component.onCompleted: prefs.applyHyprLook()
+    Process { id: hyprLook }
 
     // ── THE FROST (Frost.qml; Settings ▸ Windowing ▸ Unfocused windows) ──
     // Every window you are not looking at, blurred so its text cannot be read
@@ -648,7 +680,9 @@ Singleton {
             // `lyricsOnline` above and Settings ▸ Appearance ▸ SYNCED LYRICS.
             property bool lyrics_online: false
             property string swirl_layer: "glacier"
+            property string swirl_preview: "glacier"
             property string swirl_motion: "ambient"
+            property string look_set: "ice"
             // TRK-3361/3362/3398 · the control paint, 2026-08-28.
             //
             // OFF by default, on the owner's ruling after seeing it on his own

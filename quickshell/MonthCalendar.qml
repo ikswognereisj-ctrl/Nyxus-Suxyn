@@ -23,7 +23,7 @@ Item {
     // Ice day stone — same rungs as SetIceFace. Today was Theme.sweep0→sweep2
     // (`#0aa2d6` fill, banned). Magma none. Hover glacier[5], focus glacier[0].
     readonly property color iceElevated: Theme.elevated                 // #071318
-    readonly property color iceSeam:     Theme.paintLayers.glacier[4]   // #4f7fa6
+    readonly property color iceSeam:     Theme.lookSeam   // #4f7fa6
     readonly property color icePeak:     Theme.paintLayers.glacier[6]   // #eefcff
     readonly property color iceHover:    Theme.paintLayers.glacier[5]   // #b7e6f2
     readonly property color iceFocus:    Theme.paintLayers.glacier[0]   // #7fe8ff

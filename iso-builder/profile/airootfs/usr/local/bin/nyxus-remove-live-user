@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Drop the live nyx account unless Calamares created that username.
+set -euo pipefail
+install_user="${1:-}"
+if [[ "${install_user}" == "nyx" ]]; then
+  exit 0
+fi
+if id nyx >/dev/null 2>&1; then
+  userdel -r nyx 2>/dev/null || userdel nyx 2>/dev/null || true
+fi
+rm -rf /home/nyx 2>/dev/null || true
+exit 0

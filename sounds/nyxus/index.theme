@@ -1,0 +1,23 @@
+[Sound Theme]
+Name=NYXUS
+Comment=Suxyn ice bell — glacier bar, near-harmonic, full OS event stack
+# THE INSTRUMENT IS AN ICE BELL. Near-harmonic partials with the small
+# stretch a real struck bar has -- 1, 2.004, 3.012, 4.028, 5.05, 6.09 --
+# so it SINGS rather than clangs, with an octave-below hum under it for
+# the matte black. That is the deliberate opposite of the alien theme's
+# struck glass (inharmonic 1, 2.00, 2.76, 5.40, 8.93 with ring modulation):
+# one is the house, the other is the visitor.
+#
+# THE TWO-TIER MIX IS UNCHANGED and it is the reason the set works: ui-*
+# events peak at 0.106-0.134, system events at 0.850 -- 16 dB above the
+# loudest ui event. UI family 40-120 ms; system 150-600 ms; boot/login
+# at most ~1.2 s.
+#
+# Source: sounds/nyxus/compose_nyxus.py (numpy + ffmpeg; sox is not on
+# this host). Stems live in stereo/ as 48 kHz stereo wav, with .oga
+# siblings for canberra.
+Inherits=freedesktop
+Directories=stereo
+
+[stereo]
+OutputProfile=stereo

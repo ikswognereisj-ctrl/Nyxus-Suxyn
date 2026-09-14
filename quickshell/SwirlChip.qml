@@ -95,13 +95,8 @@ Item {
     // dye: the Line takes its ramp through PaintMood. TRK-2999.
     // Child Swirl binds `chip.ramp`.
     //
-    // TRK-3360 (2026-08-28): that ramp is now `paintPlumHorizon` — ice at the
-    // bright end, plum through the body — so a control wears the same paint
-    // the bar does with nothing to change here. The note this replaced said
-    // the dye stays ice because "widget plum is sky through the glass"; the
-    // owner corrected that on 08-28. The widget plum is not the sky, it is
-    // `glassBorder` (`plumBody` #891955), a token this build already draws
-    // on every widget corner — which is why the two never matched.
+    // Ramp is PaintMood.ramp → Theme.paintRamp. Widget rims follow
+    // Theme.lookWidgetBorder (plumBody on ice, pale glacier on magma).
     property var ramp: PaintMood.ramp
     // The host's own corner. A SetSwitch track is a capsule (radius =
     // height/2), not a Theme.r2 card, and the display pass's rounded-rect SDF

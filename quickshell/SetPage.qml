@@ -39,7 +39,7 @@ Item {
     // Kept so every card on the page can still inherit a category stop.
     // The page chrome itself is uncoloured — heading hairline is a SEAM
     // (glacier[4], never rose glassBorder).
-    readonly property color iceHairline: Theme.paintLayers.glacier[4]
+    readonly property color iceHairline: Theme.lookSeam
 
     default property alias body: cardWell.data
 

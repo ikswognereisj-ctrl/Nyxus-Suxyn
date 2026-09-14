@@ -226,6 +226,28 @@ SetPage {
         }
 
         SetRow {
+            title: qsTr("Wi-Fi")
+            sub: qsTr("When you join a network, leave it, or a join fails")
+
+            SetSwitch {
+                key: "notify_wifi"
+                defaultValue: true
+                tone: page.tone
+            }
+        }
+
+        SetRow {
+            title: qsTr("Bluetooth")
+            sub: qsTr("When a device connects or disconnects — headphones especially")
+
+            SetSwitch {
+                key: "notify_bluetooth"
+                defaultValue: true
+                tone: page.tone
+            }
+        }
+
+        SetRow {
             title: qsTr("Battery")
             sub: qsTr("At 20%, at 10%, and when the charger is unplugged")
 
@@ -237,22 +259,17 @@ SetPage {
         }
 
         SetRow {
-            title: qsTr("Bluetooth")
-            available: false
-            unavailableReason: qsTr("Unavailable")
-        }
-
-        SetRow {
             title: qsTr("Updates")
-            available: false
-            unavailableReason: qsTr("Unavailable")
+            sub: qsTr("Available updates already toast from the checker. Install lives under Updates.")
+            navigates: true
+            onActivated: Bus.openSettings("updates")
         }
     }
 
     // TRK-1261 / TRK-3135 — keys this page WRITES. notify_dnd is written
     // by Sys.qml (one bool, many toggles), not here — 13r81 would fail if
-    // it sat on this Reset row. notify_bluetooth / notify_updates are
-    // honesty-disabled (TRK-3125).
+    // it sat on this Reset row. usb_notify stays on the USB page (TRK-3423).
+    // notify_updates is not a key: nyxus-update-check already toasts.
     SetResetRow {
         what: qsTr("Notifications")
         // TRK-3423: `notify_sound` (reader-less twin, no longer written) and
@@ -260,6 +277,7 @@ SetPage {
         // writes — 13r81 holds the two sides equal.
         // TRK-3664 adds the three the redesigned card brought with it.
         keys: ["toast_seconds", "toast_stack", "toast_corner", "toast_actions",
-               "toast_dwell", "ui_sound_notify", "notify_battery"]
+               "toast_dwell", "ui_sound_notify", "notify_battery",
+               "notify_wifi", "notify_bluetooth"]
     }
 }

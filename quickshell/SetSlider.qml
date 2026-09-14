@@ -56,7 +56,7 @@ Item {
     readonly property color markOn: Theme.paintLayers.glacier[5]
     readonly property color markFocus: Theme.paintLayers.glacier[0]
     readonly property color markPeak: Theme.paintLayers.glacier[6]
-    readonly property color markHairline: Theme.paintLayers.glacier[4]
+    readonly property color markHairline: Theme.lookSeam
 
     signal moved(real value)
     signal released(real value)

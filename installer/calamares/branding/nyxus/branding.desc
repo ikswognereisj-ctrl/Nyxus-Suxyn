@@ -31,19 +31,17 @@ windowPlacement:       center
 # typed and had been a lie on every bake since — which is what a hand-pinned
 # version always becomes, because nothing recomputes it and no gate could tell
 # a stale month from a current one.
-# So the three version strings carry the literal token `2026.09.02`, and
-# `build-iso.sh` substitutes `${ISO_DATE}` — the SAME variable that names the
-# ISO file and stamps profiledef.sh's iso_version and os-release's BUILD_ID —
-# into the /var/tmp working copy at bake time. One source for the date, four
-# consumers, and the bake ABORTS if any token survives the substitution, so a
-# broken stamp is loud on the build box instead of quiet on a user's screen.
-# `productName`/`shortProductName` stay literal: the product name is not dated.
+# The three version strings carry the token `__ISO_DATE__`. `build-iso.sh`
+# substitutes the SAME date that names the ISO file and stamps profiledef.sh
+# iso_version and os-release IMAGE_VERSION. The bake ABORTS if any token
+# survives, so a broken stamp is loud on the build box instead of quiet on
+# a user's screen. `productName`/`shortProductName` stay literal.
 strings:
     productName:         "Nyxus Suxyn"
     shortProductName:    "Nyxus Suxyn"
-    version:             "Nyxus Suxyn · 2026.09.02"
-    shortVersion:        "2026.09.02"
-    versionedName:       "Nyxus Suxyn · 2026.09.02"
+    version:             "Nyxus Suxyn · __ISO_DATE__"
+    shortVersion:        "__ISO_DATE__"
+    versionedName:       "Nyxus Suxyn · __ISO_DATE__"
     shortVersionedName:  "Nyxus Suxyn"
     bootloaderEntryName: "Nyxus Suxyn"
     productUrl:          "https://ikswognereisj-ctrl.github.io/Nyxus-Suxyn/"

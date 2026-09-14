@@ -22,7 +22,7 @@ Item {
     implicitWidth: 220
     clip: true
 
-    readonly property color iceHair: Theme.tokenAccentHairline
+    readonly property color iceHair: Theme.lookSeam
     readonly property bool hot: cardHov.hovered || card.selected
 
     HoverHandler { id: cardHov; cursorShape: Qt.PointingHandCursor }
@@ -66,7 +66,7 @@ Item {
             anchors.fill: parent
             radius: Theme.r2
             color: "transparent"
-            borderWidth: 1
+            borderWidth: Theme.lookOutlineW
             borderColor: Theme.soften(card.iceHair, card.hot ? 0.85 : 0.50)
             Behavior on borderColor { ColorAnimation { duration: Theme.durQuick } }
         }

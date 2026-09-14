@@ -1,0 +1,11 @@
+[background]
+# Optional; missing file → solid colour. Bake copies a wall here if present.
+path = "/usr/share/backgrounds/nyxus/nyxus-login-wall.png"
+
+[GTK]
+application_prefer_dark_theme = true
+theme_name = "adw-gtk3-dark"
+
+[commands]
+reboot = ["systemctl", "reboot"]
+poweroff = ["systemctl", "poweroff"]

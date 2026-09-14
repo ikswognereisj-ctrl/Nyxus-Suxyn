@@ -199,7 +199,7 @@ Item {
     readonly property color icePrimary:  Theme.paintLayers.glacier[5]
     readonly property color iceFocus:    Theme.paintLayers.glacier[0]
     readonly property color icePeak:     Theme.paintLayers.glacier[6]
-    readonly property color iceHairline: Theme.paintLayers.glacier[4]
+    readonly property color iceHairline: Theme.lookSeam
 
     // Only meaningful when there is something to scroll.
     readonly property bool scrollable: flick && flick.contentHeight > flick.height + 1

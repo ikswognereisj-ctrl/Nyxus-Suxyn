@@ -91,6 +91,8 @@ Scope {
     PanelWindow {
         id: mapWin
         visible: hud.enabled && (mapWin.v > 0.001)
+                 && !(mapWin.screen && String(mapWin.screen.name || "").indexOf("HDMI") === 0)
+                 && !Prefs.arcadeMode
         anchors {
             right: hud.corner.indexOf("right") >= 0
             left: hud.corner.indexOf("left") >= 0

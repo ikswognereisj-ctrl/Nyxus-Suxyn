@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Nyxus Suxyn
+Comment=Nyxus Suxyn desktop
+Exec=nyxus-session-start
+Type=Application
+DesktopNames=Hyprland
+Keywords=nyxus;suxyn;tiling;wayland;compositor;
