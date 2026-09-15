@@ -64,6 +64,20 @@ DEST="${NYXUS_GREETER_DEST:-/usr/share/nyxus-greeter}"
 # adding a file to that directory is a deliberate act with a name attached.
 OVERLAY_QML=(Greeter.qml GreeterChrome.qml NyxusMark.qml OcularMark.qml)
 
+# ── the two layered walls, one per look ────────────────────────────────────
+# Greeter.qml selects between these off Theme.lookMagma. The names are here
+# rather than there because these are the only two files in the whole greeter
+# that are ART DIRECTION rather than code, and the person changing the login
+# picture should not have to read QML to do it.
+#
+# Chosen by measurement, not by eye. Mean colour of the lit pixels, R−B:
+#     suxyn-nebula-veil   −19.3   cool glacier   → ICE
+#     suxyn-magma-world   +77.0   ember (near)   → MAGMA
+# suxyn-magma-world is byte-identical to the `suxyn-magma-open` pair he runs
+# on the desktop -- the same files under two names -- so the login screen and
+# the desktop are literally the same picture, not a matched one.
+GREETER_WALLS=(suxyn-nebula-veil suxyn-magma-world)
+
 die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 info() { printf '  %s\n' "$*"; }
 
@@ -119,6 +133,28 @@ stage() {
   [ -d "$SRC/shaders" ]  && cp -r "$SRC/shaders/."  "$out/shaders/"
   [ -d "$SRC/textures" ] && cp -r "$SRC/textures/." "$out/textures/"
   [ -d "$SRC/i18n" ]     && cp -r "$SRC/i18n/."     "$out/i18n/"
+
+  # ── the layered wall art ─────────────────────────────────────────────────
+  # ⚠ STAGED, not referenced in place. The desktop reads these out of
+  # ~/.local/share/nyxus/walls, and greetd runs the greeter as the `greeter`
+  # user, which cannot read /home. A path into his home resolves to nothing
+  # at the login screen and the wall falls back to the photograph WITHOUT
+  # saying so -- it just looks like the change never landed. Copying them
+  # here beside the QML is what makes Greeter.qml's relative walls/ URLs work.
+  #
+  # Both pairs ship, because the greeter picks between them at runtime off
+  # Theme.lookMagma and must not need a reinstall to follow a theme switch.
+  mkdir -p "$out/walls"
+  local w
+  for w in "${GREETER_WALLS[@]}"; do
+    for half in bg fg; do
+      if [ -f "$REPO/hypr/walls/$w-$half.png" ]; then
+        cp "$REPO/hypr/walls/$w-$half.png" "$out/walls/"
+      else
+        die "layered wall half missing from the repo: $w-$half.png"
+      fi
+    done
+  done
 
   # The overlay goes on top, so a greeter-only file always wins.
   for b in "${OVERLAY_QML[@]}"; do

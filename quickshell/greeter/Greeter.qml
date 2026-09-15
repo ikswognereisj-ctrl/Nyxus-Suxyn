@@ -60,9 +60,9 @@ Window {
         (Quickshell.env("NYXUS_GREET_THEME") === "alien") ? "alien" : "nyxus"
     readonly property bool _alien: greetTheme === "alien"
 
-    // ── the sky ──────────────────────────────────────────────────────────────
-    // Fallback only. The photograph is the login picture; this is what you
-    // get if neither candidate is readable, instead of a black screen.
+    // ── THE SKY · the layer under everything ─────────────────────────────────
+    // Live, procedural, and theme-aware, so there is always something real
+    // behind the wall rather than void if a file is unreadable.
     HeadlinerSky {
         anchors.fill: parent
         active: !root.unlocking
@@ -71,26 +71,101 @@ Window {
         master: 1.0
     }
 
-    // ── his login image ──────────────────────────────────────────────────────
-    // B&W milky way + vortex Earth. Bundled copy is frame 0 so cage's first
-    // buffer is the photograph, not void (TRK-3243). /etc/greetd is the
-    // seed; cache is last because the GTK lane may overwrite it with GRUB
-    // starlight. lock-still.png is a different picture — do not use it.
+    // ── THE LAYERED WALL ───────────────────────────── owner, TRK-4157 ───────
+    // "for the greeter when changing it to quickshell i want the background
+    //  image designed by layers so everythin g matches"
+    //
+    // This used to be ONE flat photograph — a greyscale milky way with a
+    // vortex at the foot of it — and that is precisely why the login screen
+    // could never match anything. A greyscale file has no opinion about the
+    // theme. He could switch the whole system to MAGMA and the first screen
+    // he saw would still be the same grey picture it was under ICE, because
+    // there was nothing in it that could respond.
+    //
+    // So the greeter now draws the SAME two-half layered wall the desktop
+    // draws, out of the same art, chosen by the same flag:
+    //
+    //     <base>-bg.png   opaque FAR half   — sky, depth, the horizon
+    //     <base>-fg.png   alpha  NEAR half  — the ground you stand on
+    //
+    // Two files and not one because the pair is what makes it a wall instead
+    // of a picture: the card sits BETWEEN them, so the near half overlaps the
+    // bottom of the login card and the screen reads as somewhere you are
+    // standing rather than something you are looking at. Naming a prefix once
+    // (see Prefs.layeredWallHalf, which this deliberately mirrors) is also
+    // what stops the two halves being configured out of register.
+    //
+    // ⚠ The art is STAGED, not referenced where the desktop keeps it. greetd
+    // runs this as the `greeter` user, which cannot read /home/gowski — a path
+    // into his home would resolve to nothing here and the wall would silently
+    // fall back to the photograph. scripts/install-greeter.sh copies both
+    // pairs into walls/ beside this file, and that is the only reason these
+    // are relative URLs.
+    //
+    // Chosen by Theme.lookMagma, measured rather than picked. Mean colour of
+    // the lit pixels of each far half, R−B:
+    //     suxyn-nebula-veil   −19.3   cool      → ICE
+    //     suxyn-magma-world   +77.0   ember     → MAGMA   (near half)
+    // The MAGMA pair here is byte-identical to the `suxyn-magma-open` he is
+    // actually running; the two names are one set of files.
+    readonly property string wallBase: Theme.lookMagma ? "suxyn-magma-world"
+                                                       : "suxyn-nebula-veil"
+
+    // The photograph is now the LAST resort rather than the first, which is
+    // the whole inversion. It is still bundled: if the staged art is missing
+    // the owner gets a picture, never a black screen. /etc/greetd is the seed
+    // copy; the regreet cache is last because the GTK lane may overwrite it
+    // with GRUB starlight. lock-still.png is a different picture — not this.
     readonly property var bgCandidates: [
         Qt.resolvedUrl("login-still.png"),
         "file:///etc/greetd/nyxus-login-bg.png",
         "file:///var/cache/regreet/nyxus-login-bg.png"
     ]
     property int bgIndex: 0
-    // Hide the pointer until the still is up. cage has no hide-until-first-
+    // True once the far half is up. The photograph is only asked to draw when
+    // this is false, so the two backgrounds are never both on screen.
+    readonly property bool wallReady: wallBg.status === Image.Ready
+
+    // Hide the pointer until SOMETHING is up. cage has no hide-until-first-
     // frame flag; a blank cursor on the first buffer is the remaining trick.
     MouseArea {
         anchors.fill: parent
         z: 1
         hoverEnabled: true
         acceptedButtons: Qt.NoButton
-        cursorShape: loginBg.status === Image.Ready ? Qt.ArrowCursor : Qt.BlankCursor
+        cursorShape: (root.wallReady || loginBg.status === Image.Ready)
+                     ? Qt.ArrowCursor : Qt.BlankCursor
     }
+
+    // FAR half — opaque, the sky and the horizon.
+    Image {
+        id: wallBg
+        anchors.fill: parent
+        fillMode: Image.PreserveAspectCrop
+        asynchronous: false
+        cache: true
+        smooth: true
+        source: Qt.resolvedUrl("walls/" + root.wallBase + "-bg.png")
+        visible: status === Image.Ready
+        opacity: root.unlocking ? 0 : 1
+        Behavior on opacity { NumberAnimation { duration: 380 } }
+    }
+
+    // NEAR half — alpha, the ground. Declared after the far half because Qt
+    // paints siblings in order and the ground is in front of the sky.
+    Image {
+        id: wallFg
+        anchors.fill: parent
+        fillMode: Image.PreserveAspectCrop
+        asynchronous: true
+        cache: true
+        smooth: true
+        source: Qt.resolvedUrl("walls/" + root.wallBase + "-fg.png")
+        visible: status === Image.Ready && root.wallReady
+        opacity: root.unlocking ? 0 : 1
+        Behavior on opacity { NumberAnimation { duration: 380 } }
+    }
+
     Image {
         id: loginBg
         anchors.fill: parent
@@ -99,7 +174,7 @@ Window {
         cache: true
         smooth: true
         source: root.bgCandidates[root.bgIndex]
-        visible: status === Image.Ready
+        visible: status === Image.Ready && !root.wallReady
         opacity: root.unlocking ? 0 : 1
         Behavior on opacity { NumberAnimation { duration: 380 } }
         onStatusChanged: {
@@ -117,10 +192,18 @@ Window {
     // Swirl dye is NOT used here. Over greyscale it read as a clouded film
     // (opacity had to be forced to 0). The fluid stays on the unlock handoff
     // below, where it is supposed to cover the screen.
+    //
+    // ⚠ BELONGS TO THE PHOTOGRAPH, AND ONLY TO IT. u_vortex hard-codes an
+    // ellipse at (0.50, 0.89) because that is where the Earth sits in
+    // login-still.png; the layered wall has different art in that rectangle,
+    // so running this over it would twist an arbitrary patch of someone
+    // else's picture. It is therefore gated on the fallback actually being
+    // the thing on screen, which is `!wallReady` — the same condition
+    // loginBg draws on.
     ShaderEffect {
         id: vortexFx
         anchors.fill: parent
-        visible: loginBg.status === Image.Ready && !root.unlocking
+        visible: loginBg.status === Image.Ready && !root.wallReady && !root.unlocking
         blending: true
         fragmentShader: Qt.resolvedUrl("shaders/login_vortex.frag.qsb")
         property variant src: loginBg
