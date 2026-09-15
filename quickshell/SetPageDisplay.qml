@@ -585,6 +585,38 @@ SetPage {
                 }
             }
         }
+
+        // ── the ten-foot screen (TRK-4151) ──────────────────────────────
+        // THE FLOOR used to decide this for itself. Its rule was `onTv`,
+        // which is nothing more than "this screen's name begins with HDMI",
+        // and on the owner's desk that screen is the television, so the
+        // rule was right and nobody questioned it.
+        //
+        // It stopped being right the moment this shell became something
+        // other people install. `build-iso.sh` copies the whole quickshell
+        // directory into /etc/skel, so the Floor ships with every image,
+        // and the first time a stranger plugged a monitor into HDMI the
+        // ten-foot browser would take that entire screen uninvited. The
+        // only way out was NYXUS_ARCADE, an environment variable — which
+        // is a developer's lever, not something a person can find.
+        //
+        // So `961eea5` put it behind `floor_enabled`, defaulting off. That
+        // closed the release hole but left a smaller one: a real pref with
+        // no control is a pref only someone who reads QML can reach, and
+        // this build does not ship settings you have to know about to use.
+        // This is that control. It belongs on Display because the thing it
+        // governs is what a second screen becomes.
+        SetRow {
+            glyph: ""
+            title: qsTr("Ten-Foot Mode")
+            sub: qsTr("Turns an HDMI screen into a full-screen media browser you drive from the couch. Off leaves it an ordinary desktop.")
+            available: true
+            SetSwitch {
+                key: "floor_enabled"
+                defaultValue: false
+                tone: page.tone
+            }
+        }
     }
 
     property bool hasSunset: false
