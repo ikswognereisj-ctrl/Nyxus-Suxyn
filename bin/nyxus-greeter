@@ -7,11 +7,13 @@
 #  machine can NEVER be left at a frozen/blank screen the way SDDM's X11
 #  greeter was on this hybrid Intel+NVIDIA GPU:
 #
-#    1. nyxus-radial-greeter under cage  (glass hub on the stars — owner 08-18)
-#    2. regreet under cage               (fallback if the radial greeter dies)
-#    3. regreet under cage with pixman
-#    4. tuigreet                         (text)
-#    5. agreety                          (bare)
+#    1. quickshell greeter under cage    (the shell itself — owner 09-15)
+#    2. nyxus-radial-greeter under cage  (glass hub on the stars — owner 08-18)
+#    3. regreet under cage               (fallback if the radial greeter dies)
+#    4. regreet under cage with pixman
+#    5. regreet under cage, shipped CSS
+#    6. tuigreet                         (text)
+#    7. agreety                          (bare)
 #
 #  On a NORMAL successful login greetd tears this process down before it can
 #  fall through, so the chain only advances on a real startup failure.
@@ -282,6 +284,101 @@ run_radial() {
   note_crash "$1" "$rc" "$_ran"
   return 1
 }
+
+# ── QUICKSHELL LOGIN (2026-09-15) ══════════════════════ TRK-4155 ══════════
+# Owner: "my main login or greeter i should say thats suppose to be quickshell
+# but last agent locked me out ... i wanted it to be quickshell to follow the
+# family of things so if you mess with it read everything first and look at it
+# so you know whats going on iwth it becsause theres been alot of issues with
+# it before and make sure i have a way back in other then tty".
+#
+# ── what actually went wrong last time, from the log, not from memory ───────
+# A previous attempt shipped this as a SEPARATE wrapper, `nyxus-greeter-chain`,
+# which called `nyxus-greeter-qs`, which was one line:
+#
+#     exec qs -p /usr/share/nyxus-greeter/shell.qml
+#
+# /var/log/nyxus-greeter-chain.log, 2026-09-11T02:50:12, records what that did:
+#
+#     FATAL: This application failed to start because no Qt platform plugin
+#     could be initialized.
+#
+# Quickshell is a Wayland layer-shell CLIENT. It cannot start without a
+# compositor, and that line started it with no compositor at all -- every other
+# graphical layer in this file runs `cage -s -- <thing>` and that one did not.
+# It was never a Quickshell problem, a GPU problem or a theming problem. It was
+# one missing word, and it cost him his login screen.
+#
+# Verified before this was written, by running the greeter nested on his
+# desktop under exactly the invocation below: it reached "Configuration
+# Loaded" with no fatal, and it was photographed rendering completely --
+# galaxy field, the MAGMA-edged card, his username filled in, live clock,
+# link speed, charge, and the power/restart/sleep row.
+#
+# ── why it is HERE and not in a second chain ───────────────────────────────
+# `nyxus-greeter-chain` reimplemented the fallback badly: it treated any
+# non-zero exit as failure, so a normal greetd teardown by SIGTERM looked like
+# a crash, and it logged `rc=$?` AFTER an echo, so it reported rc=0 for a run
+# that had failed. This file already solves all of that and has been proven
+# on his hardware: signal-vs-crash, STARTUP_OK_SECS so a fast exit is not read
+# as a hosted session, per-boot demotion via MAX_CRASHES so a repeatedly
+# crashing layer stops being retried, iGPU pinning, and the anti-flash work.
+#
+# So Quickshell becomes LAYER 0 of the chain that already works, and inherits
+# every one of those protections. What sits underneath it is unchanged and is
+# the whole answer to "a way back in no matter what": radial, then regreet on
+# GPU, then regreet on software rendering, then regreet with the shipped CSS,
+# then tuigreet, then agreety. Six ways back in before a TTY is ever needed,
+# and each one is only reached because the one above it actually failed.
+#
+# ⚠ It is also opt-OUT at the file level: drop a file at
+# /etc/nyxus/no-qs-greeter and this layer is skipped entirely on the next boot,
+# without editing greetd's config or this script. That is a rescue hatch that
+# works from a TTY, from another machine over SSH, or from a live stick.
+run_qs() {  # $1 = layer name / renderer description
+  if layer_demoted "$1"; then
+    echo "[$(date -Iseconds)] layer $1 demoted this boot — skipping" >>"$LOG" 2>&1
+    return 1
+  fi
+  if [ -e /etc/nyxus/no-qs-greeter ]; then
+    echo "[$(date -Iseconds)] /etc/nyxus/no-qs-greeter present — skipping $1" >>"$LOG" 2>&1
+    return 1
+  fi
+  if ! command -v qs >/dev/null 2>&1; then
+    echo "[$(date -Iseconds)] qs not on PATH — skipping $1" >>"$LOG" 2>&1
+    return 1
+  fi
+  if [ ! -s "$QS_GREETER_SHELL" ]; then
+    echo "[$(date -Iseconds)] $QS_GREETER_SHELL missing — skipping $1" >>"$LOG" 2>&1
+    return 1
+  fi
+  echo "[$(date -Iseconds)] trying quickshell greeter ($1)" >>"$LOG" 2>&1
+  _start=$SECONDS
+  cage -s -- env \
+    NYXUS_GREET_USER="${NYXUS_GREET_USER:-gowski}" \
+    NYXUS_GREET_AUTH=/usr/local/libexec/nyxus-greet-auth \
+    QT_LOGGING_RULES='qt.qpa.*=false' \
+    qs -p "$QS_GREETER_SHELL" >>"$LOG" 2>&1
+  rc=$?
+  _ran=$(( SECONDS - _start ))
+  if [ "$rc" -ge 128 ]; then
+    echo "[$(date -Iseconds)] quickshell ($1) ended by signal ($rc) — greetd teardown, chain stops" >>"$LOG" 2>&1
+    exit 0
+  fi
+  if [ "$rc" -eq 0 ] && [ "$_ran" -ge "$STARTUP_OK_SECS" ]; then
+    echo "[$(date -Iseconds)] quickshell ($1) hosted a session for ${_ran}s and exited cleanly — chain stops" >>"$LOG" 2>&1
+    exit 0
+  fi
+  note_crash "$1" "$rc" "$_ran"
+  return 1
+}
+
+QS_GREETER_SHELL="${QS_GREETER_SHELL:-/usr/share/nyxus-greeter/shell.qml}"
+
+if command -v cage >/dev/null 2>&1; then
+  run_qs "quickshell-gpu"
+  WLR_RENDERER=pixman run_qs "quickshell-pixman"
+fi
 
 if command -v cage >/dev/null 2>&1 && command -v nyxus-radial-greeter >/dev/null 2>&1; then
   run_radial "radial-gpu"
