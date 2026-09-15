@@ -430,7 +430,27 @@ SetPage {
         SetCard {
             heading: qsTr("Swirl preview")
             tone: page.tone
-            note: qsTr("Look only. Tapping a colour turns PAINT on so you can see the dye. For widgets + stones + the bar on one page, open Layer lab from Personalization. Put GLACIER back when you are done.")
+            // ── TRK-4161 · five buttons that did nothing under MAGMA ────────
+            // Owner: "anything clicked on actually works and goes to what it
+            // should go to". These five did not. Theme.paintRamp opens with
+            // `if (lookMagma) return theme.lookLayer;` and never reads
+            // Prefs.swirlPreview at all, so under MAGMA every dye here wrote
+            // its key to settings.json, lit its own tile as SELECTED, and
+            // changed not one pixel of paint.
+            //
+            // That is the worst shape a dead control can take: it looks like
+            // it worked. The setting even survives a reboot, so the evidence
+            // of the click persists while the effect never arrives.
+            //
+            // The MAGMA ramp is not an oversight to be undone — TRK-4138
+            // measured and retuned its stops (stop 6 #ffb080 → #ffa85e) so
+            // molten rock does not dim to khaki. MAGMA owns its dye on
+            // purpose. So the honest fix is for this page to say so and stop
+            // taking the click, rather than for MAGMA to start obeying a
+            // picker built for the ICE paint.
+            note: Theme.lookMagma
+                ? qsTr("The MAGMA look brings its own ember dye, so these stay off while it is on. Switch back to ICE in Look to choose a swirl colour.")
+                : qsTr("Look only. Tapping a colour turns PAINT on so you can see the dye. For widgets + stones + the bar on one page, open Layer lab from Personalization. Put GLACIER back when you are done.")
         }
 
         RowLayout {
@@ -444,8 +464,8 @@ SetPage {
                 compact: true
                 kicker: qsTr("GLACIER")
                 caption: qsTr("House — pale ice")
-                selected: page.swirlPreview === "glacier"
-                interactive: true
+                selected: !Theme.lookMagma && page.swirlPreview === "glacier"
+                interactive: !Theme.lookMagma
                 onActivated: SettingsStore.setValue("swirl_preview", "glacier")
             }
             SetIceFace {
@@ -455,8 +475,8 @@ SetPage {
                 compact: true
                 kicker: qsTr("ROSE")
                 caption: qsTr("Teal into plum")
-                selected: page.swirlPreview === "rose"
-                interactive: true
+                selected: !Theme.lookMagma && page.swirlPreview === "rose"
+                interactive: !Theme.lookMagma
                 onActivated: {
                     SettingsStore.setValue("swirl_preview", "rose");
                     SettingsStore.setValue("swirl_mode", "paint");
@@ -469,8 +489,8 @@ SetPage {
                 compact: true
                 kicker: qsTr("MAGMA")
                 caption: qsTr("Ember / hot")
-                selected: page.swirlPreview === "magma"
-                interactive: true
+                selected: !Theme.lookMagma && page.swirlPreview === "magma"
+                interactive: !Theme.lookMagma
                 onActivated: {
                     SettingsStore.setValue("swirl_preview", "magma");
                     SettingsStore.setValue("swirl_mode", "paint");
@@ -489,8 +509,8 @@ SetPage {
                 compact: true
                 kicker: qsTr("VIOLET")
                 caption: qsTr("Orchid / plum")
-                selected: page.swirlPreview === "violet"
-                interactive: true
+                selected: !Theme.lookMagma && page.swirlPreview === "violet"
+                interactive: !Theme.lookMagma
                 onActivated: {
                     SettingsStore.setValue("swirl_preview", "violet");
                     SettingsStore.setValue("swirl_mode", "paint");
@@ -503,8 +523,8 @@ SetPage {
                 compact: true
                 kicker: qsTr("WINE")
                 caption: qsTr("New dusty rose")
-                selected: page.swirlPreview === "wine"
-                interactive: true
+                selected: !Theme.lookMagma && page.swirlPreview === "wine"
+                interactive: !Theme.lookMagma
                 onActivated: {
                     SettingsStore.setValue("swirl_preview", "wine");
                     SettingsStore.setValue("swirl_mode", "paint");

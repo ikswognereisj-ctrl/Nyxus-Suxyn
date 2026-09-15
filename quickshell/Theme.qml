@@ -750,6 +750,33 @@ Singleton {
         paintLayers.glacier[6]   // #eefcff peak
     ]
 
+    // ── TRK-4161 · the same ladder, for things that must not follow ─────
+    // Identical to paintPaleGlacier under ICE and deliberately UNCHANGED
+    // under MAGMA, because it is built from iceLayer, which is never
+    // remapped (paintLayers.glacier is — Theme.qml:450).
+    //
+    // paintPaleGlacier is right for the LIVING PAINT: when MAGMA is on the
+    // swirls should be molten, and the remap is how that happens. It is
+    // wrong for anything that has to depict glacier rather than wear it.
+    // Layer lab has a card headed "Glacier — House ice" whose swatch strip
+    // read paintPaleGlacier, so under MAGMA it drew seven ember stops:
+    // the one control on the page whose job is to show you what glacier
+    // looks like, showing you what magma looks like, sitting next to the
+    // real Magma card with an identical strip.
+    //
+    // The hex comments above are the tell, and they are the same tell
+    // TRK-4139 found across 25 files — a value named and annotated for the
+    // colour it used to be. Those comments are accurate for THIS array.
+    readonly property var paintPaleIce: [
+        iceLayer[5],  // #b7e6f2 pale BRIGHT
+        iceLayer[1],
+        iceLayer[2],
+        iceLayer[3],
+        iceLayer[4],  // mid steel seam
+        iceLayer[5],  // pale filament
+        iceLayer[6]   // #eefcff peak
+    ]
+
     readonly property var paintGlacierHorizon: [
         paintLayers.glacier[0],  // #7fe8ff ice BRIGHT — TRK-914 floor, H 191
         "#14243c",               // glacier-altitude ice brightest-10% (H 216, lin 0.017)
