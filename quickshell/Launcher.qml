@@ -1215,9 +1215,12 @@ PanelWindow {
     // mockup: quick-settings tiles + a live machine snapshot beside the
     // deck), so its width takes the panel's 264 + one s6 gutter on top of
     // the old 760. Height is unchanged; the availW/availH clamp still rules.
+    // TRK-4145 — the width test used to read `root.daily && !Theme.lookMagma`,
+    // which quietly made MAGMA a 760 build with no system panel. See the note
+    // at the GlassChip. A palette does not get a different Start menu.
     readonly property int swellHeight: Math.min(root.daily ? 560 : 760, availH)
     readonly property int swellWidth: Math.min(
-        (root.daily && !Theme.lookMagma) ? 1040 : 760, availW)
+        root.daily ? 1040 : 760, availW)
     readonly property int layerW: swellWidth + Theme.bloomPad
     readonly property int layerH: swellHeight + Theme.bloomPad
 
@@ -1467,9 +1470,24 @@ PanelWindow {
                     : Prefs.swirlMode
                 ramp: PaintMood.ramp
                 introStrength: 0.55
-                opacity: 0.85
+                // TRK-4146 — this was a flat `0.85`, inherited from BarSeam
+                // where the swirl IS the subject: a 168 px strip with nothing
+                // on top of it. Start is not that. Here it is a backdrop with
+                // twenty tiles and twenty labels over it, and at 0.85 the dye
+                // stopped being atmosphere and became weather -- the owner's
+                // screenshot has a tan plume lying across the app grid with
+                // "Gen Studio", "Media" and "Video" reading through it. A
+                // backdrop that you have to read around is not a backdrop.
+                // MAGMA takes the bigger cut because its dye is opaque where
+                // the glacier ramp is a dark wash that never fought the text.
+                opacity: Theme.lookMagma ? 0.34 : 0.72
                 exposure: 0.92
-                saturation: Theme.lookMagma ? 1.22 : 1.0
+                // Same TRK — 1.22 through the ember ramp's thin middle came
+                // out khaki, not ember. The mid-stops are the least-used rungs
+                // of the ladder, so the plume lands in the one region the
+                // palette never tuned. Pushing saturation pulls it back to
+                // fire; the real repair is the ramp's middle, not this knob.
+                saturation: Theme.lookMagma ? 1.45 : 1.0
                 sheen: Theme.lookMagma ? 0.35 : 0.18
                 injectGain: Theme.lookMagma ? 0.70 : 0.38
                 sweepLo: 0
@@ -1485,7 +1503,10 @@ PanelWindow {
                 ambientCurrentX: 0.042
                 ambientCurrentY: 0.032
                 ambientEvenSweep: true
-                ambientDye: 0.48
+                // TRK-4146 — ambient dye is what builds the standing plume
+                // between pointer strokes; trimmed under MAGMA so the cloud
+                // thins instead of pooling over the grid.
+                ambientDye: Theme.lookMagma ? 0.30 : 0.48
                 velocityDecay: 0.12
                 pointerForceMul: 1.21
                 simShort: 96
@@ -2473,8 +2494,22 @@ PanelWindow {
             // Classic cannot drift apart, and the meters are the same
             // MeterRow the SYSTEM desktop widget language uses.
             // TRK-3370 — side column card onto the widgets' stack.
+            // TRK-4145 — this read `visible: !Theme.lookMagma`, and so did
+            // Classic's copy at the other site, and `swellWidth` dropped 1040
+            // back to 760 to match. Nothing recorded why. Every other decision
+            // in this file carries its reason, so the absence is the tell: it
+            // was a hold placed while the ember palette was still landing and
+            // never lifted. The cost was that MAGMA was not a reskin of ICE,
+            // it was a smaller build -- switching looks silently took away the
+            // machine snapshot and the four quick toggles, and the Start menu
+            // shrank 280 px doing it. That is the owner's "the layers didnt
+            // change everything like it should have", found in the one place
+            // a palette switch was never supposed to reach: the feature set.
+            // Turned on and photographed under MAGMA before trusting it -- the
+            // meters take the ember ramp, the toggles take it, nothing clips.
+            // Looks are looks. They do not get to remove functionality.
             GlassChip {
-                visible: !Theme.lookMagma
+                visible: true
                 Layout.fillHeight: true
                 Layout.preferredWidth: 264
                 edging: 0.85
@@ -3146,8 +3181,10 @@ PanelWindow {
 
                 // ── right: the machine, at a glance ──────────────────────
                 // TRK-3370 — side column card onto the widgets' stack.
+                // TRK-4145 — was `visible: !Theme.lookMagma` here too. Same
+                // lift as Daily's; see the long note at that site.
                 SetSlab {
-                    visible: !Theme.lookMagma
+                    visible: true
                     Layout.fillHeight: true
                     Layout.preferredWidth: 284
                     level: 1
