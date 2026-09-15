@@ -250,15 +250,77 @@ void main() {
     // same ridged field — a proxy, cheap, and close enough that runs hang
     // from real fissures). Length grows and shrinks slowly: paint keeps
     // running as long as the fissure feeds it.
-    {
+    //
+    // uFlags.x — NO GRAVITY. The runs fall along +y in screen space, so
+    // they only mean something on a surface that has a down: a bar, a
+    // slab, a wall. Wrap this material onto a sphere or tile it as a
+    // seamless texture and the same runs become streaks glued across the
+    // curve, pointing at a floor that is not there. The channel was
+    // already documented "reserved" and every existing caller leaves the
+    // whole vector at zero, so the default is exactly the behaviour every
+    // surface has today and only a caller that asks loses its drips.
+    if (uFlags.x < 0.5) {
         float xf2 = 20.0 * scale;
         float xc  = floor(sp.x * xf2);
         vec2  hD  = hash22(vec2(xc, 7.7));
-        if (hD.x < 0.55) {
-            float srcY = 0.12 + hD.y * 0.55;
+        if (hD.x < 0.78) {
+            // The band was 0.12 + hD.y * 0.55, and the column lottery was
+            // 0.55, both tuned when the source test passed over solid rock
+            // — most candidates became drips, so a narrow band and a
+            // half-open lottery still produced a full screen of them. Now
+            // that a run requires real melt overhead, those same numbers
+            // yielded two drips on a 1920x1200 frame. The gate is the part
+            // that must stay honest, so the CANDIDATES widen instead: a
+            // taller band gives each column more chances to find open
+            // melt, and the lottery opens to match. Density is back where
+            // the owner tuned it and every run still hangs from a fissure.
+            // 0.86 ceiling keeps the longest run (~0.25) on screen.
+            float srcY = 0.06 + hD.y * 0.80;
             vec2  srcP = (vec2((xc + 0.5) / xf2, srcY) + shim) * scale;
-            float srcChan = ridge(srcP * 1.15 + drift * 0.4, 3);
-            if (srcChan > 0.50) {
+            // TRK-4163 · the probe used to read `ridge(srcP * 1.15 + drift
+            // * 0.4, 3)` — the crack field WITHOUT the domain warp, and
+            // against a hardcoded 0.50. But section 2 draws the fissures
+            // from `p * 1.15 + 2.2 * r2 + drift * 0.4`, warped, through a
+            // window that MOVES with the crack-width dial. Those are two
+            // different landscapes. The source test was therefore asking
+            // "is there melt here?" of a map the screen never shows, and
+            // answering yes over solid crust: drips hung in black rock
+            // with no fissure above them. That is the exact "orphan drips"
+            // failure the note at the crack window says was fixed — it was
+            // fixed for the CRACKS and left standing here. Caught on a
+            // 1920x1200 still, where a drip has room to be obviously
+            // detached; at 36 px tall it read as a spark and hid for
+            // months.
+            //
+            // The warp has to be evaluated AT THE SOURCE, not at the
+            // current pixel: every pixel of one run must agree on whether
+            // its parent fissure exists, and `r2` belongs to the pixel
+            // being shaded, so reusing it would cut runs in half wherever
+            // the value drifted across the threshold. Two octaves, not
+            // octA — this is a yes/no gate on one point, so it only needs
+            // to agree with the large rivers, and the fine channel it
+            // skips is the one that fades first anyway. the fine channel is carried too, so
+            // of the (0.72 + 0.28 * fine) modulation the real channel
+            // carries, so the same crackLo window means the same thing
+            // here as it does there.
+            // Two octaves was the first attempt and it still floated a
+            // third of the runs: the render warps with `octA` (5 at full
+            // quality), and a 2-octave warp is a DIFFERENT field, not a
+            // cheaper view of the same one. The only probe that agrees
+            // with the picture is the picture's own expression, so this
+            // reproduces the section-2 channel verbatim at the source —
+            // same octaves, same 2.2 warp gain, same fine modulation,
+            // same crackLo window. Five extra noise evaluations per pixel
+            // buys drips that are attached, and the slab this runs on is
+            // 36 px tall.
+            vec2 qD = vec2(fbm(srcP * 1.1 + drift,                  octA),
+                           fbm(srcP * 1.1 + drift + vec2(5.2, 1.3), octA));
+            vec2 rD = vec2(fbm(srcP * 1.1 + 2.6 * qD + vec2(1.7, 9.2) + vec2(t * 0.10, -t * 0.06), octA),
+                           fbm(srcP * 1.1 + 2.6 * qD + vec2(8.3, 2.8) - vec2(t * 0.07,  t * 0.05), octA));
+            float fineD   = ridge(srcP * 3.1  + 3.0 * rD - drift * 0.7, octA);
+            float srcChan = ridge(srcP * 1.15 + 2.2 * rD + drift * 0.4, 3)
+                          * (0.72 + 0.28 * fineD);
+            if (srcChan > crackLo) {
                 float len = (0.05 + 0.20 * hD.y)
                           * (0.55 + 0.45 * fbm(vec2(t * 0.18, xc * 3.1), 2));
                 float dy = sp.y - srcY;               // +y is DOWN in this file
