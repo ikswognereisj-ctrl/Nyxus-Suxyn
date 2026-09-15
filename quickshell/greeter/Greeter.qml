@@ -49,12 +49,49 @@ Window {
     property bool unlocking: false
     property bool capsOn: false
 
-    // glacier[4] is the 1 px seam rung — a divider, never a fill.
-    // Routed through a color property: paintLayers values are strings, and
-    // Theme.soften reads .r off a string as undefined (Lock.qml TRK-3670).
-    readonly property color iceHairline: Theme.paintLayers["glacier"][4]
-    readonly property color icePrimary:  Theme.paintLayers["glacier"][5]
-    readonly property color magmaHot:    Theme.paintLayers["magma"][5]   // #ff7847 — the no
+    // ── THE CARD'S CHROME, AND THE ONE COLOUR THAT MUST NOT FOLLOW IT ───────
+    // Routed through `color` properties rather than used raw because the
+    // paintLayers values behind these tokens are STRINGS, and Theme.soften
+    // reads .r off a string as undefined (Lock.qml TRK-3670).
+    //
+    // ── why these are Theme tokens now ───────────────────────── TRK-4139 ──
+    // These read `Theme.paintLayers["glacier"][n]` until now, and the honest
+    // version of this note is that that was NOT the obvious bug it looks
+    // like. `paintLayers.glacier` is remapped wholesale to magma when MAGMA
+    // is on (Theme.qml:450), so the card did already turn ember with the
+    // look. It followed the theme. It just did it in one undifferentiated
+    // voice, because one palette rung was being asked to be three things.
+    //
+    // The shell had already split those three jobs apart and the greeter,
+    // being a hand-made fork at the time (see install-greeter.sh), never
+    // received the split — the same way it never received MAGMA at all.
+    // This is the last of that fork's debt. Each of these is now the same
+    // token the desktop uses for the same job, so the login card cannot
+    // drift from the session it opens into again:
+    //
+    //   seam        Theme.lookSeam              — as Media, SetSlab, Widgets
+    //   focus ring  Theme.tokenAccentInteractive — as Hardware, Store chrome
+    //   rest ring   Theme.tokenAccentHairline    — as Calculator's wells
+    //
+    // The seam is deliberately the one that goes PALE under MAGMA rather
+    // than ember (lookSeam is iceLayer[5] there, TRK-4127). It is structure,
+    // not paint: it says where the card ends. Ember structure on an ember
+    // wall says nothing, and 88% of MAGMA's chromatic pixels were already
+    // inside one red→rose arc before TRK-4139 started pulling them apart.
+    // The look arrives instead through the two rings and through panelMid,
+    // which is a warm near-black under MAGMA and a cold one under ICE.
+    readonly property color lookSeamColor: Theme.lookSeam
+    readonly property color lookPrimary:   Theme.tokenAccentInteractive
+    readonly property color lookHairline:  Theme.tokenAccentHairline
+
+    // THE NO. Always ember, in both looks, and deliberately not a look token.
+    // Reading the "magma" key rather than "glacier" is what pins it: that key
+    // is never remapped, so this stays #ff7847 under ICE and MAGMA alike.
+    // It has to be fixed, because it is the only message on this screen a
+    // person must not miss, and a refusal that is merely "the accent again"
+    // is one a tired person at 3am will read straight past. Against the pale
+    // seam it is the largest move on the card in either theme.
+    readonly property color refuseColor: Theme.paintLayers["magma"][5]
 
     readonly property string greetTheme:
         (Quickshell.env("NYXUS_GREET_THEME") === "alien") ? "alien" : "nyxus"
@@ -278,14 +315,16 @@ Window {
                 bleed: 0
                 edging: 0.85
             }
-            // glacier[4] 1 px seam. Magma only when the machine says no.
+            // The card's seam. Pale under MAGMA on purpose — see lookSeamColor.
+            // Ember only when the machine says no.
             CutRect {
                 anchors.fill: parent
                 radius: panel.cardR
                 chamfer: panel.cardCut
                 color: "transparent"
                 borderWidth: 1
-                borderColor: root.status === "bad" ? root.magmaHot : root.iceHairline
+                borderColor: root.status === "bad" ? root.refuseColor
+                                                   : Theme.soften(root.lookSeamColor, 0.85)
                 Behavior on borderColor { ColorAnimation { duration: 160 } }
             }
         }
@@ -303,8 +342,8 @@ Window {
                 radius: 11
                 color: Theme.soften(Theme.void_, 0.62)
                 border.width: 1
-                border.color: userField.activeFocus ? root.iceHairline
-                            : Theme.soften(root.iceHairline, 0.35)
+                border.color: userField.activeFocus ? root.lookPrimary
+                            : Theme.soften(root.lookHairline, 0.35)
                 Behavior on border.color { ColorAnimation { duration: 160 } }
 
                 Rectangle {
@@ -374,9 +413,9 @@ Window {
                     radius: 11
                     color: Theme.soften(Theme.void_, 0.62)
                     border.width: 1
-                    border.color: root.status === "bad" ? root.magmaHot
-                                : (pw.activeFocus ? root.iceHairline
-                                                  : Theme.soften(root.iceHairline, 0.35))
+                    border.color: root.status === "bad" ? root.refuseColor
+                                : (pw.activeFocus ? root.lookPrimary
+                                                  : Theme.soften(root.lookHairline, 0.35))
                     Behavior on border.color { ColorAnimation { duration: 160 } }
 
                     Rectangle {
@@ -398,7 +437,7 @@ Window {
                         anchors.rightMargin: parent.width * 0.18
                         anchors.bottomMargin: 1
                         height: 1
-                        color: root.status === "bad" ? root.magmaHot : root.iceHairline
+                        color: root.status === "bad" ? root.refuseColor : root.lookPrimary
                         opacity: root.status === "bad" ? 0.85
                                : (pw.activeFocus ? 0.70 : 0.0)
                         Behavior on opacity { NumberAnimation { duration: 220 } }
@@ -414,7 +453,7 @@ Window {
                         anchors.rightMargin: 16
                         count: pw.text.length
                         alarmed: root.status === "bad"
-                        glyphColor: pw.activeFocus ? root.icePrimary : root.iceHairline
+                        glyphColor: pw.activeFocus ? root.lookPrimary : root.lookHairline
                     }
 
                     Text {
@@ -467,7 +506,7 @@ Window {
                 text: root.busy ? qsTr("Checking…")
                      : root.status === "bad" ? qsTr("Not that one")
                      : root.hostLabel
-                color: root.status === "bad" ? root.magmaHot : Theme.textDim
+                color: root.status === "bad" ? root.refuseColor : Theme.textDim
                 font.family: Theme.fUi
                 font.pixelSize: 11
                 font.letterSpacing: 1.6
@@ -560,7 +599,7 @@ Window {
                 readonly property bool picked:
                     root.sessionCmd === modelData.exec
                 text: modelData.name
-                color: picked ? root.icePrimary : Theme.textDim
+                color: picked ? root.lookPrimary : Theme.textDim
                 font.family: Theme.fUi
                 font.pixelSize: 12
                 font.letterSpacing: 1.6
