@@ -92,8 +92,14 @@ Row {
     // ── Bluetooth ────────────────────────────────────────────────────
     Item {
         id: bt
-        visible: Sys.btAdapter !== null
-        width: visible ? vitals.iconSize : 0
+        // ⚠ PRESENCE IS WIDTH AND OPACITY HERE, NEVER `visible` — TRK-4152.
+        // See the note above `batt` for the whole finding; the short version
+        // is that a `visible` binding on a child of a Row survives in the bar
+        // and collapses inside a Reflection's hidden layer, so gating on it
+        // silently deletes this icon from its own mirror.
+        readonly property bool present: Sys.btAdapter !== null
+        opacity: present ? 1 : 0
+        width: present ? vitals.iconSize : 0
         height: vitals.iconSize
         readonly property color c: Sys.btOn ? vitals.tone : vitals.toneDim
 
@@ -205,10 +211,42 @@ Row {
     }
 
     // ── battery · a real gauge, not a picture of one ─────────────────
+    //
+    // ══ WHY PRESENCE IS NOT `visible` ════════════════════ TRK-4152 · 09-15 ══
+    // Owner, with a photograph of the bar: "the two at the end do not have a
+    // reflection so we need to fix that please".
+    //
+    // The two at the end were Bluetooth and this battery, and the reason was
+    // not the reflection recipe — it was this Row. Measured on his bar before
+    // the fix: the icon band held four glyphs at x = 18, 46, 72, 105, and the
+    // mirror band held TWO, at 18 and 46. Not two faint ones. Two, and the
+    // second was the SPEAKER — the volume icon sitting under the Bluetooth
+    // rune, one whole slot to the left of where it belongs.
+    //
+    // A reflection that was merely too dark would land in the right column.
+    // One that has PACKED has lost items from the layout, and the pattern of
+    // which ones it lost is exact: `wifi` and `vol` declare no `visible` at
+    // all and both mirrored correctly; `bt` and this battery were the only
+    // two children that bound `visible` to a condition, and they were the
+    // only two missing. Four for four.
+    //
+    // `Reflection` draws its copy inside `srcBox`, an Item that is
+    // `visible: false` with `layer.enabled: true` — that combination is the
+    // whole trick, it renders to a texture while never appearing on screen.
+    // But `visible` READS effective visibility, which inside that hidden
+    // parent is false, so a child gating itself on `visible` gates itself
+    // off, the Row skips it, and everything to its right slides left. The
+    // bar was right and its mirror was a different row of icons.
+    //
+    // So presence is expressed as WIDTH AND OPACITY, and `visible` is never
+    // bound. The positioner always sees four children, both copies lay out
+    // identically, and a machine with no battery still collapses this to
+    // zero width exactly as before.
     Item {
         id: batt
-        visible: Sys.hasBattery
-        width: 25
+        readonly property bool present: Sys.hasBattery
+        opacity: present ? 1 : 0
+        width: present ? 25 : 0
         height: vitals.iconSize
         readonly property bool low: Sys.batteryPercent <= 15 && !Sys.batteryCharging
         readonly property color c: low ? Theme.danger
@@ -275,8 +313,16 @@ Row {
 
     // The number only when the number matters. A percentage on screen all day
     // is noise; a percentage under 30 is information.
+    //
+    // Width and opacity, not `visible`, for the same reason as the two icons
+    // above (TRK-4152) — this one appears and disappears with the charge, so
+    // if it gated on `visible` the mirror would shift by the width of "29%"
+    // at exactly the moment the owner is most likely to be looking at it.
     Text {
-        visible: Sys.hasBattery && Sys.batteryPercent <= 30 && !Sys.batteryCharging
+        readonly property bool present: Sys.hasBattery && Sys.batteryPercent <= 30 && !Sys.batteryCharging
+        opacity: present ? 1 : 0
+        width: present ? implicitWidth : 0
+        clip: true
         text: Sys.batteryPercent + "%"
         height: vitals.iconSize
         verticalAlignment: Text.AlignVCenter
