@@ -7,6 +7,22 @@ pragma Singleton
 // next run and a label edited on a page is caught the same way. Change a
 // page, then run `scripts/gen-settings-index.py --write`.
 //
+// ⚠ NEITHER SCRIPT EXISTS ─────────────────────────────────── TRK-4137 ──
+// Searched the repo and the whole home tree on 2026-09-14: there is no
+// `scripts/` directory, no gen-settings-index.py and no audit.sh. They are
+// not on PATH either. So the paragraph above describes a safety net that
+// is not there — this file is a GENERATED artifact with no generator and
+// no gate, and the "do not hand-edit" rule cannot be enforced or obeyed.
+//
+// The two Notifications controls added under TRK-4133/4135 were therefore
+// added BY HAND, matching the emitted format exactly. That is the only
+// option available, and it is a maintenance trap: the next person to add a
+// settings control will not know this file exists, search will quietly
+// stop finding their control, and nothing will fail.
+//
+// Rebuilding the generator is tracked as a release recommendation. Until
+// it is back, adding a SetRow means adding its entry here too.
+//
 // TRK-3567. `SettingsCatalog.search()` matched page titles, blurbs and a
 // hand-typed keyword string only — so "music" and "beat" found nothing,
 // while FOLLOW MUSIC (`swirl_music`) had been on Appearance for two weeks.
@@ -193,6 +209,9 @@ Singleton {
           label: qsTranslate("SetPageNotifications", "How they appear"),
           sub: "" },
         { key: "notifications", kind: "control",
+          label: qsTranslate("SetPageNotifications", "Volume and brightness popup"),
+          sub: "" },
+        { key: "notifications", kind: "control",
           label: qsTranslate("SetPageNotifications", "HOW LONG THEY STAY"),
           sub: qsTranslate("SetPageNotifications", "Before a toast fades on its own. Urgent ones ignore this and wait for you.") },
         { key: "notifications", kind: "control",
@@ -216,6 +235,9 @@ Singleton {
         { key: "notifications", kind: "control",
           label: qsTranslate("SetPageNotifications", "Wi-Fi"),
           sub: qsTranslate("SetPageNotifications", "When you join a network, leave it, or a join fails") },
+        { key: "notifications", kind: "control",
+          label: qsTranslate("SetPageNotifications", "Wired"),
+          sub: qsTranslate("SetPageNotifications", "When an ethernet cable or a dock's network port comes up or goes down") },
         { key: "notifications", kind: "control",
           label: qsTranslate("SetPageNotifications", "Bluetooth"),
           sub: qsTranslate("SetPageNotifications", "When a device connects or disconnects — headphones especially") },

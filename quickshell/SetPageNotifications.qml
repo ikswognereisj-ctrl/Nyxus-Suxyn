@@ -268,6 +268,24 @@ SetPage {
             }
         }
 
+        // ── TRK-4135 · the wire ────────────────────────────────────────
+        // Owner, 2026-09-14: "... or lose network or it comes back".
+        //
+        // Wi-Fi had a card for joining, leaving and failing. Ethernet had
+        // none: LinkWatch was Wi-Fi-only for anything network-shaped, so
+        // pulling the cable was the one connectivity event on the machine
+        // that happened in complete silence.
+        SetRow {
+            title: qsTr("Wired")
+            sub: qsTr("When an ethernet cable or a dock's network port comes up or goes down")
+
+            SetSwitch {
+                key: "notify_wired"
+                defaultValue: true
+                tone: page.tone
+            }
+        }
+
         SetRow {
             title: qsTr("Bluetooth")
             sub: qsTr("When a device connects or disconnects — headphones especially")
@@ -310,6 +328,7 @@ SetPage {
         // TRK-3664 adds the three the redesigned card brought with it.
         keys: ["toast_seconds", "toast_stack", "toast_corner", "toast_actions",
                "toast_dwell", "ui_sound_notify", "notify_battery",
-               "notify_wifi", "notify_bluetooth"]
+               "notify_wifi", "notify_bluetooth", "notify_wired",
+               "osd_position"]
     }
 }
