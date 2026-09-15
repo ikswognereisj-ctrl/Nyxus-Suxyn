@@ -24,6 +24,9 @@ Item {
     readonly property bool hot: hov.hovered
     readonly property bool down: press.pressed
     readonly property int gemPx: prize ? 64 : 56
+    // How far the gem's layout box overhangs its visible silhouette on each
+    // side. See the TRK-4144 note on StatusPip below for the measurement.
+    readonly property int gemInset: Math.round(tile.gemPx * 0.1328)
     property real lookX: 0
     property real lookY: 0
 
@@ -83,6 +86,23 @@ Item {
         StatusPip {
             anchors.right: parent.right
             anchors.bottom: parent.bottom
+            // TRK-4144 — the pip was floating in space beside the icon.
+            //
+            // `cab` is a gemPx square, but CrystalGem does not fill it: the
+            // silhouette comes from textures/ocular-tile-sdf.png, whose
+            // footprint is x/y 68..443 of 512 — centred, symmetric, and
+            // 0.7344 of the quad. Measured off the texture, not guessed. So
+            // the corner this anchored to sat gemPx * 0.1328 clear of the
+            // tile on both axes: about 7 px out and 7 px down at gemPx 56,
+            // which reads as a stray amber dot rather than a badge on the
+            // Notes and Calculator tiles (the two tilePip() returns true
+            // for).
+            //
+            // The margins put it back on the silhouette's own corner. The
+            // tile is rounded, so a 7 px dot there straddles the curve the
+            // way a badge should instead of hovering off the diagonal.
+            anchors.rightMargin: tile.gemInset
+            anchors.bottomMargin: tile.gemInset
             visible: tile.pip
             kind: tile.pipKind
         }
