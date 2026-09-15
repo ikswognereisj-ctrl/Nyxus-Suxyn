@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <radialGradient id="body" cx="50%" cy="34%" r="72%">
+      <stop offset="0%"   stop-color="#071318"/>
+      <stop offset="62%"  stop-color="#040b0e"/>
+      <stop offset="100%" stop-color="#020506"/>
+    </radialGradient>
+    <linearGradient id="rim" x1="4%" y1="0%" x2="96%" y2="100%">
+      <stop offset="0%"   stop-color="#7fe8ff"/>
+      <stop offset="52%"  stop-color="#b7e6f2"/>
+      <stop offset="100%" stop-color="#4f7fa6"/>
+    </linearGradient>
+    <linearGradient id="glaze" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#edf1ff"      stop-opacity="0.10"/>
+      <stop offset="46%"  stop-color="#edf1ff"      stop-opacity="0.02"/>
+      <stop offset="100%" stop-color="#020506"      stop-opacity="0.30"/>
+    </linearGradient>
+    <linearGradient id="face" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#b7e6f2"      stop-opacity="0.95"/>
+      <stop offset="55%"  stop-color="#7fe8ff"      stop-opacity="0.92"/>
+      <stop offset="100%" stop-color="#123a5e"       stop-opacity="0.96"/>
+    </linearGradient>
+    <linearGradient id="back" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#7fe8ff"      stop-opacity="0.62"/>
+      <stop offset="100%" stop-color="#274b7a"    stop-opacity="0.52"/>
+    </linearGradient>
+    <linearGradient id="metal" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#edf1ff"      stop-opacity="0.16"/>
+      <stop offset="42%"  stop-color="#edf1ff"      stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#020506"      stop-opacity="0.42"/>
+    </linearGradient>
+    <clipPath id="disc"><circle cx="32" cy="32" r="28.4"/></clipPath>
+  </defs>
+
+  <!-- the pane -->
+  <circle cx="32" cy="32" r="28.4" fill="url(#body)"/>
+  <g clip-path="url(#disc)">
+    <!-- the Glaze: light standing inside the pane -->
+    <circle cx="32" cy="32" r="28.4" fill="url(#glaze)"/>
+    <!-- the Sheen: a broad faint wash on the upper face -->
+    <ellipse cx="32" cy="12" rx="26" ry="13" fill="#edf1ff" opacity="0.055"/>
+    <!-- the Crown, and the Lip beneath it -->
+    <path d="M8 20 Q32 5 56 20" fill="none" stroke="#edf1ff"
+          stroke-opacity="0.30" stroke-width="1.4"/>
+    <path d="M8 22.4 Q32 7.4 56 22.4" fill="none" stroke="#020506"
+          stroke-opacity="0.34" stroke-width="1.8"/>
+  </g>
+  <circle cx="32" cy="32" r="28.4" fill="none" stroke="url(#rim)"
+          stroke-width="2.1"/>
+  <circle cx="32" cy="32" r="26.6" fill="none" stroke="#b7e6f2"
+          stroke-opacity="0.20" stroke-width="1"/>
+
+  <!-- back panel + tab. The tab clears the front panel by 9px: at 3px it
+       read as a rectangle behind a rectangle, which is not a folder. Only a
+       contact sheet of plain `folder` next to `folder-documents` shows it. -->
+  <path d="M12.4 20.6 Q12.4 18 15 18 L25.6 18 Q27.1 18 28 19.3
+           L30.9 23.2 L49 23.2 Q51.6 23.2 51.6 25.8 L51.6 43 L12.4 43 Z"
+        fill="url(#back)"/>
+  <path d="M15 19 L25.2 19" stroke="#edf1ff" stroke-opacity="0.30"
+        stroke-width="1.1" stroke-linecap="round"/>
+  <!-- the shadow the front panel casts back onto the tab -->
+  <path d="M12.4 25.6 L51.6 25.6 L51.6 29.4 L12.4 29.4 Z" fill="#020506"
+        opacity="0.38"/>
+  <!-- front panel -->
+  <path d="M12.4 29.4 Q12.4 27 14.8 27 L49.2 27 Q51.6 27 51.6 29.4
+           L51.6 44.6 Q51.6 47 49.2 47 L14.8 47 Q12.4 47 12.4 44.6 Z"
+        fill="url(#face)"/>
+  <!-- the lit top edge of the front panel -->
+  <path d="M14.8 28 L49.2 28" stroke="#edf1ff" stroke-opacity="0.46"
+        stroke-width="1.3" stroke-linecap="round"/>
+  <!-- and its own glaze, so the panel is a slab rather than a swatch -->
+  <path d="M12.4 29.4 Q12.4 27 14.8 27 L49.2 27 Q51.6 27 51.6 29.4
+           L51.6 44.6 Q51.6 47 49.2 47 L14.8 47 Q12.4 47 12.4 44.6 Z"
+        fill="url(#metal)"/>
+</svg>

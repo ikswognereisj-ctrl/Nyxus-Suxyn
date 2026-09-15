@@ -77,5 +77,29 @@ if [[ -d "$ROOT/bin" ]]; then
   esac
 fi
 
+# ── THE ICON THEME ────────────────────────────────────────── TRK-4132 ──
+# The dock tile is a live shader, but the GLYPH etched into its face is
+# an SVG pulled from the icon theme by Quickshell.iconPath(). 51 of those
+# glyphs are Nyxus's own and exist in no other theme.
+#
+# NYXUS-Dark was referenced by gtk-3.0/settings.ini, gtk-4.0/settings.ini
+# and the firstboot icon-cache hook — and shipped by none of them. It
+# lived in /usr/share/icons on the build machine only. Everywhere else
+# every Nyxus app fell back to application-x-executable.
+#
+# Installed per-user so no root is needed; ~/.local/share/icons wins over
+# /usr/share/icons in the XDG lookup order.
+if [[ -d "$ROOT/icons" ]]; then
+  mkdir -p "$HOME/.local/share/icons"
+  cp -a "$ROOT/icons/." "$HOME/.local/share/icons/"
+  printf '  icon  installed icon theme(s) to ~/.local/share/icons\n'
+  if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    for theme in "$HOME/.local/share/icons"/*/; do
+      [[ -f "$theme/index.theme" ]] && \
+        gtk-update-icon-cache -q -f -t "$theme" 2>/dev/null || true
+    done
+  fi
+fi
+
 printf 'done. reload:  qs ipc call nyxus reload\n'
 printf 'undo:          copy %s back over ~/.config\n' "$BAK"

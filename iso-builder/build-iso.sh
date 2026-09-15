@@ -250,6 +250,27 @@ if (( ${#missing_cmds[@]} )); then
 fi
 log "spawned-command guard: every nyxus-* command the shell launches is staged"
 
+# ══ THE ICON THEME ═════════════════════════════════════════ TRK-4132 ══
+#
+# gtk-3.0/settings.ini, gtk-4.0/settings.ini and the firstboot
+# 05-icon-cache.sh hook all name NYXUS-Dark. Nothing installed it. The
+# packages list ships papirus-icon-theme and hicolor-icon-theme, which
+# NYXUS-Dark inherits FROM — they are its fallbacks, not the theme.
+#
+# So every install except the build machine's own booted with GTK pointed
+# at a theme that was not there, and all 51 Nyxus app glyphs resolved to
+# application-x-executable. The dock still drew its magma stone correctly
+# and etched a generic gear into the face of every tile.
+if [[ -d "${REPO_ROOT}/icons" ]]; then
+    install -d "${STAGE}/airootfs/usr/share/icons"
+    cp -a "${REPO_ROOT}/icons/." "${STAGE}/airootfs/usr/share/icons/"
+    log "staged icon theme(s) from repo/icons"
+else
+    die "repo/icons is missing — every Nyxus app glyph would fall back"
+fi
+[[ -f "${STAGE}/airootfs/usr/share/icons/NYXUS-Dark/index.theme" ]] \
+    || die "NYXUS-Dark is not staged — gtk settings.ini names it and would miss"
+
 # Desktop overlay from THIS REPO, never ~/.config (no gowski, no 165 Hz pin).
 install -d "${STAGE}/airootfs/etc/skel/.config"
 if [[ -d "${REPO_ROOT}/quickshell" ]]; then

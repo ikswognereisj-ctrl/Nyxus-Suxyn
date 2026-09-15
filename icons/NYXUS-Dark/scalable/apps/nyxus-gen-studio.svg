@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Nyxus gen-studio">
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#071318"/>
+      <stop offset="1" stop-color="#020506"/>
+    </linearGradient>
+    <linearGradient id="arc" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7fe8ff"/>
+      <stop offset="1" stop-color="#4f7fa6"/>
+    </linearGradient>
+    <radialGradient id="bloom" cx="0.5" cy="0.16" r="0.7">
+      <stop offset="0" stop-color="#7fe8ff" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#7fe8ff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- ground: near-black, which is what the glyph has to glow against -->
+  <rect x="26" y="26" width="460" height="460" rx="116" fill="url(#ground)"/>
+  <rect x="26" y="26" width="460" height="460" rx="116" fill="url(#bloom)"/>
+
+  <!-- the ice arc every Nyxus window wears, as the suite's shared mark -->
+  <path d="M80 60 H432" stroke="url(#arc)" stroke-width="14" stroke-linecap="round" fill="none"/>
+
+  <!-- hairline, so the tile still reads on a light wallpaper -->
+  <rect x="27" y="27" width="458" height="458" rx="115" fill="none" stroke="#7fe8ff" stroke-opacity="0.22" stroke-width="2"/>
+
+  <rect x="132" y="166" width="248" height="196" rx="20" fill="none" stroke="#edf1ff" stroke-width="24"/><circle cx="196" cy="228" r="20" fill="#eefcff"/><path d="M150 336 L214 268 L256 306 L302 244 L362 336" fill="none" stroke="#edf1ff" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" /><path d="M368 92 L380 128 L416 140 L380 152 L368 188 L356 152 L320 140 L356 128 Z" fill="#edf1ff"/>
+</svg>
