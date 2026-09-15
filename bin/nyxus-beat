@@ -9,6 +9,28 @@ set -u
 export PATH="${HOME}/.local/bin:${PATH}"
 PIDFILE="${XDG_RUNTIME_DIR:-/tmp}/nyxus-beatd.pid"
 
+# ── REMEMBERING (TRK-4134) ──────────────────────────────────────────
+# Owner, 2026-09-14: "i havent seen the borders or edges pulsating to the
+# real beat of the music ... i havent seen that happen in quit some time".
+#
+# He had not, and it was not a regression in the effect — the effect works.
+# This front door was bound to Super+Alt+B and to nothing else. No
+# exec-once anywhere started it, and nothing wrote down whether it had ever
+# been on. So it lasted exactly as long as the session you pressed the key
+# in, and every login came up with a still border.
+#
+# That also fails the standing "must survive logouts and reboots" rule, so
+# the state goes on disk and `restore` reads it at login.
+#
+# NOT settings.json: SettingsStore owns that file and flushes writes it did
+# not make, so a shell tool writing there is overwritten on the next save.
+# ~/.local/state is where the other shell-side tools keep their runtime
+# state and it is the correct XDG home for it.
+STATE_DIR="${XDG_STATE_HOME:-${HOME}/.local/state}/nyxus"
+STATE="${STATE_DIR}/beat-border"
+
+remember() { mkdir -p "${STATE_DIR}" 2>/dev/null; printf '%s\n' "$1" >"${STATE}"; }
+
 running() { [[ -r "${PIDFILE}" ]] && kill -0 "$(cat "${PIDFILE}")" 2>/dev/null; }
 
 start() {
@@ -31,9 +53,19 @@ stop() {
 }
 
 case "${1:-toggle}" in
-  on)     start ;;
-  off)    stop ;;
-  toggle) running && stop || start ;;
+  on)     remember on;  start ;;
+  off)    remember off; stop ;;
+  toggle) if running; then remember off; stop; else remember on; start; fi ;;
+  # `restore` is what exec-once calls: honour the remembered choice and say
+  # nothing either way. ON is the default for a fresh install — this is a
+  # signature effect and one nobody switches on is one nobody sees. It costs
+  # a cava pipe and one hyprctl per detected beat, and it hands the border
+  # back untouched the moment it stops.
+  restore)
+    want="on"
+    [[ -r "${STATE}" ]] && want="$(<"${STATE}")"
+    [[ "${want}" == "on" ]] && start >/dev/null
+    exit 0 ;;
   status) running && echo on || echo off ;;
-  *) echo "usage: nyxus-beat <on|off|toggle|status>" >&2; exit 2 ;;
+  *) echo "usage: nyxus-beat <on|off|toggle|restore|status>" >&2; exit 2 ;;
 esac

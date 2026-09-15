@@ -66,6 +66,43 @@ COLORS="${BASE% *}"                 # everything before the trailing angle
 ANGLE="${BASE##* }"; ANGLE="${ANGLE%deg}"
 [[ "${ANGLE}" =~ ^[0-9]+$ ]] || ANGLE=270
 
+# ── RE-READING THE STOCK BORDER ───────────────────────────── TRK-4134 ──
+# BASE is snapshotted ONCE, at startup, and that was fine while this only
+# ever ran from a keybind you pressed after the desktop had settled. It is
+# not fine now that it starts at login (see `restore` in nyxus-beat): at
+# that moment the theme tools may not have painted yet, so the snapshot is
+# whatever Hyprland booted with.
+#
+# Worse, it stranded the ICE/MAGMA switch. Flip the look while this daemon
+# is up and the border keeps spinning the OLD theme's colours for the rest
+# of the session, because COLORS was read before the flip and never again.
+#
+# So re-read the live colours when coming back from a silence, which is
+# the same trick nyxus-pulse.sh uses (`read_stock` on a burst from zero)
+# and for the same reason: silence is the one moment the border is
+# guaranteed to be sitting at whatever the theme wants, not at something
+# we spun it to.
+#
+# ⚠ COLOURS ONLY — never the angle. By the time we re-read, the angle on
+# the wire is one WE rotated. Taking it back as the resting angle would
+# ratchet 45° per silence and the restore trap would hand back a border
+# the theme never set.
+restock() {
+  local live norm tok
+  live="$(hyprctl getoption general:col.active_border -j 2>/dev/null \
+          | jq -r '.custom // empty')"
+  [[ -z "${live}" ]] && return
+  norm=""
+  for tok in ${live% *}; do
+    if [[ "${tok}" =~ ^[0-9a-fA-F]{8}$ ]]; then
+      norm+="0x${tok} "
+    else
+      norm+="${tok} "
+    fi
+  done
+  [[ -n "${norm}" ]] && COLORS="${norm% }"
+}
+
 # beat detection over the two lowest bars: exponential moving average
 # baseline; a frame beats when bass > 1.35x EMA, above an absolute
 # floor, with a 180ms refractory window.
@@ -73,13 +110,28 @@ ANGLE="${BASE##* }"; ANGLE="${ANGLE%deg}"
 # bash defer the TERM trap until the pipe exits, so `nyxus-beat off`
 # would never restore. `wait` is signal-interruptible.
 cava -p "${CAVA_CONF}" 2>/dev/null | {
-  ema=10; last_beat=0
+  ema=10; last_beat=0; last_stock=0
   while IFS=';' read -r b1 b2 _; do
     [[ "${b1}" =~ ^[0-9]+$ && "${b2}" =~ ^[0-9]+$ ]] || continue
     bass=$(( (b1 + b2) / 2 ))
     ema=$(( (ema * 85 + bass * 15) / 100 ))
     now=$(( $(date +%s%3N) ))
     if (( bass > 25 && bass * 100 > ema * 135 && now - last_beat > 180 )); then
+      # TRK-4134 · pick up a theme flip.
+      #
+      # ⚠ The first cut gated this on "first beat after two seconds of
+      # quiet", copying nyxus-pulse.sh's burst-from-silence trick. Tested
+      # by flipping the border to ICE colours mid-track: it never took,
+      # because with music actually playing the beats land every few
+      # hundred ms and a two-second gap never arrives. The one case the
+      # gate covered was the one case that does not matter.
+      #
+      # So it is a plain interval instead. One `hyprctl getoption` every
+      # three seconds, and only on a frame that already beat.
+      if (( now - last_stock > 3000 )); then
+        restock
+        last_stock=${now}
+      fi
       last_beat=${now}
       ANGLE=$(( (ANGLE + 45) % 360 ))
       [[ -r "${COLORFILE}" ]] && COLORS="$(<"${COLORFILE}")"   # tintd handoff
