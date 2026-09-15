@@ -43,7 +43,8 @@
 //      the widget board's own left edge less its bloom collar. The wl_surface
 //      is therefore PHYSICALLY NARROWER than the gap to the first chip. A
 //      picture cannot cover a pixel its surface does not reach, whatever its
-//      alpha says. `keepOutLeft` is derived live from
+//      alpha says. (The keep-out itself is gone — see TRK-4172 below.)
+//      That line used to read: `keepOutLeft` is derived live from
 //      `Prefs.widgetBoardLeft()` — the same arithmetic `Widgets.qml` places
 //      the chips with, read from one place rather than copied (a second copy
 //      of a ceiling is how audit item 24's seam rule nearly lost its runner).
@@ -87,36 +88,32 @@ PanelWindow {
     // a black screen. Coercion to a url happens for free at `Image.source`.
     property string artwork: ""
 
-    // Where the widget board starts, in screen pixels, or a negative number
-    // for "there is no board on this screen". `shell.qml` binds this from
-    // `Prefs.widgetBoardLeft(screen.width)`; the default is -1 so an instance
-    // that is never told falls through to the full-screen case, which is only
-    // safe BECAUSE the caller is what knows whether widgets are on.
-    property int keepOutLeft: -1
-    // Top/bottom of the chip surfaces. -1 means "no hole on that axis".
-    // The near plate is full-screen with a rectangular keep-out over the
-    // board so the veil can wrap UNDER the chips (bottom-right clouds)
-    // without ever painting ON them.
-    property int keepOutTop: -1
-    property int keepOutBottom: -1
+    // TRK-4172 — THE KEEP-OUT IS GONE, AND WHY ────────────────────────────
+    // This carried `keepOutLeft/Top/Bottom` and drew itself as three clipped
+    // viewports with the widget board's rectangle punched out. The owner saw
+    // the result before he saw the code: "it dosent truly sit behind the
+    // widgets eiter and tyou can see where it dosent clear as day". The
+    // straight vertical edge in his screenshot was the board's left margin,
+    // and the artwork simply stopped there.
+    //
+    // The hole dated from a measurement taken when a sky sat on the CHIPS'
+    // OWN LEVEL: card contrast 178.57 -> 128.96. TRK-3605 then moved every
+    // sky surface down to `WlrLayer.Background`, and from that day the cards
+    // occluded this plate by layer order — the hole was cutting a picture to
+    // win a fight that was already over. Re-measured on the running desktop
+    // 2026-09-15, hole vs no hole, same widget column:
+    //
+    //     card interior mean  33.07 -> 39.71   (+2.6% of range)
+    //     card interior std   46.63 -> 47.77   (the spread text lives in)
+    //     card interior peak  255   -> 252
+    //
+    // Nothing the text needs moved. So the plate is one full-screen Image
+    // again, `Prefs.widgetBoardLeft/Top/Bottom` are no longer read here (they
+    // still place the chips in `Widgets.qml`, which is their real job), and
+    // the ringed world reaches the right-hand edge for the first time.
 
     readonly property int screenW: screen ? screen.width : 0
     readonly property int screenH: screen ? screen.height : 0
-
-    // The bloom collar. `Widgets.qml` gives every chip a `Theme.bloomPad`
-    // padding ring OUTSIDE its card — the chip's wl_surface really does start
-    // that far left of the card's visible edge — so clearing the card is not
-    // enough; the keep-out has to clear the chip's surface. Read from Theme,
-    // not typed in, so it tracks the pad the chips actually use.
-    readonly property int holeX: (root.onTv || keepOutLeft < 0)
-        ? screenW
-        : Math.max(0, Math.min(screenW, keepOutLeft - Theme.bloomPad))
-    readonly property int holeY: keepOutTop < 0 ? 0 : Math.max(0, keepOutTop)
-    readonly property int holeB: keepOutBottom < 0
-        ? screenH
-        : Math.max(holeY, Math.min(screenH, keepOutBottom))
-    readonly property int holeW: Math.max(0, screenW - holeX)
-    readonly property int holeH: Math.max(0, holeB - holeY)
 
     anchors { left: true; right: true; top: true; bottom: true }
     exclusionMode: ExclusionMode.Ignore
@@ -143,39 +140,17 @@ PanelWindow {
     visible: root.artEnabled && root.artwork !== "" && !root.artBroken
              && root.screenW > 0 && root.screenH > 0
 
-    // One full-screen Image, clipped into three viewports that skip the
-    // widget board. Same source, same origin, same Fit as LiveWall, so the
-    // near plate still registers with `-bg`. A picture cannot cover a pixel
-    // its clip does not reach, whatever the PNG's alpha says.
-    component Plate: Item {
-        required property int vx
-        required property int vy
-        required property int vw
-        required property int vh
-        x: vx; y: vy; width: vw; height: vh
-        clip: true
-        visible: vw > 0 && vh > 0
-        Image {
-            x: -parent.vx
-            y: -parent.vy
-            width: root.screenW
-            height: root.screenH
-            source: root.artwork
-            fillMode: Image.PreserveAspectFit
-            asynchronous: true
-            cache: true
-            smooth: true
-            onStatusChanged: if (status === Image.Error) root.artBroken = true
-            Component.onCompleted: if (status === Image.Error) root.artBroken = true
-        }
-    }
-
-    Plate { vx: 0; vy: 0; vw: root.holeX; vh: root.screenH }
-    Plate { vx: root.holeX; vy: 0; vw: root.holeW; vh: root.holeY }
-    Plate {
-        vx: root.holeX
-        vy: root.holeY + root.holeH
-        vw: root.holeW
-        vh: root.screenH - (root.holeY + root.holeH)
+    // ONE full-screen Image. Same source, same origin, same Fit as LiveWall,
+    // so the near plate still registers with `-bg`.
+    Image {
+        anchors.fill: parent
+        source: root.artwork
+        fillMode: Image.PreserveAspectFit
+        asynchronous: true
+        cache: true
+        smooth: true
+        mipmap: true
+        onStatusChanged: if (status === Image.Error) root.artBroken = true
+        Component.onCompleted: if (status === Image.Error) root.artBroken = true
     }
 }

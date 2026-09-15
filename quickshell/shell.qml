@@ -230,14 +230,26 @@ ShellRoot {
             screen: modelData
             artEnabled: true
             artwork: Prefs.layeredWallFg
-            // The keep-out, derived live from the SAME arithmetic that places
-            // the chips (`Prefs.widgetBoardLeft`, moved there from
-            // `Widgets.qml` by this change so there is one copy of it). A
-            // negative answer means widgets are off and there is nothing to
-            // keep out of, which is the full-screen case.
-            keepOutLeft: Prefs.widgetBoardLeft(modelData ? modelData.width : 0)
-            keepOutTop: Prefs.widgetBoardTop()
-            keepOutBottom: Prefs.widgetBoardBottom()
+            // TRK-4172 removed the keep-out that used to be passed here.
+            // Owner, with a screenshot: "it dosent truly sit behind the
+            // widgets eiter and tyou can see where it dosent clear as day".
+            // He was right, and the straight vertical edge he could see was
+            // the widget board's left margin — the plate was drawn as three
+            // viewports with the board's rectangle punched out of it.
+            //
+            // The hole was put there when a sky on the CHIPS' OWN LEVEL
+            // measured card contrast 178.57 -> 128.96. That reason stopped
+            // being true at TRK-3605, which moved every sky surface down to
+            // `WlrLayer.Background`: the cards now occlude the plate by layer
+            // order instead of needing a hole cut for them. Re-measured on
+            // the running desktop 2026-09-15, same widget column, hole vs no
+            // hole — card interior mean 33.07 -> 39.71, std 46.63 -> 47.77,
+            // peak 255 -> 252. The background under the glass rose 2.6% of
+            // range and the spread the text lives in did not move.
+            //
+            // So the cut was buying nothing and cost the whole right half of
+            // the artwork: with it gone the ringed world reads for the first
+            // time instead of stopping dead at the widget margin.
         }
     }
 
