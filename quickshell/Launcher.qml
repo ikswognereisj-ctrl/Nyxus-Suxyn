@@ -115,7 +115,11 @@ PanelWindow {
     // widgets are read-only views of nyxus-lock-weather's two-string cache
     // and Settings has no weather page, so the app is the only forecast on
     // the build. Reasoning in full in nyxus-weather.desktop's header.
-    readonly property var allApps: [
+    // TRK-4143 — the roster literal. Read `allApps` instead; it is this list
+    // with unavailable entries removed. Splitting the two gives one place
+    // where a tile can be withheld, so pins, search, categories and the
+    // Daily/Classic rosters can never disagree about whether an app exists.
+    readonly property var appRoster: [
         { name: qsTr("Files"),          icon: "nyxus-files"        ,      exec: "@files",                 cat: "apps"   },
         { name: qsTr("Web Browser"),    icon: "chromium",                 exec: "chromium",               cat: "apps"   },
         { name: qsTr("Mail"),           icon: "thunderbird",              exec: "thunderbird",            cat: "apps"   },
@@ -187,7 +191,7 @@ PanelWindow {
         // `system`, not `tools`: it answers about THIS machine, so it sits
         // with Settings and Hardware rather than with the calculator. Its
         // accent is coral for exactly that reason — see APP_ACCENTS.
-        { name: qsTr("Brain"),          icon: "nyxus-brain",              exec: "@brain",                 cat: "system", keys: "ai assistant chat ask question llm ollama" },
+        { name: qsTr("Brain"),          icon: "nyxus-brain",              exec: "@brain",                 cat: "system", needs: "brain", keys: "ai assistant chat ask question llm ollama" },
         { name: qsTr("Hardware"),       icon: "nyxus-control",                      exec: "@hardware",              cat: "system" },
         // WIP-463 / GAP-945: gnome-disk-utility. Arch extra desktop id is
         // org.gnome.DiskUtility.desktop (Exec=gnome-disks). The GNOME extra
@@ -223,6 +227,27 @@ PanelWindow {
         // Clipboard is the configuration and can still open the picker.
 
     ]
+
+    // TRK-4143 — the roster everything else reads. An entry may declare
+    // `needs: "<capability>"`; if that capability is absent on this machine
+    // the tile is not in the list at all, so it cannot be clicked, searched,
+    // pinned or counted. Entries with no `needs` are always present, which
+    // is all of them but Brain.
+    //
+    // Filtering here rather than at each call site is deliberate: the roster
+    // is read by pinnedApps, rosterApps, filteredApps and the "N apps" count,
+    // and a tile that is hidden in one and live in another is worse than one
+    // that is simply live. See Bus.brainAvailable for why Brain is gated.
+    readonly property var allApps: {
+        var out = [];
+        for (var i = 0; i < root.appRoster.length; i++) {
+            var a = root.appRoster[i];
+            if (a.needs === "brain" && !Bus.brainAvailable)
+                continue;
+            out.push(a);
+        }
+        return out;
+    }
 
     // The six that get the big tiles. A curated constant, not a ranking:
     // see the header — there is no usage data in this build and inventing an

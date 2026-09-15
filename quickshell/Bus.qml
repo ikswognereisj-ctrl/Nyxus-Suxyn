@@ -9,6 +9,7 @@ pragma Singleton
 // IpcHandler in shell.qml flips the same booleans for the keybinds. One source
 // of truth, no round-trip through the CLI.
 import Quickshell
+import Quickshell.Io
 import QtQuick
 
 Singleton {
@@ -279,8 +280,49 @@ Singleton {
     // [undefined] to bool" warning) and the writes landed on a JS expando,
     // so Brain could never actually be opened through the bus.
     property bool brainOpen: false
-    function openBrain() { brainOpen = true; }
-    function toggleBrain() { brainOpen = !brainOpen; }
+
+    // TRK-4143 — Brain is the one app in the roster whose engine does not
+    // ship, and until now the Start menu did not know that.
+    //
+    // The chain is Launcher tile -> Bus.openBrain() -> Brain.qml -> `python3
+    // ~/.config/quickshell/brain-io.py ask <q>` -> `python3
+    // /opt/nyxus/nyxus_brain.py --ask <q>`. Everything up to that last hop
+    // is in this repo. That last hop is not: nyxus_brain.py is root-owned,
+    // 37 KB, and lives only on the owner's machine. It is not vendored, and
+    // nothing in iso-builder/ installs it or Ollama or pulls a model.
+    //
+    // So on an installed Nyxus the tile was live, the window opened, and the
+    // first question came back as a chat bubble reading
+    //
+    //     python3: can't open file '/opt/nyxus/nyxus_brain.py':
+    //     [Errno 2] No such file or directory
+    //
+    // — a raw interpreter error, in the UI, in a build the owner intends
+    // everyone to use. TRK-3752 commissioned Brain because the pieces were
+    // on his machine and unreachable; that reasoning is exactly why it must
+    // not ship to machines where the pieces are absent.
+    //
+    // Deleting Brain was the other option and is the wrong one: it works,
+    // today, where the engine exists. So it is GATED, not removed — one
+    // probe at startup, and `needs: "brain"` on the roster tile. Present on
+    // his machine, invisible everywhere else, same code either way.
+    //
+    // `test -r`, not `test -e`: an unreadable file fails the same way a
+    // missing one does, and the check should match the failure it prevents.
+    property bool brainAvailable: false
+    // Gated here, not only in the Launcher, because the tile is not the only
+    // door: shell.qml exposes `brain()` over IPC and a keybind can call it.
+    // Hiding the tile while leaving the IPC live would just move the dead
+    // button somewhere harder to find.
+    function openBrain() { if (brainAvailable) brainOpen = true; }
+    function toggleBrain() { if (brainAvailable) brainOpen = !brainOpen; }
+    Process {
+        running: true
+        command: ["sh", "-c", "test -r /opt/nyxus/nyxus_brain.py && echo yes || echo no"]
+        stdout: StdioCollector {
+            onStreamFinished: bus.brainAvailable = String(this.text).trim() === "yes"
+        }
+    }
 
     // Which subject to show. Emitted rather than stored, because it is an
     // INSTRUCTION and not a state: storing it would mean the next plain

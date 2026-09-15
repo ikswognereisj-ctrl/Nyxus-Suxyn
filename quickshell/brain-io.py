@@ -3,13 +3,35 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 
+ENGINE = "/opt/nyxus/nyxus_brain.py"
+
+# TRK-4143 — the engine is not part of Nyxus. It is installed separately and
+# is absent on a stock system, so `subprocess.run` was handing the interpreter
+# error straight to the chat window:
+#
+#     python3: can't open file '/opt/nyxus/nyxus_brain.py':
+#     [Errno 2] No such file or directory
+#
+# The Launcher tile and Bus.openBrain() are now gated on this same file, so
+# this branch should be unreachable from the UI. It stays anyway: a traceback
+# is never the right answer to a typed question, and `qs ipc` can still reach
+# Brain directly.
+def _missing() -> None:
+    json.dump({
+        "ok": False,
+        "text": "The Brain engine is not installed on this system.",
+    }, sys.stdout)
+
 
 def cmd_ask(q: str) -> None:
+    if not os.access(ENGINE, os.R_OK):
+        return _missing()
     r = subprocess.run(
-        ["python3", "/opt/nyxus/nyxus_brain.py", "--ask", q],
+        ["python3", ENGINE, "--ask", q],
         capture_output=True, text=True, timeout=180,
     )
     out = (r.stdout or "").strip()
@@ -21,8 +43,10 @@ def cmd_ask(q: str) -> None:
 
 
 def cmd_reindex() -> None:
+    if not os.access(ENGINE, os.R_OK):
+        return _missing()
     r = subprocess.run(
-        ["python3", "/opt/nyxus/nyxus_brain.py", "--reindex"],
+        ["python3", ENGINE, "--reindex"],
         capture_output=True, text=True, timeout=180,
     )
     json.dump({"ok": r.returncode == 0, "text": (r.stdout or r.stderr or "").strip()[-400:]}, sys.stdout)

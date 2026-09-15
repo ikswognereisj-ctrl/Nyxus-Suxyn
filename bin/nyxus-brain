@@ -1,8 +1,21 @@
 #!/usr/bin/env bash
 set -u
+
+# TRK-4143 — the engine is not part of Nyxus. build-iso.sh installs all of
+# repo bin/ into /usr/local/bin, so this script ships even though
+# /opt/nyxus/nyxus_brain.py does not. Without this guard `nyxus-brain --ask`
+# printed a raw interpreter error and bare `nyxus-brain` was a silent no-op,
+# because Bus.openBrain() now refuses when the engine is missing.
+ENGINE=/opt/nyxus/nyxus_brain.py
+if [[ ! -r "${ENGINE}" ]]; then
+  echo "The Brain engine is not installed on this system." >&2
+  echo "Brain is an optional add-on and is not part of the Nyxus image." >&2
+  exit 2
+fi
+
 case "${1:-}" in
   --ask|--reindex|--facts|--selftest|--watch|--chat|-h|--help)
-    exec python3 /opt/nyxus/nyxus_brain.py "$@"
+    exec python3 "${ENGINE}" "$@"
     ;;
 esac
 if ! command -v qs >/dev/null 2>&1; then echo "Brain needs qs." >&2; exit 2; fi
