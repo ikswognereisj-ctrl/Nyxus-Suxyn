@@ -1542,12 +1542,26 @@ FloatingWindow {
                     visible: !win.searching && win.currentCategory !== ""
                     spacing: 0
 
-                    // ── Panel 1 · NODE TREE (25%) ─────────────────────
+                    // ── Panel 1 · NODE TREE ───────────────────────────
+                    // The percentages used to read 25 / 45 / 30 and sum to a
+                    // hundred. With the bus gone they would have summed to 70,
+                    // and because these are PROPORTIONS the tree would have
+                    // quietly grown from a quarter of the window to over a
+                    // third -- removing a panel would have made the navigation
+                    // WIDER, which is the opposite of the point.
+                    //
+                    // So the pair is restated as 22 / 78, and the tree gains a
+                    // ceiling it never had. A settings sidebar is a list of
+                    // short words; past about 300 px it stops being a column
+                    // and becomes an empty field with text down one edge, and
+                    // this window is resizable, so on a maximised 1920 screen
+                    // the old proportional rule would have drawn a 420 px one.
                     Item {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        Layout.preferredWidth: 25
+                        Layout.preferredWidth: 22
                         Layout.minimumWidth: 180
+                        Layout.maximumWidth: 300
 
                         Pane {
                             id: treePane
@@ -1818,11 +1832,14 @@ FloatingWindow {
                         color: Theme.tokenAccentHairline
                     }
 
-                    // ── Panel 2 · CONTROL KIT (45%) ───────────────────
+                    // ── Panel 2 · CONTROL KIT ─────────────────────────
+                    // Takes the whole remainder now (see Panel 1 for why the
+                    // proportions were restated). The settings themselves are
+                    // the reason the window exists; they get the width.
                     Item {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        Layout.preferredWidth: 45
+                        Layout.preferredWidth: 78
                         Layout.minimumWidth: 280
 
                         Pane {
@@ -1924,123 +1941,25 @@ FloatingWindow {
                         }
                     }
 
-                    Rectangle {
-                        Layout.preferredWidth: 1
-                        Layout.fillHeight: true
-                        Layout.topMargin: Theme.s5
-                        Layout.bottomMargin: Theme.s5
-                        color: Theme.tokenAccentHairline
-                    }
-
-                    // ── Panel 3 · LIVE DIAGNOSTIC BUS (30%) ───────────
-                    Item {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        Layout.preferredWidth: 30
-                        Layout.minimumWidth: 200
-
-                        Pane {
-                            anchors.fill: parent
-                            anchors.margins: Theme.s3
-                            anchors.rightMargin: Theme.s4
-                            elevation: 1
-                            radius: Theme.r2
-                            fill: Theme.panelMid
-                            bloomAtRest: false
-
-                            GlassEdge {
-                                anchors.fill: parent
-                                radiusTL: Theme.r2; radiusTR: Theme.r2
-                                radiusBR: Theme.r2; radiusBL: Theme.r2
-                                body: 0
-                                wash: 0
-                                glaze: 0.55
-                                edging: 0.70
-                            }
-
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.margins: Theme.s4
-                                spacing: Theme.s2
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: Theme.s3
-
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: "LIVE BUS"
-                                        color: Theme.text
-                                        font.family: Theme.fTech
-                                        font.pixelSize: Theme.tCaption
-                                        elide: Text.ElideRight
-                                        clip: true
-                                    }
-                                    Rectangle {
-                                        Layout.preferredWidth: 6
-                                        Layout.preferredHeight: 6
-                                        radius: 1
-                                        color: Theme.plumGlow
-                                    }
-                                    Text {
-                                        text: String(DiagnosticBus.count)
-                                        color: win.glacierText
-                                        font.family: Theme.fNum
-                                        font.pixelSize: Theme.tMicro
-                                        elide: Text.ElideRight
-                                        clip: true
-                                    }
-                                }
-
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: 1
-                                    color: Theme.tokenAccentHairline
-                                }
-
-                                ListView {
-                                    ScrollRail { flick: busView }
-                                    id: busView
-                                    Layout.fillWidth: true
-                                    Layout.fillHeight: true
-                                    clip: true
-                                    model: DiagnosticBus.lines
-                                    spacing: 1
-                                    boundsBehavior: Flickable.StopAtBounds
-                                    flickDeceleration: 3500
-
-                                    delegate: Item {
-                                        id: busRow
-                                        required property string line
-                                        width: busView.width
-                                        height: 16
-                                        clip: true
-                                        readonly property bool failLine:
-                                            busRow.line.indexOf("fail") >= 0
-                                            || busRow.line.indexOf("error") >= 0
-                                            || busRow.line.indexOf("exec!") >= 0
-
-                                        Text {
-                                            anchors.fill: parent
-                                            text: busRow.line
-                                            color: busRow.failLine ? win.magmaMark : win.glacierText
-                                            font.family: Theme.fNum
-                                            font.pixelSize: Theme.tMicro
-                                            elide: Text.ElideRight
-                                            clip: true
-                                        }
-                                    }
-
-                                    Connections {
-                                        target: DiagnosticBus
-                                        function onSeqChanged() {
-                                            busView.positionViewAtEnd();
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    // ── Panel 3 was the LIVE DIAGNOSTIC BUS ── TRK-4153 ──
+                    // Owner, 2026-09-15: "the live bus section that was
+                    // suppose to be gone and just keep the two".
+                    //
+                    // It was a developer's scrolling log of every control the
+                    // window touched, and it was taking 30% of the width of
+                    // the settings surface on every machine that will ever run
+                    // this build. Nobody who is changing their wallpaper needs
+                    // to watch the bus, and a stranger reading it learns only
+                    // that something in here is still being debugged -- the
+                    // same reason THE FLOOR stopped claiming HDMI screens.
+                    //
+                    // `DiagnosticBus` itself is deliberately LEFT IN PLACE.
+                    // SetButton, SetChoice, SetSlider, SetSwitch and
+                    // SetPageSound all still write to it; this panel was its
+                    // only reader. So the instrumentation survives for anyone
+                    // who wants to put a view back behind a developer flag,
+                    // and nothing had to be unpicked from five call sites to
+                    // reclaim the third of the window.
                 }
             }
 
