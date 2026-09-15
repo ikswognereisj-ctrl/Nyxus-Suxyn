@@ -676,6 +676,11 @@ Singleton {
     readonly property string layeredWallBg: layeredWallHalf("-bg.png")
     readonly property string layeredWallFg: layeredWallHalf("-fg.png")
 
+    // TRK-4165. Is the near plate over the ground? See the `magma_planet`
+    // note in the adapter for why this is a separate key and not a reading
+    // of `sky_mode`. True is what shipped.
+    readonly property bool nearPlate: adapter.magma_planet
+
     // ── the idle chain (owner commission, 2026-08-17) ────────────────────
     // "set a screensaver as well that really works and then goes to login
     // after so long after that as well."
@@ -985,6 +990,35 @@ Singleton {
             // is what a fresh install has, and `sky_mode: "layered"` with this
             // empty paints nothing rather than guessing at somebody's art.
             property string layered_wall_base: ""
+
+            // TRK-4165 — THE NEAR PLATE, AS ITS OWN WORD.
+            // Owner, this seat: "i tried toggling starlight ususaly when i did
+            // that it set those ones as my background but it didnt this time
+            // either so i dont jkow whats up with that."
+            //
+            // He was right and the control was dead. Under the MAGMA look,
+            // `shell.qml`'s `magmaPlanet` was `lookSet === "magma" &&
+            // layeredWallFg !== ""` — it never consulted `sky_mode` at all, so
+            // the lava planet was PINNED ON and the Sky choice could not turn
+            // it off. Picking "Starlight" wrote `sky_mode: "headliner"` and
+            // changed nothing on screen, which is the exact "a control that
+            // writes a setting and does nothing" failure this build is being
+            // audited for.
+            //
+            // The reason it could not be fixed by reading `sky_mode` is that
+            // the key is OVERLOADED: the MAGMA look button in
+            // SetPageAppearance.qml also writes `sky_mode: "headliner"` (the
+            // planet is a NEAR plate over the LIVE stars — that is the whole
+            // design, and `Prefs.skyWantsHeadliner` is what puts the fibre sky
+            // under it). So "magma's default" and "the user just asked for
+            // bare stars" were the SAME VALUE. No expression over `sky_mode`
+            // can separate two states that are one state.
+            //
+            // So the near plate gets its own word. `sky_mode` keeps meaning
+            // "what owns the GROUND"; this means "is there a plate over it".
+            // Default true, which is byte-for-byte the behaviour that shipped
+            // — nobody's desktop changes until they touch the new switch.
+            property bool magma_planet: true
 
             // The idle chain, mirroring `nyxus_settings.py`'s
             // HYPRIDLE_DEFAULTS exactly — 5 minutes to the screensaver,

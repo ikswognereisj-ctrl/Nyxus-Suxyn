@@ -83,8 +83,16 @@ ShellRoot {
     // MAGMA world: Starlight (Headliner) is the stars. The lava planet is
     // only the near plate. Never a photo of stars, never a flattened
     // composite of the two.
+    //
+    // TRK-4165: `&& Prefs.nearPlate` is new. Without it this expression never
+    // consulted anything the user could reach, so under MAGMA the planet was
+    // pinned on and Settings ▸ Background ▸ Sky ▸ Starlight was a dead
+    // control — it wrote `sky_mode: "headliner"` (which was ALREADY the value
+    // the MAGMA look button writes) and nothing moved. `nearPlate` defaults
+    // true, so this line is behaviour-identical until the new switch is used.
     readonly property bool magmaPlanet: Prefs.lookSet === "magma"
                                         && Prefs.layeredWallFg !== ""
+                                        && Prefs.nearPlate
 
     // ── THE LIVING WALLPAPER ─────────────────────────────────────────────
     // His own galaxy picture with the swirls inside the band stirred by the

@@ -53,6 +53,21 @@ SetPage {
     //  10  suxyn-fiber-headliner   RR fibre-star roof (new)
     //  11  suxyn-meteor-strike     two meteors colliding (new)
     //  12  suxyn-magma-world       MAGMA look layered still (stars + lava world)
+    //  13  suxyn-magma-forge       MAGMA  · lava world, plates + seams   (new)
+    //  14  suxyn-magma-ember       MAGMA  · distant world, cooled seams  (new)
+    //  15  suxyn-magma-crucible    MAGMA  · close world, hottest seams   (new)
+    //  16  suxyn-plum-geode        ICE    · violet world over the veil   (new)
+    //  17  suxyn-plum-cryo         ICE    · small cryo world             (new)
+    //  18  suxyn-plum-halo         ICE    · large world, magenta seams   (new)
+    //
+    // 13-18 are generated, not photographed: `bin/nyxus-gen-wall` presses
+    // magma.frag to a 2048x1024 material, grades its melt plateau down to
+    // plates-with-glowing-seams, wraps that onto a lit sphere and composites
+    // it over one of the two starfields this build already ships. Three wear
+    // the warm ramp and three the cold one, so each look gains the same
+    // number of walls and both sets are made of the same material the rest
+    // of the desktop is made of. Re-runnable: the recipe table is in the
+    // script, and every input is in this repo.
     readonly property var keepSlugs: [
         "suxyn-concrete-rose",
         "suxyn-ocular-wide",
@@ -65,7 +80,13 @@ SetPage {
         "suxyn-voyage-rings",
         "suxyn-fiber-headliner",
         "suxyn-meteor-strike",
-        "suxyn-magma-world"
+        "suxyn-magma-world",
+        "suxyn-magma-forge",
+        "suxyn-magma-ember",
+        "suxyn-magma-crucible",
+        "suxyn-plum-geode",
+        "suxyn-plum-cryo",
+        "suxyn-plum-halo"
     ]
     // TRK-3502 · the same records as `moreWalls`, keyed by slug for the
     // "Also shipped" picker. Kept as its own binding rather than mapped inline
@@ -325,6 +346,37 @@ SetPage {
             }
         }
 
+        // TRK-4165 — THE NEAR PLATE SWITCH.
+        // Owner, this seat: "i tried toggling starlight ususaly when i did
+        // that it set those ones as my background but it didnt this time."
+        //
+        // He was right. Under MAGMA the lava planet was pinned on by
+        // `shell.qml`'s `magmaPlanet`, which never read `sky_mode`, so this
+        // card's Starlight button wrote a value that was already set and
+        // moved nothing on screen. `sky_mode` could not be taught to mean it
+        // either, because the MAGMA look button writes `sky_mode: "headliner"`
+        // itself — the planet is a NEAR plate over the LIVE fibre sky, which
+        // is the design. "Magma's default" and "give me bare stars" were one
+        // value, so the plate needed a word of its own.
+        //
+        // Only shown under MAGMA because that is the only look that mounts a
+        // near plate over Starlight; on ICE the key exists, reads true and
+        // does nothing, and a switch that does nothing is what this page is
+        // being audited to not have.
+        SetRow {
+            visible: Prefs.lookSet === "magma"
+            title: qsTr("Lava planet")
+            sub: Prefs.nearPlate
+                 ? qsTr("The world sits over the stars. Turn it off for bare Starlight.")
+                 : qsTr("Off — Starlight alone, nothing in front of it.")
+
+            SetSwitch {
+                key: "magma_planet"
+                defaultValue: true
+                tone: page.tone
+            }
+        }
+
         SetRow {
             title: qsTr("On the desktop")
             valueText: page.currentPath !== "" ? page.currentPath
@@ -508,6 +560,9 @@ SetPage {
         what: qsTr("Background")
         // TRK-3426: the moved cards' keys, with sky_mode. 13r81 holds this
         // list equal to what the page writes.
-        keys: ["sky_mode", "layered_wall_base"]
+        // TRK-4165 adds `magma_planet`: it is written from this card, so Reset
+        // must be able to take it back or the page would offer a control it
+        // could not undo.
+        keys: ["sky_mode", "layered_wall_base", "magma_planet"]
     }
 }
