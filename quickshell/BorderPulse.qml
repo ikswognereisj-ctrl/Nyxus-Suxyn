@@ -150,12 +150,53 @@ Item {
     readonly property string cLightB:   root._magma ? "ffd27a" : "b7e6f2"
     readonly property string cDarkEnd:  root._magma ? "b0653a" : "4f7fa6"
     readonly property string cHaloDeep: root._magma ? "6b2a15" : "274b7a"
-    readonly property string cStrikeA:  root._magma ? "ff7847" : "aa6ece"
-    readonly property string cStrikeB:  root._magma ? "ff9a3c" : "d765a2"
+    // ── STRIKE COLOUR · why magma goes WHITE-HOT · TRK-4176 ──────────────
+    // First pass used ff7847 / ff9a3c -- the look's own ember and gold.
+    // Correct by the contrast table, and nearly invisible in motion, for a
+    // reason the ice column hides: on ICE the strike jumps FAMILY, glacier
+    // cyan into violet and plum, which the eye reads instantly even at low
+    // amplitude. On MAGMA every stop was already orange, so the strike was
+    // a small step along one hue and read as "slightly brighter orange".
+    //
+    // So magma strikes toward white-hot instead. It is the same thing the
+    // material does physically -- dark red, orange, yellow, white as it
+    // heats -- so a beat now looks like the rim flaring rather than
+    // changing colour, and luminance is what carries it:
+    //   resting dark end b0653a  4.77:1
+    //   struck   fff3d0         18.86:1
+    // a ~4x luminance jump, against ~1.7x for the old ember strike.
+    //
+    // This cannot threaten the WIP-777 focus floor the way a dark strike
+    // could: every value on the path from b0653a to fff3d0 is BRIGHTER than
+    // the resting stop, so the 3:1 state minimum is cleared by more during
+    // the strike than at rest, not less.
+    readonly property string cStrikeA:  root._magma ? "fff3d0" : "aa6ece"
+    readonly property string cStrikeB:  root._magma ? "ffdfa0" : "d765a2"
+    // How far the strike is allowed to pull the rim off its resting pair.
+    // ICE stays at the long-standing 0.72 -- it changes hue family, so it
+    // never needed more. MAGMA is a luminance-only move toward a colour
+    // with four times the contrast of the resting stop, so it can go nearly
+    // all the way without risking the focus floor, and it needs to in order
+    // to be visible at all.
+    readonly property real strikeMix: root._magma ? 0.95 : 0.72
 
-    // Hyprctl floor. 120 ms is enough for a 16 s glacier fade and is not
-    // the old 50 ms beat writer.
-    readonly property int updateMs: 120
+    // Hyprctl write rate. Was 120 ms, chosen when this file only had to
+    // carry a 16 s fade and the explicit goal was to not be "the old 50 ms
+    // beat writer".
+    //
+    // TRK-4176: 120 ms cannot render a beat. After the decay fix a strike
+    // rises and falls in ~114 ms, which is SHORTER than the write interval —
+    // so the writer samples the strike envelope at a slower rate than the
+    // envelope itself and lands on a random phase of it, missing most peaks
+    // entirely. That is classic undersampling, and on screen it looks like
+    // exactly what the owner reported: a rim that is clearly lit but barely
+    // seems to move.
+    //
+    // 45 ms gives roughly five writes across each flash — enough to draw the
+    // attack and the fall rather than one arbitrary point on it. It is still
+    // a batched hyprctl, one process per write, and only while audio is hot;
+    // the slow fade alone would not justify it, a beat does.
+    readonly property int updateMs: 45
     readonly property int fadeMs: 16000     // one light↔dark glacier cycle
     property bool _dirty: false
     property real iceT: 0                   // 0 light glacier … 1 darker
@@ -319,8 +360,8 @@ Item {
         // the WIP-777 focus-contrast floor lives in these stops, and a rim
         // that abandons them stops saying "this window has focus" on the beat.
         if (k > 0.001) {
-            a = mixHex(a, root.cStrikeA, k * 0.72);
-            b = mixHex(b, root.cStrikeB, k * 0.72);
+            a = mixHex(a, root.cStrikeA, k * root.strikeMix);
+            b = mixHex(b, root.cStrikeB, k * root.strikeMix);
         }
 
         let parts = [];
@@ -338,8 +379,15 @@ Item {
         // owns, so pushing its range and alpha on the beat is what makes the
         // edge look like it is breathing rather than just changing colour.
         // This is the term you see from across the room.
-        const shRange = Math.round(root._restRange * (1 + t * 0.18 + k * 0.55));
-        const shA = Math.min(0xcc, Math.round(root._restAlpha * (1 + t * 0.55 + k * 1.30)))
+        // TRK-4176: the beat terms were k*0.55 on range and k*1.30 on alpha.
+        // With `kick` pinned at a mean of 0.816 and never falling below
+        // 0.668, those terms were effectively a constant offset rather than
+        // a modulation -- the halo sat permanently near its bloom and had
+        // nowhere to swell from. The decay fix gives it a real trough, and
+        // these push the peak further so the swell is unmistakable: range
+        // now 22 at rest to ~41 on a hit, alpha 0x3a to the 0xe0 ceiling.
+        const shRange = Math.round(root._restRange * (1 + t * 0.18 + k * 0.90));
+        const shA = Math.min(0xe0, Math.round(root._restAlpha * (1 + t * 0.55 + k * 2.10)))
                         .toString(16).padStart(2, "0");
         const shIn = Math.min(0x66, Math.round(root._restAlphaIn * (1 + t * 0.40 + ki * 0.60)))
                         .toString(16).padStart(2, "0");

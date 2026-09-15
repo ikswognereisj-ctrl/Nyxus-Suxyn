@@ -127,7 +127,24 @@ Singleton {
     // eye reads as rhythm — a level that never falls has no beat in it
     // however bright it gets. Everything that wants to dance binds to this.
     property real kick: 0
-    readonly property real kickFall: 0.038      // per 16 ms ⇒ ~420 ms to zero
+    // TRK-4176, 2026-09-15. Was 0.038 (~420 ms to zero) and the rim did not
+    // read as a pulse at all. Owner: "it doesnt really move at all to be
+    // honest a very little but thats it".
+    //
+    // Measured in the running shell, 40 samples of Beat.kick:
+    //   min 0.668 · max 1.000 · mean 0.816
+    //
+    // It never reached zero, and never got close. The engine is healthy --
+    // 111 onsets and 31 locked beats in 19.7 s, bpm 111-118 -- so beats were
+    // arriving faster than 420 ms and each one re-struck `kick` to 0.82
+    // before the previous decay had finished. The result is a rim pinned
+    // near full strike permanently: bright, correct, and completely static.
+    // There was nothing to see because the signal had no trough.
+    //
+    // 0.115 per 16 ms puts a 0.82 strike back at zero in ~114 ms, so at the
+    // measured tempo each beat is a distinct flash with real darkness
+    // between hits instead of a plateau.
+    readonly property real kickFall: 0.115      // per 16 ms ⇒ ~114 ms to zero
 
     onPulseChanged: {
         // Rising edges only. `pulse` is set to its strength on a detection
