@@ -197,7 +197,7 @@ Item {
     // resting look the moment the shell started. Read it once, restore to
     // exactly it. The defaults below are only the fallback for a compositor
     // that will not answer.
-    property int  _restRange:    36
+    property int  _restRange:    22
     property int  _restAlpha:    0x3a
     property int  _restAlphaIn:  0x33
     property string _restHex:    root.cLightB
@@ -214,12 +214,33 @@ Item {
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
-                    const v = JSON.parse(text).int;
-                    if (typeof v === "number" && v > 0) {
-                        root._restAlpha = (v >>> 24) & 0xff;
-                        // Do not take the compositor's RGB — it has been
-                        // #1e03ad (NYXUS purple). Rest glow is glacier[5].
+                    const j = JSON.parse(text);
+                    // ── WHY THIS IS NOT JUST `.int` ───────────── TRK-4175 ──
+                    // It used to be, and it had silently stopped working.
+                    // Once ANYTHING writes this option as a gradient — and
+                    // every writer here does, `rgba(xxxxxxxx)` included —
+                    // hyprctl reports it as {"custom": "88ae206c 0deg"} with
+                    // no `int` field at all. `.int` was undefined, the
+                    // typeof guard rejected it, and the fallback was used on
+                    // every start. The probe was decoration.
+                    //
+                    // Verified 2026-09-15: `hyprctl -j getoption
+                    // decoration:shadow:color` returned exactly
+                    // {"option": ..., "custom": "88ae206c 0deg", "set": true}.
+                    // So the custom form is read first and `.int` is kept as
+                    // the path for a compositor that still answers that way.
+                    let a = -1;
+                    if (typeof j.custom === "string") {
+                        const m = j.custom.trim().match(/^([0-9a-fA-F]{8})/);
+                        if (m) a = parseInt(m[1].substring(0, 2), 16);
+                    } else if (typeof j.int === "number" && j.int > 0) {
+                        a = (j.int >>> 24) & 0xff;
                     }
+                    // Do not take the compositor's RGB — it has been
+                    // #1e03ad (NYXUS purple), and more recently magenta
+                    // ae206c from nyxus-pulse.sh. The rest glow is the
+                    // look's own colour, via cLightB.
+                    if (a > 0) root._restAlpha = Math.max(0x18, Math.min(0x5a, a));
                 } catch (e) { /* keep the fallback */ }
                 rangeProbe.running = true;
             }
@@ -232,7 +253,29 @@ Item {
             onStreamFinished: {
                 try {
                     const v = JSON.parse(text).int;
-                    if (typeof v === "number" && v > 0) root._restRange = v;
+                    // ── THE RATCHET ───────────────────────────── TRK-4175 ──
+                    // This probe reads the LIVE range so the owner's own
+                    // resting value is honoured instead of hardcoded. The
+                    // flaw: write() inflates that same live value every
+                    // 120 ms, up to restRange * (1 + 0.18 + 0.55) = 1.73x.
+                    // So a probe that runs while a PREVIOUS BorderPulse is
+                    // still writing reads an inflated number and adopts it
+                    // as the new resting range — and the next restart reads
+                    // an inflation of THAT. It ratchets.
+                    //
+                    // Measured on 2026-09-15: hyprland.conf declares 22, and
+                    // the live range after a reload cycle was 57–69. That is
+                    // the 36–51 halo the 2026-09-08 audit objected to,
+                    // arriving by accident rather than by design.
+                    //
+                    // The clamp is the fix. 28 is above any resting value
+                    // the profile declares (22) with room for a deliberate
+                    // bump, and below the band that provoked the complaint.
+                    // A legitimately larger user setting is capped rather
+                    // than obeyed, which is the right trade against a value
+                    // that otherwise grows without limit.
+                    if (typeof v === "number" && v > 0)
+                        root._restRange = Math.max(8, Math.min(28, v));
                 } catch (e) { /* keep the fallback */ }
             }
         }
@@ -322,12 +365,29 @@ Item {
           // — do not fake a pulse with nothing playing"), and a still ring
           // has no bands to lose.
           //
+          // ── border_size: 2, and it MUST match hyprland.conf ────────────
+          // WIP-779 corrected this from 3 to 1 because the profile declared
+          // 1 and this writer was overriding it eight times a second — a
+          // real finding, and the note above about the rotating sweep no
+          // longer needing 3 px still stands.
+          //
+          // TRK-4175, 2026-09-15: 1 px went too far the other way. The
+          // owner asked to see the pulse working and could not, and a 1 px
+          // line is not visible as a pulse from a seating distance no
+          // matter how correct its contrast is. 2 px is the compromise:
+          // wide enough to read as a moving rim, narrower than the 3 px
+          // that WIP-779 rightly called unjustified.
+          //
+          // ⚠ hyprland.conf's `general { border_size = 2 }` must agree with
+          // this number. If they differ, the rim visibly flickers between
+          // the two widths at updateMs, because the config wins whenever
+          // Hyprland reloads and this line wins 120 ms later.
+          //
           // ⚠ This changes WIDTH ONLY. `col.active_border`'s stops are the
-          // WIP-777 focus-contrast floor — glacier[0] 14.50:1, glacier[5]
-          // 15.21:1, enforced PER STOP — and they are untouched above. A
-          // 1 px line at those values still clears the floor by 4x; the
-          // window still says unmistakably that it has focus.
-          + "keyword general:border_size 1 ; "
+          // WIP-777 focus-contrast floor — enforced PER STOP, per look, in
+          // the TRK-4173 table near the top of this file — and they are
+          // untouched above.
+          + "keyword general:border_size 2 ; "
           + "keyword decoration:rounding_power 2 ; "
           + "keyword animation borderangle,0 ; "
           + "keyword decoration:shadow:range " + shRange + " ; "
