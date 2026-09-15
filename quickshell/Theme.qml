@@ -1359,9 +1359,39 @@ Singleton {
     readonly property color elevated:  lookMagma ? "#1a0806" : "#071318"
 
     // ── text ─────────────────────────────────────────────────────────
-    readonly property color text:      "#edf1ff"
-    readonly property color textMuted: "#c9d0e8"
-    readonly property color textDim:   "#a8aecc"
+    //
+    // ══ THE TYPE CARRIED ICE INTO MAGMA ══════════════════ TRK-4154 · 09-15 ══
+    // Owner, across most of a session: "the layers didnt change everything
+    // like it should have ... this still has the plum in widegets flyoputs
+    // apps", and later, of the whole build, "its missing something i feel
+    // like i just cant name it".
+    //
+    // These three were absolute constants. Not `lookMagma ? a : b` — flat
+    // hexes, read by every label, heading, sentence and note in the build,
+    // and all three lean BLUE: #edf1ff is B255 against R237, #a8aecc is
+    // frankly blue-violet. Sampled off his own Settings window with MAGMA
+    // on: headings #A4ADC8, notes #9DA7C6, title #EDF1FF. Cool, cool, cool.
+    //
+    // Type is the most abundant thing on any screen in this build. An accent
+    // is a few hundred pixels; the text is tens of thousands. So MAGMA was
+    // being asked to read as molten while every glyph on it carried a violet
+    // cast — which is exactly the "plum that is still everywhere" he kept
+    // reporting and no palette change could fix, because nobody had looked
+    // at the type. It is not in the widgets. It is in the words.
+    //
+    // ⚠ LUMINANCE IS HELD EXACTLY, and that is what makes this safe. The
+    // MAGMA values were solved for, not picked: same relative luminance to
+    // one decimal (241.2 / 208.2 / 174.9), with the blue cast MIRRORED
+    // rather than merely removed — R−B goes −18/−31/−36 to +18/+31/+36. So
+    // every contrast ratio in the build is unchanged, no accessibility
+    // check can move, and nothing can turn out to be unreadable on a surface
+    // this was not tested against.
+    //
+    // ⚠ ICE KEEPS ITS EXACT SHIPPED HEXES. It is a cold theme end to end and
+    // its cool type is correct; this is the counterpart it never had.
+    readonly property color text:      lookMagma ? "#f8f0e6" : "#edf1ff"
+    readonly property color textMuted: lookMagma ? "#dccfbe" : "#c9d0e8"
+    readonly property color textDim:   lookMagma ? "#bdad99" : "#a8aecc"
 
     // ── signal ───────────────────────────────────────────────────────
     readonly property color ok:        "#2cf597"
