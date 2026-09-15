@@ -1,0 +1,4 @@
+#!/bin/bash
+# Isolate GTK accent so Chromium's omnibox/CSD does not pick glacier ice.
+export XDG_CONFIG_HOME="${HOME}/.config/nyxus/chromium-xdg"
+exec /usr/bin/chromium --user-data-dir="${HOME}/.config/chromium" "$@"

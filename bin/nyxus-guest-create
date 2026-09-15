@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# nyxus-guest-create — confined Guest account (not an administrator).
+#
+# TRK-3161. Calamares already makes the first user a wheel/sudo admin.
+# This script adds a SECOND account named `guest` with no wheel/sudo,
+# empty password (passwd -d), home 0700. It does not start the remote-login
+# daemon, does
+# NOT add greetd [initial_session], and does NOT change the look-seat.
+# Re-greet lists passwd users; a dedicated Guest button on the greeter
+# is TRK-3162 (unproven — do not patch the greeter from this lane).
+#
+# Idempotent. Root only (pkexec).
+set -euo pipefail
+
+if [[ "$(id -u)" -ne 0 ]]; then
+  printf 'nyxus-guest-create: needs administrator access (pkexec)\n' >&2
+  exit 1
+fi
+
+if id -u guest >/dev/null 2>&1; then
+  printf 'guest already exists\n'
+  id guest
+  printf 'groups: %s\n' "$(id -Gn guest 2>/dev/null || true)"
+  if id -nG guest 2>/dev/null | grep -Eq '(^|[[:space:]])(wheel|sudo)([[:space:]]|$)'; then
+    printf 'nyxus-guest-create: guest is in wheel/sudo — refusing to leave it that way\n' >&2
+    gpasswd -d guest wheel 2>/dev/null || true
+    gpasswd -d guest sudo 2>/dev/null || true
+  fi
+  exit 0
+fi
+
+useradd -m -s /bin/bash -c "Guest" guest
+passwd -d guest >/dev/null
+gpasswd -d guest wheel 2>/dev/null || true
+gpasswd -d guest sudo 2>/dev/null || true
+chmod 0700 /home/guest
+loginctl disable-linger guest 2>/dev/null || true
+
+if id -nG guest 2>/dev/null | grep -Eq '(^|[[:space:]])(wheel|sudo)([[:space:]]|$)'; then
+  printf 'nyxus-guest-create: guest still in wheel/sudo after create\n' >&2
+  exit 2
+fi
+
+printf 'created guest — not an administrator; greeter lists passwd users\n'
+exit 0

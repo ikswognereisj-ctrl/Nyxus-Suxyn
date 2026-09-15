@@ -1,0 +1,288 @@
+#!/usr/bin/env bash
+# nyxus-recover — the recovery menu a person can reach from a text console
+# (TRK-1331, CS-1060 "recovery a person can actually reach"). It is what the
+# "Recovery console" boot entry tells you to type, and it works the same from
+# a normal terminal.
+#
+#   nyxus-recover              the numbered menu (tty-friendly, no curses)
+#   nyxus-recover <verb>       one action, no menu:
+#     safe-mode        start the safe-mode desktop from this console, or say
+#                      exactly how to reach it when that cannot work from here
+#     reset-settings   move ~/.config/nyxus/settings.json aside so the shell
+#                      starts on shipped defaults (backup kept, named the way
+#                      Settings' own Reset names it: settings.json.bak-reset-*)
+#     rollback         roll back the last update — calls `nyxus-update
+#                      --rollback` (the post-update self-check lane owns that
+#                      verb); until it exists, lists snapper snapshots and
+#                      prints the manual command instead of guessing
+#     reinstall        re-install the shell packages from the [nyxus] channel
+#                      (nyxus-shell nyxus-scripts nyxus-theme nyxus-system),
+#                      after `nyxus-verify-installed` says what is broken
+#     doctor           the health report (nyxus-doctor)
+#     grub             rebuild the boot menu (grub-mkconfig), restoring the
+#                      "Nyxus Suxyn (recovery)" submenu + snapshot entries
+#     guide            the one-page recovery guide (RECOVERY.md)
+#     --banner         one-line hint; printed into the rescue console by
+#                      /etc/systemd/system/rescue.service.d/nyxus-recover.conf
+#     --list           print the menu actions and exit (also what the gate
+#                      reads; every line here maps to a verb above)
+#
+# RULES THIS FILE KEEPS: it never reinvents another tool (snapshots belong to
+# snapper/nyxus-update, health to nyxus-doctor, package state to
+# nyxus-verify-installed — this file only dispatches); it refuses nothing
+# silently (every dead end prints what to do instead); and it writes nothing
+# outside the chosen user's ~/.config/nyxus and /var/log/nyxus.
+set -u
+
+SAFEMODE_CONF_SKEL="/etc/skel/.config/hypr/conf.d/nyxus-safemode.conf"
+GUIDE="/usr/share/doc/nyxus/RECOVERY.md"
+GRUB_ENTRY="Nyxus Suxyn (recovery)"
+
+say()  { printf '%s\n' "$*"; }
+rule() { printf -- '────────────────────────────────────────────────────\n'; }
+
+banner() {
+  printf '\n  Nyxus Suxyn recovery — type  nyxus-recover  for the menu\n'
+  printf '  (safe-mode desktop, reset shell settings, roll back the last update,\n'
+  printf '   reinstall the shell packages, health report, rebuild the boot menu)\n\n'
+}
+
+# Elevation for the actions that need root, chosen once. In the recovery
+# console we already ARE root; in a terminal pkexec/sudo do it.
+elev() {
+  if [[ "$(id -u)" -eq 0 ]]; then "$@"
+  elif command -v sudo >/dev/null 2>&1; then sudo "$@"
+  elif command -v pkexec >/dev/null 2>&1; then pkexec "$@"
+  else say "Need root for: $* — and neither sudo nor pkexec is available."; return 1
+  fi
+}
+
+# Which user's shell settings? The logged-in user when there is one; under
+# root (the recovery console) the users with a real home, asked about when
+# there is more than one.
+pick_home() {
+  if [[ "$(id -u)" -ne 0 ]]; then printf '%s' "${HOME}"; return 0; fi
+  local homes=() line user dir
+  while IFS=: read -r user _ uid _ _ dir _; do
+    [[ "${uid}" -ge 1000 && "${uid}" -lt 60000 && -d "${dir}" ]] && homes+=("${user}:${dir}")
+  done < /etc/passwd
+  case "${#homes[@]}" in
+    0) say "No user home found under /etc/passwd (uid 1000–59999)." >&2; return 1 ;;
+    1) printf '%s' "${homes[0]#*:}"; return 0 ;;
+  esac
+  say "Whose settings?" >&2
+  local i=1
+  for line in "${homes[@]}"; do say "  ${i}) ${line%%:*}  (${line#*:})" >&2; i=$((i+1)); done
+  local pick
+  read -r -p "> " pick
+  [[ "${pick}" =~ ^[0-9]+$ && "${pick}" -ge 1 && "${pick}" -le "${#homes[@]}" ]] || { say "Not a listed number." >&2; return 1; }
+  printf '%s' "${homes[$((pick-1))]#*:}"
+}
+
+do_safe_mode() {
+  if grep -qE '(^| )nyxus\.safemode=1( |$)' /proc/cmdline 2>/dev/null; then
+    say "This boot already carries nyxus.safemode=1 — from a logged-in text"
+    say "console, nyxus-hypr-launch starts the safe-mode desktop directly."
+    return 0
+  fi
+  if [[ "$(id -u)" -eq 0 ]]; then
+    say "The safe-mode desktop needs a normal (non-root) session. Two ways:"
+    say "  · reboot and pick '${GRUB_ENTRY}' → 'Safe-mode desktop' in the"
+    say "    boot menu (it shows for 5 seconds), or"
+    say "  · from a text console logged in as your user, run: nyxus-recover safe-mode"
+    return 0
+  fi
+  local cfg="${HOME}/.config/hypr/conf.d/nyxus-safemode.conf"
+  [[ -f "${cfg}" ]] || cfg="${SAFEMODE_CONF_SKEL}"
+  if [[ ! -f "${cfg}" ]]; then
+    say "No nyxus-safemode.conf in ~/.config/hypr/conf.d or /etc/skel — cannot"
+    say "start safe mode from here. Reboot and pick '${GRUB_ENTRY}' instead."
+    return 1
+  fi
+  if [[ -n "${WAYLAND_DISPLAY:-}" || -n "${DISPLAY:-}" ]]; then
+    say "You are already inside a graphical session. Safe mode replaces the"
+    say "session, so: log out, then run this from a text console (Ctrl+Alt+F3),"
+    say "or reboot and pick '${GRUB_ENTRY}' in the boot menu."
+    return 0
+  fi
+  say "Starting the safe-mode desktop (${cfg}) ..."
+  say "(Super+Enter terminal · Super+Ctrl+R reboot · Super+M exit)"
+  exec Hyprland --config "${cfg}"
+}
+
+do_reset_settings() {
+  local home file stamp bak
+  home="$(pick_home)" || return 1
+  file="${home}/.config/nyxus/settings.json"
+  if [[ ! -f "${file}" ]]; then
+    say "${file} does not exist — the shell is already on shipped defaults."
+    return 0
+  fi
+  stamp="$(date +%Y%m%d-%H%M%S)"
+  bak="${file}.bak-reset-${stamp}"
+  if mv -- "${file}" "${bak}"; then
+    say "Moved ${file}"
+    say "  →  ${bak}"
+    say "The desktop shell starts on shipped defaults at the next login."
+    say "(Same backup naming as Settings' own Reset; move it back to undo.)"
+  else
+    say "Could not move ${file} — nothing was changed."
+    return 1
+  fi
+}
+
+do_rollback() {
+  if command -v nyxus-update >/dev/null 2>&1 \
+     && nyxus-update --help 2>/dev/null | grep -q -- '--rollback'; then
+    exec nyxus-update --rollback
+  fi
+  say "This build's nyxus-update has no --rollback verb yet (it is the"
+  say "post-update self-check lane, CS-1053). The pre-update snapshots are"
+  say "still there. What exists now:"
+  rule
+  if command -v snapper >/dev/null 2>&1; then
+    elev snapper list 2>/dev/null || say "(snapper has no config on this system — no snapshots were taken)"
+    rule
+    say "Manual rollback of the whole system to snapshot N:"
+    say "  sudo snapper rollback N     # then reboot"
+    say "Restore files only (no reboot): browse /.snapshots/N/snapshot/"
+  else
+    say "snapper is not installed — this install has no snapshot rollback."
+  fi
+  return 1
+}
+
+do_reinstall() {
+  if command -v nyxus-verify-installed >/dev/null 2>&1; then
+    say "What the self-check sees (nyxus-verify-installed):"
+    rule
+    nyxus-verify-installed || true
+    rule
+  else
+    say "(no nyxus-verify-installed on this build — skipping the self-check)"
+  fi
+  local pkgs=(nyxus-shell nyxus-scripts nyxus-theme nyxus-system)
+  if grep -qE '^\[nyxus\]' /etc/pacman.conf 2>/dev/null; then
+    say "Re-installing the shell packages from the [nyxus] channel:"
+    say "  ${pkgs[*]}"
+    elev pacman -S "${pkgs[@]}"
+  else
+    say "No [nyxus] channel in /etc/pacman.conf — the shell did not arrive as"
+    say "packages on this install, so there is nothing pacman can re-install."
+    say "An offline bundle works instead:  nyxus-update --from <dir>"
+    return 1
+  fi
+}
+
+do_doctor() {
+  if ! command -v nyxus-doctor >/dev/null 2>&1; then
+    say "nyxus-doctor is not on PATH on this system."
+    return 1
+  fi
+  # Human-readable on purpose, NOT --json: the person reading this is at a
+  # text console with a broken machine, and a wall of JSON is not a health
+  # report to them. (`nyxus-doctor --json` is still there for Settings ▸
+  # Health and for anything machine-side.) --fast skips the `pacman -Qu`
+  # walk, which is the one check that can hang on a box whose network or
+  # sync db is part of what is broken. No root and no privileged helper is
+  # involved — the doctor root helper and its policy were retired
+  # 2026-08-22 (TRK-1361), and nothing here reaches for them.
+  if command -v less >/dev/null 2>&1 && [[ -t 1 ]]; then
+    nyxus-doctor --no-color --fast 2>&1 | less
+  else
+    nyxus-doctor --no-color --fast
+  fi
+}
+
+do_grub() {
+  say "Rebuilding the boot menu (grub-mkconfig -o /boot/grub/grub.cfg) —"
+  say "this restores '${GRUB_ENTRY}' and the snapshot entries:"
+  elev grub-mkconfig -o /boot/grub/grub.cfg
+}
+
+do_guide() {
+  if [[ ! -f "${GUIDE}" ]]; then
+    say "${GUIDE} is missing on this system."
+    return 1
+  fi
+  if command -v less >/dev/null 2>&1 && [[ -t 1 ]]; then less "${GUIDE}"; else cat "${GUIDE}"; fi
+}
+
+# ── the menu ────────────────────────────────────────────────────────────────
+# One line per action; the number, the verb it maps to, and the words. --list
+# prints exactly this table, and gate 13s41 holds every verb here to a
+# do_<verb> that exists above — the menu cannot offer what the CLI lacks.
+MENU=(
+  "1:safe-mode:Start the safe-mode desktop (minimal shell, no effects)"
+  "2:reset-settings:Reset the shell settings to shipped defaults (backup kept)"
+  "3:rollback:Roll back the last update (pre-update snapshot)"
+  "4:reinstall:Re-install the shell packages"
+  "5:doctor:Health report (nyxus-doctor)"
+  "6:grub:Rebuild the boot menu (grub-mkconfig)"
+  "7:guide:What to do when… (the recovery guide)"
+  "8:quit:Leave this menu"
+)
+
+print_menu() {
+  local row
+  say ""
+  say "  Nyxus Suxyn recovery"
+  rule
+  for row in "${MENU[@]}"; do
+    printf '  %s) %s\n' "${row%%:*}" "${row##*:}"
+  done
+  rule
+}
+
+run_verb() {
+  case "$1" in
+    safe-mode)      do_safe_mode ;;
+    reset-settings) do_reset_settings ;;
+    rollback)       do_rollback ;;
+    reinstall)      do_reinstall ;;
+    doctor)         do_doctor ;;
+    grub)           do_grub ;;
+    guide)          do_guide ;;
+    quit)           exit 0 ;;
+    *)              return 2 ;;
+  esac
+}
+
+case "${1:-}" in
+  --banner) banner; exit 0 ;;
+  --list)
+    for row in "${MENU[@]}"; do printf '%s\n' "${row}"; done
+    exit 0 ;;
+  -h|--help)
+    sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'
+    exit 0 ;;
+  "") ;;
+  *)
+    if run_verb "$1"; then exit 0; else
+      rc=$?
+      [[ ${rc} -eq 2 ]] && { say "nyxus-recover: unknown action '$1' (see --help)"; exit 2; }
+      exit "${rc}"
+    fi ;;
+esac
+
+if [[ ! -t 0 ]]; then
+  say "nyxus-recover: no terminal — pass an action instead (see --help)."
+  exit 2
+fi
+
+while true; do
+  print_menu
+  read -r -p "  choose [1-${#MENU[@]}] > " pick || exit 0
+  verb=""
+  for row in "${MENU[@]}"; do
+    [[ "${row%%:*}" == "${pick}" ]] && { verb="${row#*:}"; verb="${verb%%:*}"; break; }
+  done
+  if [[ -z "${verb}" ]]; then
+    say "  Not a listed number."
+    continue
+  fi
+  run_verb "${verb}" || true
+  say ""
+  read -r -p "  (Enter for the menu, q to leave) > " again || exit 0
+  [[ "${again}" == q* ]] && exit 0
+done

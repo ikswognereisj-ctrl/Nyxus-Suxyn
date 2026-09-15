@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# nyxus-store-install <source> <pkg> [pkg...]
+#
+# Install one or more packages. GAP-7: this used to always open a terminal.
+# The Store itself never called this wrapper (it has its own in-window
+# runner), but anything that still execs it must stay no-terminal.
+# Ghostty remains the fallback terminal only if the pkg-helper is missing.
+set -u
+
+if (( $# < 2 )); then
+  echo "usage: nyxus-store-install <pacman|aur> <pkg> [pkg...]" >&2
+  exit 2
+fi
+
+SRC="$1"; shift
+PKGS=("$@")
+HELPER="/usr/local/libexec/nyxus-pkg-helper"
+
+if [[ "${SRC}" == "pacman" && -x "${HELPER}" ]]; then
+  exec pkexec "${HELPER}" install "${PKGS[@]}"
+fi
+
+term() {
+  for t in ghostty; do
+    if command -v "$t" >/dev/null 2>&1; then
+      echo "$t -e"; return 0
+    fi
+  done
+  echo ""
+}
+
+build_cmd() {
+  case "${SRC}" in
+    pacman)
+      echo "sudo pacman -S --needed ${PKGS[*]}; echo; echo 'Press Enter to close…'; read"
+      ;;
+    aur)
+      if command -v yay >/dev/null 2>&1; then
+        echo "yay -S --needed ${PKGS[*]}; echo; echo 'Press Enter to close…'; read"
+      elif command -v paru >/dev/null 2>&1; then
+        echo "paru -S --needed ${PKGS[*]}; echo; echo 'Press Enter to close…'; read"
+      else
+        echo "echo 'No AUR helper installed (yay/paru). Falling back to pacman.'; sudo pacman -S --needed ${PKGS[*]}; echo; echo 'Press Enter to close…'; read"
+      fi
+      ;;
+    *)
+      echo "echo 'Unknown source: ${SRC}'; sleep 3"
+      ;;
+  esac
+}
+
+CMD="$(build_cmd)"
+TERM_CMD="$(term)"
+if [[ -z "${TERM_CMD}" ]]; then
+  echo "no terminal emulator found on PATH" >&2
+  exit 1
+fi
+
+# shellcheck disable=SC2086
+exec ${TERM_CMD} bash -c "${CMD}"

@@ -57,5 +57,25 @@ if [[ -d "$ROOT/hypr/conf.d" ]]; then
   cp -a "$ROOT/hypr/conf.d/." "$HOME/.config/hypr/conf.d/"
 fi
 
+# ── THE TOOLING ───────────────────────────────────────────── TRK-4131 ──
+# Audit 2026-09-14: 19 of the 20 programs the shell spawns were not in
+# this repository. They lived only in the bin directories of the one
+# machine the build was made on, so a fresh install produced a shell that
+# started, themed correctly, and then did nothing when you clicked
+# brightness, files, media, backup or the updater — and never moved the
+# music visualizer, because nyxus-beat-engine was missing too.
+#
+# The shell is only half the product. These are the other half.
+if [[ -d "$ROOT/bin" ]]; then
+  mkdir -p "$HOME/.local/bin"
+  install -m755 "$ROOT/bin"/* "$HOME/.local/bin/"
+  printf '  bin   installed %s tools to ~/.local/bin\n' \
+    "$(find "$ROOT/bin" -maxdepth 1 -type f | wc -l)"
+  case ":$PATH:" in
+    *":$HOME/.local/bin:"*) ;;
+    *) printf '  warn  ~/.local/bin is not on your PATH — add it or the shell cannot find these\n' >&2 ;;
+  esac
+fi
+
 printf 'done. reload:  qs ipc call nyxus reload\n'
 printf 'undo:          copy %s back over ~/.config\n' "$BAK"

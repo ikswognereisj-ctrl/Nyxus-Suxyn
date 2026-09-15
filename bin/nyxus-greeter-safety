@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# nyxus-greeter-safety — the net that goes up BEFORE the greeter is touched.
+#
+# A broken greeter is the one failure that can lock the owner out of his own
+# machine: it runs before login, as the `greeter` user, on vt1. This build has
+# been bitten by that class of thing before (the 2026-07-21 blank-screen /
+# bash_profile tty trap, and the standing greeter-lockout rule).
+#
+# Three independent layers, so no single failure is fatal:
+#   1. SSH  — enabled at boot (was `disabled`, fixed 2026-09-05). Remote revert.
+#   2. TTY  — Ctrl+Alt+F2..F6, logind NAutoVTs=6. Physical revert.
+#   3. THIS — a dead-man's switch: greetd's working config is snapshotted, and a
+#      one-shot timer restores it unless someone explicitly disarms. If the new
+#      greeter never lets anyone log in, the machine repairs itself and boots
+#      back into the known-good greeter.
+#
+# Usage:
+#   greeter-safety.sh arm [MINUTES]   snapshot + schedule auto-revert (default 15)
+#   greeter-safety.sh disarm          cancel the timer (call once login is proven)
+#   greeter-safety.sh revert          restore the snapshot right now
+#   greeter-safety.sh status          what is snapshotted / armed
+set -uo pipefail
+
+SNAP=/var/backups/nyxus-greeter
+UNIT=/etc/systemd/system/nyxus-greeter-revert.service
+TIMER=/etc/systemd/system/nyxus-greeter-revert.timer
+FILES=(/etc/greetd/config.toml /usr/local/bin/nyxus-greeter)
+
+need_root() { [ "$(id -u)" -eq 0 ] || { echo "run as root" >&2; exit 1; }; }
+
+snapshot() {
+  mkdir -p "$SNAP"
+  for f in "${FILES[@]}"; do
+    [ -e "$f" ] || continue
+    cp -a "$f" "$SNAP/$(echo "$f" | tr / _)" 2>/dev/null
+  done
+  date -Iseconds > "$SNAP/.taken"
+  echo "snapshot -> $SNAP"
+}
+
+restore() {
+  local n=0
+  for f in "${FILES[@]}"; do
+    s="$SNAP/$(echo "$f" | tr / _)"
+    [ -e "$s" ] || continue
+    cp -a "$s" "$f" && n=$((n+1))
+  done
+  systemctl daemon-reload 2>/dev/null
+  echo "restored $n file(s) from snapshot"
+}
+
+case "${1:-status}" in
+  arm)
+    need_root
+    MINS="${2:-15}"
+    snapshot
+    cat > "$UNIT" <<EOF
+[Unit]
+Description=NYXUS greeter auto-revert (dead-man's switch)
+[Service]
+Type=oneshot
+ExecStart=$(readlink -f "$0") revert
+EOF
+    cat > "$TIMER" <<EOF
+[Unit]
+Description=Revert the NYXUS greeter unless disarmed
+[Timer]
+OnBootSec=${MINS}min
+AccuracySec=10s
+[Install]
+WantedBy=timers.target
+EOF
+    systemctl daemon-reload
+    systemctl enable nyxus-greeter-revert.timer >/dev/null 2>&1
+    systemctl start nyxus-greeter-revert.timer
+    echo "ARMED: greetd config reverts ${MINS} min after each boot until disarmed."
+    echo "       disarm with: sudo $(readlink -f "$0") disarm"
+    ;;
+  disarm)
+    need_root
+    systemctl disable --now nyxus-greeter-revert.timer >/dev/null 2>&1
+    rm -f "$UNIT" "$TIMER"
+    systemctl daemon-reload
+    echo "DISARMED — auto-revert removed. Snapshot kept at $SNAP."
+    ;;
+  revert)
+    need_root
+    restore
+    ;;
+  status)
+    if [ -f "$SNAP/.taken" ]; then
+      echo "snapshot taken: $(cat "$SNAP/.taken")"
+      ls -1 "$SNAP" | grep -v '^\.' | sed 's/^/  /'
+    else
+      echo "no snapshot"
+    fi
+    echo -n "auto-revert timer: "
+    systemctl is-enabled nyxus-greeter-revert.timer 2>/dev/null || echo "not armed"
+    ;;
+  *) echo "usage: $0 {arm [minutes]|disarm|revert|status}" >&2; exit 2 ;;
+esac

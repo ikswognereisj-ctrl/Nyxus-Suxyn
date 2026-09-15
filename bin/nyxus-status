@@ -1,0 +1,444 @@
+#!/usr/bin/env python3
+"""
+nyxus-status — every NYXUS daemon, unit, timer and watcher in one table.
+
+    nyxus status                 the inventory: purpose, state, PID, CPU%, RSS
+    nyxus status --json          the same, machine-readable (Settings ▸ Health)
+    nyxus status --off <unit>    systemctl --user disable --now <unit>
+    nyxus status --on  <unit>    systemctl --user enable  --now <unit>
+    nyxus status --restart <unit>
+
+Two sources, both DERIVED from the running machine, never a hand list:
+
+  1. systemd --user units whose name starts with `nyxus-` (service + timer),
+     found from the unit files on disk (~/.config/systemd/user, /etc/skel's
+     seed, /usr/lib/systemd/user) and from `systemctl --user list-units`, so a
+     unit that exists only in memory still shows. Purpose is the unit's own
+     `Description=`. Plus the three stack units the desktop leans on
+     (hyprpolkitagent, pipewire, wireplumber) and the portal units, because
+     "is my polkit agent up" is the first question the doctor asks.
+
+  2. the processes Hyprland's exec-once lines and the session start — the
+     shell supervisor, the shell, the wallpaper engine, the keyring, the
+     portals, the cliphist watchers, the NYXUS daemons (pulsed, soundd, voice,
+     desktop, crashd…). Matched by command line against the table below; the
+     purpose is the one line in that table. A table row whose process is not
+     running prints `inactive`, so the table is also the list of what the
+     session is SUPPOSED to start.
+
+CPU% is sampled: /proc/<pid>/stat read twice 0.4 s apart (what `top` shows),
+not the lifetime average `ps` prints. RSS is VmRSS from /proc/<pid>/status.
+
+Only nyxus-* user units can be switched off or on from here; the stack units
+(pipewire, the portals, the polkit agent) are refused with a reason, because
+turning WirePlumber off from a health page is how a person loses sound and
+never finds out why. Nothing here needs root.
+
+Exit 0 always for the inventory; 2 for a refused or failed --on/--off.
+"""
+from __future__ import annotations
+import argparse, glob, json, os, re, shutil, subprocess, sys, time
+from pathlib import Path
+
+HOME = Path.home()
+
+# ── 1. the session processes Hyprland starts ───────────────────────────
+# (key, regex over the full command line, purpose). Order = display order.
+# A regex, because most of these are launched through `sh -c '…'` guards
+# and the argv[0] is `sh`; the command line is the only honest handle.
+PROCESS_TABLE = [
+    ("shell-supervisor", r"nyxus-shell-supervisor",
+     "Restarts the Quickshell desktop shell if it crashes"),
+    ("shell",            r"(^|/)(qs|quickshell)(\s|$)",
+     "Quickshell — the taskbar, Start menu, panels, Settings, lock"),
+    ("hypridle",         r"(^|/)hypridle(\s|$)",
+     "Idle watcher — screensaver, lock and screen-off timers"),
+    ("polkit-agent",     r"hyprpolkitagent|polkit-gnome-authentication-agent|lxqt-policykit-agent|polkit-kde-authentication-agent",
+     "PolicyKit agent — the password dialog when an app needs root"),
+    ("keyring",          r"gnome-keyring-daemon",
+     "GNOME Keyring — stores Wi-Fi, browser and app passwords"),
+    ("portal",           r"(^|/)xdg-desktop-portal(\s|$)",
+     "Desktop portal — file pickers, screen share, open-with for apps"),
+    ("portal-hyprland",  r"xdg-desktop-portal-hyprland",
+     "Portal backend (Hyprland) — screenshot and screencast"),
+    ("portal-gtk",       r"xdg-desktop-portal-gtk",
+     "Portal backend (GTK) — file chooser, settings, open URI"),
+    ("cliphist-text",    r"wl-paste .*--type text .*cliphist store",
+     "Clipboard history — text watcher"),
+    ("cliphist-image",   r"wl-paste .*--type image .*cliphist store",
+     "Clipboard history — image watcher"),
+    ("udiskie",          r"(^|/)udiskie(\s|$)",
+     "Automount — USB sticks and cards appear when plugged in"),
+    ("fcitx5",           r"(^|/)fcitx5(\s|$)",
+     "Input method — non-Latin keyboards and emoji input"),
+    ("pipewire",         r"(^|/)pipewire(\s|$)",
+     "PipeWire — the audio and screen-capture server"),
+    ("pipewire-pulse",   r"(^|/)pipewire-pulse(\s|$)",
+     "PulseAudio compatibility for apps that speak pulse"),
+    ("wireplumber",      r"(^|/)wireplumber(\s|$)",
+     "WirePlumber — routes audio devices and streams"),
+    ("nyxus-desktop",    r"nyxus-desktop(\s|$)|nyxus_desktop\.py",
+     "Desktop icons and the right-click desktop menu"),
+    ("nyxus-pulsed",     r"nyxus-pulsed",
+     "Pulse daemon — the border pulse and audio-reactive accents"),
+    ("nyxus-soundd",     r"nyxus-soundd",
+     "Sound daemon — UI sounds (login, toasts, clicks)"),
+    ("nyxus-voice",      r"nyxus-voice",
+     "Voice — spoken prompts and the voice assistant"),
+    ("nyxus-crashd",     r"nyxus_crashd\.py|nyxus-crashd",
+     "Crash watcher — follows coredumps and offers a report"),
+    ("lock-weather",     r"nyxus-lock-weather",
+     "Lock-screen weather refresher (every 30 min)"),
+    ("live-wallpaper",   r"nyxus-live-wallpaper|mpvpaper|swaybg|hyprpaper|nyxus-wallpaper-autostart",
+     "Wallpaper engine — the still or the live wall behind everything"),
+    ("ws-wallpaperd",    r"nyxus-workspace-wallpaperd",
+     "Per-workspace wallpaper daemon"),
+    ("kanshi",           r"(^|/)kanshi(\s|$)",
+     "Display profiles — remembers monitor layouts per setup"),
+    ("kdeconnect",       r"kdeconnectd",
+     "KDE Connect — phone pairing, notifications, file send"),
+    ("easyeffects",      r"easyeffects",
+     "EasyEffects — audio effects service"),
+    ("nyxus-bootstrap",  r"nyxus-bootstrap",
+     "First-login bootstrap (runs once, then exits)"),
+]
+
+# Units that are not nyxus-* but the desktop leans on; listed, not switchable.
+STACK_UNITS = [
+    "hyprpolkitagent.service",
+    "pipewire.service", "pipewire-pulse.service", "wireplumber.service",
+    "xdg-desktop-portal.service", "xdg-desktop-portal-hyprland.service",
+    "xdg-desktop-portal-gtk.service",
+]
+STACK_PURPOSE = {
+    "hyprpolkitagent.service": "PolicyKit agent — the password dialog when an app needs root",
+    "pipewire.service": "PipeWire — the audio and screen-capture server",
+    "pipewire-pulse.service": "PulseAudio compatibility for apps that speak pulse",
+    "wireplumber.service": "WirePlumber — routes audio devices and streams",
+    "xdg-desktop-portal.service": "Desktop portal — file pickers, screen share, open-with",
+    "xdg-desktop-portal-hyprland.service": "Portal backend (Hyprland) — screenshot and screencast",
+    "xdg-desktop-portal-gtk.service": "Portal backend (GTK) — file chooser, settings, open URI",
+}
+
+UNIT_DIRS = [
+    HOME / ".config/systemd/user",
+    Path("/etc/skel/.config/systemd/user"),
+    Path("/usr/lib/systemd/user"),
+    Path("/usr/local/lib/systemd/user"),
+]
+
+
+def sh(cmd, timeout=6):
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return r.returncode, r.stdout, r.stderr
+    except FileNotFoundError:
+        return 127, "", f"{cmd[0]}: not found"
+    except subprocess.TimeoutExpired:
+        return 124, "", f"{cmd[0]}: timed out"
+
+
+# ── /proc helpers ──────────────────────────────────────────────────────
+def _clk_tck() -> int:
+    try:
+        return os.sysconf("SC_CLK_TCK")
+    except Exception:
+        return 100
+
+
+def _proc_cpu_ticks(pid: int):
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            s = f.read()
+        # comm can contain spaces/parens: split after the last ')'
+        rest = s[s.rindex(")") + 2:].split()
+        utime, stime = int(rest[11]), int(rest[12])
+        return utime + stime
+    except Exception:
+        return None
+
+
+def _proc_rss_kb(pid: int):
+    try:
+        with open(f"/proc/{pid}/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1])
+    except Exception:
+        pass
+    return None
+
+
+def _proc_cmdline(pid: int) -> str:
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            return f.read().replace(b"\0", b" ").decode(errors="replace").strip()
+    except Exception:
+        return ""
+
+
+def _my_uid() -> int:
+    return os.getuid()
+
+
+def list_user_processes():
+    """[(pid, cmdline)] for this user, excluding this script."""
+    me = os.getpid()
+    out = []
+    uid = _my_uid()
+    for d in os.listdir("/proc"):
+        if not d.isdigit():
+            continue
+        pid = int(d)
+        if pid == me:
+            continue
+        try:
+            if os.stat(f"/proc/{pid}").st_uid != uid:
+                continue
+        except Exception:
+            continue
+        cmd = _proc_cmdline(pid)
+        if cmd:
+            out.append((pid, cmd))
+    return out
+
+
+def sample_cpu(pids, interval=0.4):
+    """{pid: cpu_percent} sampled over `interval` seconds, like top."""
+    t0 = {p: _proc_cpu_ticks(p) for p in pids}
+    w0 = time.monotonic()
+    if pids:
+        time.sleep(interval)
+    w1 = time.monotonic()
+    tck = _clk_tck()
+    dt = max(w1 - w0, 1e-6)
+    out = {}
+    for p in pids:
+        a, b = t0.get(p), _proc_cpu_ticks(p)
+        if a is None or b is None:
+            out[p] = None
+        else:
+            out[p] = round(100.0 * (b - a) / tck / dt, 1)
+    return out
+
+
+# ── units ──────────────────────────────────────────────────────────────
+def discover_unit_names():
+    names = set()
+    for d in UNIT_DIRS:
+        for p in glob.glob(str(d / "nyxus-*.service")) + glob.glob(str(d / "nyxus-*.timer")):
+            names.add(os.path.basename(p))
+    rc, out, _ = sh(["systemctl", "--user", "list-units", "--all", "--no-legend",
+                     "--plain", "nyxus-*"], timeout=8)
+    if rc == 0:
+        for line in out.splitlines():
+            parts = line.split()
+            if parts and (parts[0].endswith(".service") or parts[0].endswith(".timer")):
+                names.add(parts[0])
+    return sorted(names)
+
+
+def unit_show(name: str) -> dict:
+    props = ["Id", "Description", "ActiveState", "SubState", "UnitFileState",
+             "MainPID", "NRestarts", "MemoryCurrent", "CPUUsageNSec",
+             "NextElapseUSecRealtime", "LastTriggerUSec", "Result", "LoadState"]
+    rc, out, _ = sh(["systemctl", "--user", "show", name, "-p", ",".join(props)])
+    d = {}
+    if rc == 0:
+        for line in out.splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                d[k] = v
+    return d
+
+
+def unit_enabled(name: str) -> str:
+    rc, out, _ = sh(["systemctl", "--user", "is-enabled", name])
+    return (out.strip() or "unknown")
+
+
+def collect_units():
+    rows = []
+    names = discover_unit_names()
+    for name in names + [u for u in STACK_UNITS if u not in names]:
+        d = unit_show(name)
+        if not d:
+            continue
+        pid = int(d.get("MainPID") or 0)
+        kind = "timer" if name.endswith(".timer") else "service"
+        mem = d.get("MemoryCurrent", "")
+        rss_kb = None
+        if pid > 0:
+            rss_kb = _proc_rss_kb(pid)
+        elif mem.isdigit():
+            rss_kb = int(mem) // 1024
+        rows.append({
+            "name": name,
+            "kind": kind,
+            "purpose": STACK_PURPOSE.get(name) or d.get("Description", ""),
+            "active": d.get("ActiveState", "unknown"),
+            "sub": d.get("SubState", ""),
+            "enabled": unit_enabled(name) if d.get("LoadState") != "not-found" else "not-found",
+            "pid": pid if pid > 0 else None,
+            "restarts": int(d.get("NRestarts") or 0),
+            "rss_kb": rss_kb,
+            "cpu_pct": None,
+            "next": d.get("NextElapseUSecRealtime", "") if kind == "timer" else "",
+            "switchable": name.startswith("nyxus-"),
+            "source": "user-unit",
+        })
+    return rows
+
+
+# ── processes ──────────────────────────────────────────────────────────
+def collect_processes():
+    procs = list_user_processes()
+    rows = []
+    claimed = set()
+    for key, rx, purpose in PROCESS_TABLE:
+        r = re.compile(rx)
+        hits = [(pid, cmd) for pid, cmd in procs
+                if pid not in claimed and r.search(cmd)
+                # the `sh -c '… && exec X'` guard and X itself both match;
+                # prefer the real binary (no leading `sh -c`) when present
+                ]
+        real = [h for h in hits if not re.match(r"^(/bin/|/usr/bin/)?(sh|bash|dash) -c ", h[1])]
+        pick = real or hits
+        pid, cmd = (pick[0] if pick else (None, ""))
+        if pid is not None:
+            claimed.add(pid)
+        rows.append({
+            "name": key,
+            "kind": "process",
+            "purpose": purpose,
+            "active": "active" if pid else "inactive",
+            "sub": "running" if pid else "not running",
+            "enabled": "n/a",
+            "pid": pid,
+            "restarts": 0,
+            "rss_kb": _proc_rss_kb(pid) if pid else None,
+            "cpu_pct": None,
+            "cmd": cmd[:160] if cmd else "",
+            "count": len(pick),
+            "switchable": False,
+            "source": "process",
+        })
+    return rows
+
+
+def attach_cpu(rows):
+    pids = sorted({r["pid"] for r in rows if r.get("pid")})
+    cpu = sample_cpu(pids)
+    for r in rows:
+        if r.get("pid"):
+            r["cpu_pct"] = cpu.get(r["pid"])
+
+
+# ── on / off ───────────────────────────────────────────────────────────
+def switch(unit: str, on: bool | None, restart: bool = False) -> int:
+    if not re.fullmatch(r"nyxus-[A-Za-z0-9_.@-]+\.(service|timer)", unit):
+        print(f"nyxus-status: refusing to touch '{unit}' — only nyxus-*.service / "
+              f"nyxus-*.timer user units can be switched here. Stack units "
+              f"(PipeWire, the portals, the polkit agent) stay on.", file=sys.stderr)
+        return 2
+    if restart:
+        cmd = ["systemctl", "--user", "restart", unit]
+    elif on:
+        cmd = ["systemctl", "--user", "enable", "--now", unit]
+    else:
+        cmd = ["systemctl", "--user", "disable", "--now", unit]
+    rc, out, err = sh(cmd, timeout=20)
+    if rc != 0:
+        print(f"nyxus-status: {' '.join(cmd)} failed ({rc}): {err.strip() or out.strip()}",
+              file=sys.stderr)
+        return 2
+    verb = "restarted" if restart else ("enabled and started" if on else "disabled and stopped")
+    print(f"{unit}: {verb}")
+    return 0
+
+
+# ── output ─────────────────────────────────────────────────────────────
+def fmt_rss(kb):
+    if kb is None:
+        return "—"
+    if kb >= 1024:
+        return f"{kb/1024:.0f} MiB"
+    return f"{kb} KiB"
+
+
+def render(rows, color=True):
+    def c(s, code):
+        return f"\033[{code}m{s}\033[0m" if color else s
+    hdr = f"  {'NAME':<34} {'STATE':<10} {'PID':>7} {'CPU%':>6} {'RSS':>9}  PURPOSE"
+    print()
+    print(c("  NYXUS status — daemons, units, timers, watchers", "1"))
+    print()
+    for section, kind in (("systemd --user units", "user-unit"), ("session processes", "process")):
+        print(c(f"  ── {section}", "2"))
+        print(c(hdr, "2"))
+        for r in rows:
+            if r["source"] != kind:
+                continue
+            st = r["active"]
+            if st == "active":
+                mark = c("active", "32")
+            elif st in ("failed",):
+                mark = c("failed", "31")
+            else:
+                mark = c(st, "33")
+            name = r["name"]
+            if r["source"] == "user-unit" and r.get("enabled") not in ("n/a", ""):
+                name = f"{name} [{r['enabled']}]"
+            pid = str(r["pid"]) if r["pid"] else "—"
+            cpu = "—" if r["cpu_pct"] is None else f"{r['cpu_pct']:.1f}"
+            pad = 10 + (len(mark) - len(st))
+            print(f"  {name:<34} {mark:<{pad}} {pid:>7} {cpu:>6} {fmt_rss(r['rss_kb']):>9}  {r['purpose']}")
+        print()
+    n_units = sum(1 for r in rows if r["source"] == "user-unit")
+    n_on = sum(1 for r in rows if r["source"] == "user-unit" and r["active"] == "active")
+    n_proc = sum(1 for r in rows if r["source"] == "process")
+    n_run = sum(1 for r in rows if r["source"] == "process" and r["active"] == "active")
+    print(c(f"  {n_on}/{n_units} units active · {n_run}/{n_proc} session processes running · "
+            f"`nyxus status --off <unit>` / `--on <unit>` for the nyxus-* units", "2"))
+    print()
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(prog="nyxus-status",
+                                 description="NYXUS daemon / unit / timer / watcher inventory")
+    ap.add_argument("--json", action="store_true", help="machine-readable output")
+    ap.add_argument("--no-color", action="store_true")
+    ap.add_argument("--on", metavar="UNIT", help="enable + start a nyxus-* user unit")
+    ap.add_argument("--off", metavar="UNIT", help="disable + stop a nyxus-* user unit")
+    ap.add_argument("--restart", metavar="UNIT", help="restart a nyxus-* user unit")
+    ap.add_argument("--no-cpu", action="store_true", help="skip the 0.4 s CPU sample")
+    a = ap.parse_args()
+
+    if a.on:
+        return switch(a.on, True)
+    if a.off:
+        return switch(a.off, False)
+    if a.restart:
+        return switch(a.restart, None, restart=True)
+
+    if shutil.which("systemctl") is None:
+        print("nyxus-status: systemctl not found — not a systemd user session", file=sys.stderr)
+
+    rows = collect_units() + collect_processes()
+    if not a.no_cpu:
+        attach_cpu(rows)
+
+    if a.json:
+        print(json.dumps({
+            "generated": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "host": os.uname().nodename,
+            "units": [r for r in rows if r["source"] == "user-unit"],
+            "processes": [r for r in rows if r["source"] == "process"],
+        }, indent=2))
+        return 0
+    render(rows, color=(not a.no_color) and sys.stdout.isatty())
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

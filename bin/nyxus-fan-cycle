@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# ============================================================================
+#  NYXUS Suxyn — the fan key.
+#
+#  The owner asked to turn the fans on with a key. This is the whole of it:
+#  step to the next fan mode, say which one out loud, and stay out of the way.
+#
+#  THREE MODES, AND ONLY THREE, because that is all the hardware has. Measured
+#  on the Alienware 15 DA15265 on 2026-09-08 by writing each value and reading
+#  the tachometer back 22 seconds later:
+#
+#      auto  firmware curve   ~2700 rpm
+#      low   pwm 128           2417 rpm
+#      max   pwm 255           6807 rpm
+#
+#  A fourth mode ("high", pwm 223) was advertised for a while and is gone. It
+#  is not a speed. dell-smm does not take a duty — it takes a fan LEVEL, and
+#  the driver rounds 223 up to the same top level as 255, so "high" and "max"
+#  were two names for one fan: 6770 rpm against 6807, which is tachometer
+#  noise. The owner said so before the measurement did.
+#
+#  NO PASSWORD PROMPT, and no pkexec line in here. The nodes are group-writable
+#  to wheel (90-nyxus-fan-keys.rules) and nyxus-hwcaps notices that and writes
+#  them directly. If that rule is ever absent the helper falls back to its own
+#  pkexec path on its own — the key still works, it just asks first. There is
+#  one privilege path in this build and it lives in the helper, not here.
+#
+#  THE FLOOR IS NOT ENFORCED HERE EITHER. nyxus-hwcaps refuses any duty below
+#  FAN_MIN_DUTY however it is called, so this script cannot stop the fans even
+#  if it is edited carelessly.
+# ============================================================================
+set -uo pipefail
+
+HW=/usr/local/bin/nyxus-hwcaps
+ORDER=(auto low max)
+
+# What each mode is called when it is spoken to the owner, and roughly what it
+# does. Numbers are the measured ones above, not the datasheet's.
+label() {
+  case "$1" in
+    auto) printf 'Fans - Automatic' ;;
+    low)  printf 'Fans - Low, about 2400 rpm' ;;
+    max)  printf 'Fans - Maximum, about 6800 rpm' ;;
+    *)    printf '%s' "$1" ;;
+  esac
+}
+
+notify() {
+  # ON SCREEN, like the volume keys — not a corner notification. nyxus-osd
+  # talks to the same OSD plate shell/Osd.qml already draws for volume and
+  # brightness, and falls back on its own if the shell is not running.
+  # glyph below is U+F863 (fan), a literal character rather than an
+  # escape: printf %b does not decode \\u and shipped tofu once.
+  nyxus-osd "" "$1" "sensors-fan"
+}
+
+if [[ ! -x "${HW}" ]]; then
+  notify "The hardware helper is missing; the fans cannot be changed."
+  exit 1
+fi
+
+cur="$("${HW}" --json 2>/dev/null | python3 -c 'import json,sys
+try:
+    print((json.load(sys.stdin).get("thermal") or {}).get("fan_mode") or "auto")
+except Exception:
+    print("auto")' 2>/dev/null)"
+[[ -n "${cur}" ]] || cur=auto
+
+case "${1:-cycle}" in
+  status)
+    printf '%s\n' "${cur}"
+    exit 0
+    ;;
+  auto|low|max)
+    next="$1"
+    ;;
+  cycle|"")
+    next="${ORDER[0]}"
+    for i in "${!ORDER[@]}"; do
+      if [[ "${ORDER[$i]}" == "${cur}" ]]; then
+        next="${ORDER[$(( (i + 1) % ${#ORDER[@]} ))]}"
+        break
+      fi
+    done
+    ;;
+  *)
+    printf 'usage: nyxus-fan-cycle [cycle|auto|low|max|status]\n' >&2
+    exit 2
+    ;;
+esac
+
+if out="$("${HW}" set fan "${next}" 2>&1)"; then
+  notify "$(label "${next}")"
+else
+  notify "Could not change the fans: ${out:-unknown error}"
+  exit 1
+fi

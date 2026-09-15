@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Nyxus Suxyn — raise glass Screenshot. Never GTK nyxus_screenshot.py.
+set -u
+if [[ -n "${1:-}" && "$1" != "engage" ]]; then
+  exec python3 "$HOME/.config/quickshell/screenshot-io.py" "$@"
+fi
+if ! command -v qs >/dev/null 2>&1; then
+  echo "Screenshot needs the desktop shell (qs)." >&2; exit 2
+fi
+out="$(qs ipc call screenshot engage 2>&1)" || true
+if [[ "${out}" == *"Target not found."* ]]; then
+  out="$(qs ipc call nyxus screenshot 2>&1)" || true
+fi
+printf '%s\n' "${out}"
+exit 0

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# NYXUS Sentry launcher (TRK-3802).
+#
+# NO nyxus-scripts TWIN, on purpose. `airootfs/usr/local/bin/` is the one
+# inversion in THE TWO-COPY RULE: the restore loop near the end of
+# build-iso.sh re-installs every committed launcher here LAST at 0755, so
+# the committed copy wins and a second copy could only ever drift silently.
+# Same choice as nyxus-brain (TRK-3752) and nyxus-help (WIP-461).
+#
+#   nyxus-sentry             one cycle — what nyxus-sentry.timer runs
+#   nyxus-sentry --dry-run   the decisions, printed; nothing sent, nothing saved
+#   nyxus-sentry --status    what it currently believes, and what it is holding
+#   nyxus-sentry --json      one cycle as JSON (what Brain's `alerts` reads)
+#   nyxus-sentry --reset     forget every alert and every dismissal
+#   nyxus-sentry --selftest  drive the restraint engine; no doctor, no toasts
+#
+# NYXUS_APP_DIR lets the preview session run the copy in git instead of the
+# one installed at /opt/nyxus.
+APP_DIR="${NYXUS_APP_DIR:-/opt/nyxus}"
+export PYTHONPATH="${APP_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
+exec python3 "${APP_DIR}/nyxus_sentry.py" "$@"

@@ -1,0 +1,262 @@
+#!/usr/bin/env bash
+# NYXUS — SDDM/display-manager → Hyprland session entrypoint
+# © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+#
+# Called by ~/.local/share/wayland-sessions/nyxus-hyprland.desktop
+# (or /usr/share/wayland-sessions/nyxus-hyprland.desktop on the ISO).
+# Sets the env vars SDDM does not hand to Wayland compositors, then execs
+# Hyprland so the session owns PID 1 of the user tree.
+set -euo pipefail
+
+# PATH FIX (2026-07-14): display managers (greetd/regreet) launch this with a
+# minimal PATH that does NOT include ~/.local/bin, where the nyxus autostart
+# launchers (nyxus-wait-bootstrap, nyxus-persist-login, nyxus-boot-check, …)
+# live. Without this, Hyprland's exec-once lines fail "command not found" and
+# the bars/widgets never come back after login. Put ~/.local/bin first so the
+# whole session (Hyprland + every exec-once child + user services) can find
+# them, regardless of how the session was started.
+export PATH="${HOME}/.local/bin:${PATH}"
+
+# /usr/local/bin GUARANTEE (2026-07-30). Every nyxus tool ships to
+# /usr/local/bin; ~/.local/bin does not exist at all on the live ISO (verified:
+# the 2026.07.29 image has zero entries under /home/nyx/.local/bin, and there is
+# no /etc/skel/.local either). The hypr configs therefore invoke tools by BARE
+# NAME and resolve them off PATH. greetd currently hands us a PATH that happens
+# to contain /usr/local/bin, but nothing in this tree asserts that, and if it
+# ever stops being true every keybind and exec-once in the desktop dies silently
+# and identically to the ~/.local/bin bug. Assert it here instead of trusting it.
+# This is NOT the banned hardcoded `env = PATH,/home/cosmic/...` from PR #77 —
+# that pinned an absolute path for a user who does not exist on the stick.
+case ":${PATH}:" in
+  *:/usr/local/bin:*) ;;
+  *) export PATH="${PATH}:/usr/local/bin" ;;
+esac
+case ":${PATH}:" in
+  *:/usr/local/sbin:*) ;;
+  *) export PATH="${PATH}:/usr/local/sbin" ;;
+esac
+
+export XDG_CURRENT_DESKTOP=Hyprland
+export XDG_SESSION_TYPE=wayland
+export XDG_SESSION_DESKTOP=Hyprland
+export MOZ_ENABLE_WAYLAND=1
+export ELECTRON_OZONE_PLATFORM_HINT=auto
+
+# systemd --user needs a bus; SDDM sometimes omits this on first launch.
+if command -v dbus-update-activation-environment >/dev/null 2>&1; then
+  dbus-update-activation-environment --systemd \
+    DISPLAY WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE \
+    XDG_SESSION_DESKTOP MOZ_ENABLE_WAYLAND ELECTRON_OZONE_PLATFORM_HINT \
+    NYXUS_ARCADE \
+    >/dev/null 2>&1 || true
+fi
+
+# ── Settings portal colour-scheme (CS-1057 / TRK-1211, 2026-08-22) ──────────
+# The skel settings.ini files tell GTK3/GTK4 apps the theme, and
+# /etc/environment.d tells Qt — but a Flatpak, an Electron app or any
+# libadwaita client that asks the portal (org.freedesktop.impl.portal.Settings,
+# served by xdg-desktop-portal-gtk per /etc/xdg/xdg-desktop-portal/
+# hyprland-portals.conf) gets its answer from GSettings, which nothing on
+# the ISO ever wrote: those apps rendered LIGHT on a dark OS (CS-1057). Write
+# the keys here, once per login, from the same source settings.ini uses so the
+# two can never disagree — the NAMES are read from ~/.config/gtk-3.0/settings.ini
+# (gtk-theme-name / gtk-icon-theme-name / gtk-cursor-theme-name /
+# gtk-cursor-theme-size) and fall back to the build's shipped values only
+# when that file is absent. color-scheme is always prefer-dark: this OS has no
+# light mode. accent-color is the closest GNOME named accent to the chrome the
+# build actually paints, which is GLACIER -- so it is `teal`, not `purple`. It
+# was `purple` until 2026-08-22, following the 2026-08-21 periwinkle ruling;
+# the owner rejected that colour and ordered the palette of the last baked ISO
+# ("yes no purple"), and this line is a LIVE one -- it repaints every GTK4 and
+# libadwaita app's accent at every login, so leaving it would have put the
+# rejected colour back on the screen from a file that spells no hex at all
+# (TRK-1460). A schema too old to have the key just refuses the set.
+#
+# Everything here is best-effort by construction: guarded on `gsettings`
+# existing, every call under `timeout` and `|| true`, the block in its own
+# subshell with errexit OFF and run in the BACKGROUND so a stuck bus can never
+# delay or fail a login (this file is `set -e`; a login that exits is the loop
+# this repo has paid for twice). GSettings reaches the user bus through the
+# $XDG_RUNTIME_DIR/bus fallback, which pam_systemd has already set up, and
+# dconf-service is D-Bus-activated (package `dconf`), so no daemon has to be
+# running first. Packages: `dconf` + `gsettings-desktop-schemas` are pinned in
+# packages.x86_64. Gate: verify-profile 13r31 (derives the fallback names from
+# this file and compares them with skel gtk-3.0/settings.ini).
+if command -v gsettings >/dev/null 2>&1; then
+  (
+    set +e +u +o pipefail
+    _gs_ini="${XDG_CONFIG_HOME:-${HOME}/.config}/gtk-3.0/settings.ini"
+    _gs_get() { [ -r "${_gs_ini}" ] && sed -n "s/^$1=//p" "${_gs_ini}" 2>/dev/null | head -n1; }
+    _gs_gtk="$(_gs_get gtk-theme-name)";           [ -n "${_gs_gtk}" ]    || _gs_gtk="adw-gtk3-dark"
+    _gs_icons="$(_gs_get gtk-icon-theme-name)";    [ -n "${_gs_icons}" ]  || _gs_icons="NYXUS-Dark"
+    _gs_cursor="$(_gs_get gtk-cursor-theme-name)"; [ -n "${_gs_cursor}" ] || _gs_cursor="NYXUS-Aurora"
+    _gs_csize="$(_gs_get gtk-cursor-theme-size)";  [ -n "${_gs_csize}" ]  || _gs_csize="24"
+    _gs_set() { timeout 5 gsettings set org.gnome.desktop.interface "$@" >/dev/null 2>&1 || true; }
+    _gs_set color-scheme 'prefer-dark'
+    _gs_set gtk-theme "${_gs_gtk}"
+    _gs_set icon-theme "${_gs_icons}"
+    _gs_set cursor-theme "${_gs_cursor}"
+    _gs_set cursor-size "${_gs_csize}"
+    _gs_set accent-color 'slate'
+  ) >/dev/null 2>&1 &
+fi
+
+# VT-FLASH FIX (2026-07-14): greetd runs this session command on a VT, so the
+# compositor's stdout/stderr (Hyprland's startup banner + per-frame log spam)
+# prints as raw text on the console during the greeter->desktop handoff — it
+# "looks like you ran hyprland in a terminal". Send that output to a log file
+# instead of the tty, and blank the VT first so nothing lingers behind the
+# first Hyprland frame. Keeps a readable log for debugging session crashes.
+SESSION_LOG="${XDG_CACHE_HOME:-${HOME}/.cache}/nyxus/hyprland-session.log"
+mkdir -p "$(dirname "${SESSION_LOG}")" 2>/dev/null || true
+# Clear the VT we were launched on (best-effort; harmless if stdout isn't a tty).
+if [[ -t 1 ]]; then
+  printf '\033[H\033[2J\033[3J' >/dev/tty 2>/dev/null || clear 2>/dev/null || true
+fi
+
+# ── GPU env, derived from nyxus-gpu-probe (WIP-149, TRK-1348) ───────────────
+# hyprland.conf used to hardcode LIBVA_DRIVER_NAME=nvidia + the NVIDIA GLX
+# vendor for every machine. On an AMD or Intel-only box those point video
+# acceleration and GLX at a driver that is not installed. WIP-149 moved the
+# exports HERE, behind "lspci saw NVIDIA". That was still too coarse: ANY
+# NVIDIA present (the dGPU next to an AMD iGPU, or an NVIDIA HDMI-audio
+# function a bare `grep nvidia` would match) welded VA-API to nvidia, so the
+# Alienware APU's mesa/radeonsi decode never ran. Classify from
+# `nyxus-gpu-probe --json` (the support matrix — do not restate it here).
+# Policy, computed from the vendors the probe named:
+#   · no NVIDIA GPU → Mesa defaults; do not export LIBVA_DRIVER_NAME=nvidia
+#     or __GLX_VENDOR_LIBRARY_NAME=nvidia.
+#   · NVIDIA present, no AMD GPU → NVIDIA VA-API/GLX (GS77 / NVIDIA-only,
+#     including Intel iGPU + NVIDIA PRIME offload; WIP-149).
+#   · AMD GPU + NVIDIA GPU → do not export LIBVA_DRIVER_NAME=nvidia or
+#     __GLX_VENDOR_LIBRARY_NAME=nvidia. VA-API stays mesa on the APU.
+#     __NV_PRIME_RENDER_OFFLOAD=1 is still exported: that flag advertises
+#     the dGPU for PRIME / switcheroo per-process offload and does not weld
+#     LIBVA (TRK-1348).
+# Missing or failing probe: classify from lspci VGA|3D|Display lines only
+# (still distinguishes AMD+NVIDIA from NVIDIA-only). Must never abort login
+# (`set -e` above; every command here is guarded).
+_nyx_gpu_nv=0
+_nyx_gpu_amd=0
+_nyx_gpu_json=""
+if command -v nyxus-gpu-probe >/dev/null 2>&1; then
+  _nyx_gpu_json="$(nyxus-gpu-probe --json 2>/dev/null || true)"
+fi
+if [[ "${_nyx_gpu_json}" == *'"gpus"'* ]]; then
+  if grep -qE '"vendor"[[:space:]]*:[[:space:]]*"nvidia"' <<<"${_nyx_gpu_json}"; then
+    _nyx_gpu_nv=1
+  fi
+  if grep -qE '"vendor"[[:space:]]*:[[:space:]]*"amd"' <<<"${_nyx_gpu_json}"; then
+    _nyx_gpu_amd=1
+  fi
+else
+  _nyx_gpu_disp="$(lspci 2>/dev/null | grep -iE 'VGA|3D|Display' || true)"
+  if [[ -n "${_nyx_gpu_disp}" ]]; then
+    if grep -qi 'nvidia' <<<"${_nyx_gpu_disp}"; then
+      _nyx_gpu_nv=1
+    fi
+    if grep -qiE 'AMD|ATI' <<<"${_nyx_gpu_disp}"; then
+      _nyx_gpu_amd=1
+    fi
+  fi
+fi
+if ((_nyx_gpu_nv)); then
+  # audit 2026-09-08: do not offload every client to NVIDIA; use prime-run per app
+  # export __NV_PRIME_RENDER_OFFLOAD=1
+  if ((_nyx_gpu_amd)); then
+    : # AMD+NVIDIA: mesa VA-API; PRIME offload already exported (TRK-1348).
+  else
+    export LIBVA_DRIVER_NAME=nvidia
+    export __GLX_VENDOR_LIBRARY_NAME=nvidia
+    export NVD_BACKEND=direct
+  fi
+fi
+unset -v _nyx_gpu_nv _nyx_gpu_amd _nyx_gpu_json _nyx_gpu_disp
+# ELECTRON hint is safe on every GPU (it only nudges Electron toward Wayland).
+export ELECTRON_OZONE_PLATFORM_HINT=auto
+
+# ── OOM RANKING: raise the session, so the shell can sit below it (WIP-632) ──
+# On the 2026-08-13 image earlyoom SIGKILLed `qs` at 1.71 GB and the desktop
+# lost its bar, launcher and flyout for the rest of the session. Half of the
+# fix is nyxus-shell-supervisor (it restarts the shell); this is the other
+# half — making the shell the LAST thing an OOM killer reaches instead of the
+# largest thing it sees.
+#
+# The kernel decides which direction that is possible in, and it was measured
+# here rather than recalled: an unprivileged process may only RAISE its
+# oom_score_adj above the inherited oom_score_adj_min, which is 0 for every
+# process in a normal session. A negative value needs CAP_SYS_RESOURCE and is
+# refused with EACCES (0 → -100 refused; 200 → 100 accepted, since 100 is
+# still above the 0 floor). So the shell cannot lower itself below everything
+# else — the session has to be raised above the shell instead.
+#
+# oom_score_adj is inherited across fork and survives exec, so setting it HERE,
+# immediately before `exec Hyprland`, puts the compositor and every process the
+# compositor spawns at NYXUS_SESSION_OOM; nyxus-shell-supervisor then pins the
+# shell itself back down to 0. Nothing else in the session is touched and no
+# privilege is needed anywhere.
+#
+# 100 is deliberately modest. The kernel's badness is dominated by resident
+# size (a full 1000 points at total RAM), so 100 is a tiebreaker, not an
+# execution order: it moves the shell behind the compositor and behind every
+# app the session launches without making the desktop as a whole look like a
+# better victim than a system daemon.
+#
+# HONEST LIMIT, stated where it will be read: an app the SHELL launches
+# inherits the shell's value, not this one, because Quickshell's execDetached
+# forks from `qs`. Those apps land at 0 alongside the shell rather than at 100.
+# earlyoom's own --avoid/--prefer lists in /etc/default/earlyoom are what cover
+# that case — they match on process NAME, which inheritance cannot defeat, and
+# `qs` is named in --avoid for exactly this reason.
+#
+# Best-effort by construction: a failed write changes nothing and must never
+# stop a login. Set NYXUS_SESSION_OOM=0 to disable.
+: "${NYXUS_SESSION_OOM:=100}"
+if [[ "${NYXUS_SESSION_OOM}" != "0" ]]; then
+  printf '%s\n' "${NYXUS_SESSION_OOM}" > /proc/self/oom_score_adj 2>/dev/null || true
+fi
+
+# ── SAFE MODE (nyxus.safemode=1) ─────────────────────────────────────────────
+# The Safe Mode entries in grub.cfg / syslinux.cfg put `nyxus.safemode=1` on the
+# kernel command line. nyxus-hypr-launch is the wrapper that reads it and starts
+# Hyprland against conf.d/nyxus-safemode.conf instead of the full hyprland.conf.
+# Both of those existed already and NOTHING in the session chain consulted the
+# flag, so safe mode had no activation path on a booted system: a config file
+# describing a mechanism that had no caller at either end.
+#
+# This branch is the caller. It sits deliberately LAST, immediately before the
+# exec: everything above (PATH, the XDG_* vars, the dbus activation env, the
+# detected GPU vars) is already exported, so the recovery session runs in the
+# same environment as a normal one and differs only in which config Hyprland
+# reads. Starting the wrapper any earlier would hand safe mode a thinner
+# environment than the session it exists to rescue.
+#
+# It cannot affect a normal boot. `nyxus.safemode=1` appears in exactly one
+# entry per menu and in no other boot path this profile ships, so on every
+# existing entry the grep fails, this branch is skipped, and the exec below runs
+# byte-identically to before. `command -v` is the second guard: an image that
+# somehow ships without the wrapper falls through to the normal session instead
+# of failing to log anyone in. A missing recovery mode is recoverable; a session
+# command that exits is the login loop this repo has already paid for twice.
+#
+# -E with the dot escaped and explicit space/edge anchors, not -w: `-w` reads
+# the unescaped `.` as "any character" and its word boundaries stop at that
+# non-word `.`, so `foo.nyxus.safemode=1` and `nyxusXsafemode=1` both matched.
+# Nothing this repo boots produces either, but a kernel switch that a near-miss
+# can flip is not a switch. Keep identical to the predicate in
+# nyxus-hypr-launch — two spellings of one test is how they drift apart.
+if grep -qE '(^| )nyxus\.safemode=1( |$)' /proc/cmdline 2>/dev/null \
+   && command -v nyxus-hypr-launch >/dev/null 2>&1; then
+  exec nyxus-hypr-launch >>"${SESSION_LOG}" 2>&1
+fi
+
+# Prefer the distro wrapper if present (Hyprland 0.55+), else bare binary.
+# Redirect all compositor output to the session log so the VT stays clean.
+if command -v start-hyprland >/dev/null 2>&1; then
+  exec start-hyprland >>"${SESSION_LOG}" 2>&1
+elif command -v Hyprland >/dev/null 2>&1; then
+  exec Hyprland >>"${SESSION_LOG}" 2>&1
+else
+  echo "nyxus-session-start: Hyprland binary not found on PATH" >&2
+  exit 1
+fi

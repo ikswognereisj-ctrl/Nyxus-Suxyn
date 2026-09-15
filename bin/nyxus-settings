@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# NYXUS Settings — raise the glass QML Settings window (shell/Settings.qml).
+#
+# Owner 2026-08-19: one glass Settings. This PATH name used to exec
+# nyxus_settings.py (GTK) and, on the owner's host, also resolved to
+# ~/.local/bin/nyxus-settings (NYXUS Panel, stars + orbs). Both are the
+# wrong daily face. This wrapper talks to Quickshell over IPC and never
+# launches a terminal or the GTK control center.
+#
+#   nyxus-settings           →  qs ipc call qmlsettings engage
+#   nyxus-settings <key>     →  qs ipc call qmlsettings at <key>
+#
+# qs ipc exits 0 even when the target is missing (prints "Target not found.").
+# Success is the returned string, not the exit code. Do not fall back to GTK.
+set -u
+
+LOG_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/nyxus"
+mkdir -p "${LOG_DIR}"
+LOG="${LOG_DIR}/settings.log"
+
+fail() {
+  local msg="$1"
+  printf '%s\n' "${msg}" | tee -a "${LOG}" >&2
+  if command -v notify-send >/dev/null 2>&1; then
+    notify-send -u critical "Settings" "${msg}" 2>/dev/null || true
+  fi
+  exit 2
+}
+
+if ! command -v qs >/dev/null 2>&1; then
+  fail "Settings needs the desktop shell (qs). It is not a terminal app."
+fi
+
+KEY="${1:-}"
+
+# Prefer Settings.qml's qmlsettings door. Fall back to shell.qml's nyxus
+# settings / settingsAt if that target is dark.
+if [[ -z "${KEY}" ]]; then
+  out="$(qs ipc call qmlsettings engage 2>&1)" || true
+  if [[ "${out}" == *home* && "${out}" != *"Target not found."* ]]; then
+    printf '%s\n' "${out}" >>"${LOG}"
+    exit 0
+  fi
+  out="$(qs ipc call nyxus settings 2>&1)" || true
+  if [[ "${out}" != *"Target not found."* ]]; then
+    printf '%s\n' "${out}" >>"${LOG}"
+    exit 0
+  fi
+else
+  out="$(qs ipc call qmlsettings at "${KEY}" 2>&1)" || true
+  if [[ "${out}" == *"${KEY}"* && "${out}" != *"Target not found."* ]]; then
+    printf '%s\n' "${out}" >>"${LOG}"
+    exit 0
+  fi
+  out="$(qs ipc call nyxus settingsAt "${KEY}" 2>&1)" || true
+  if [[ "${out}" != *"Target not found."* ]]; then
+    printf '%s\n' "${out}" >>"${LOG}"
+    exit 0
+  fi
+fi
+
+fail "Settings window did not open (desktop shell is not answering). Not falling back to GTK."

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Nyxus Suxyn — raise glass Media. Never GTK nyxus_media.py.
+# The bar music popup is unchanged (MediaCrest.qml).
+set -u
+if ! command -v qs >/dev/null 2>&1; then
+  echo "Media needs the desktop shell (qs)." >&2
+  exit 2
+fi
+out="$(qs ipc call media engage 2>&1)" || true
+if [[ "${out}" == *"Target not found."* ]]; then
+  out="$(qs ipc call nyxus media 2>&1)" || true
+fi
+if [[ "${out}" == *"Target not found."* ]]; then
+  echo "Media is not in the running shell." >&2
+  printf '%s\n' "${out}" >&2
+  exit 2
+fi
+printf '%s\n' "${out}"
+exit 0

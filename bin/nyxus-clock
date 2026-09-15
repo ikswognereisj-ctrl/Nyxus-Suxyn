@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Nyxus Suxyn — raise glass Clock app. Never GTK nyxus_clock.py.
+# The bar clock overlay is Clock.qml (qs ipc call nyxus clock) and is untouched.
+set -u
+if ! command -v qs >/dev/null 2>&1; then
+  echo "Clock needs the desktop shell (qs)." >&2
+  exit 2
+fi
+out="$(qs ipc call clockapp engage 2>&1)" || true
+if [[ "${out}" == *"Target not found."* ]]; then
+  out="$(qs ipc call nyxus clockapp 2>&1)" || true
+fi
+if [[ "${out}" == *"Target not found."* ]]; then
+  echo "Clock is not in the running shell." >&2
+  printf '%s\n' "${out}" >&2
+  exit 2
+fi
+printf '%s\n' "${out}"
+exit 0

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Start the studio if it is not running, wait for it, then open a real window.
+PORT=7860
+if ! curl -sf -o /dev/null "http://127.0.0.1:${PORT}/"; then
+  nohup nyx-studio > /tmp/studio.log 2>&1 &
+  for i in $(seq 1 40); do
+    sleep 0.5
+    curl -sf -o /dev/null "http://127.0.0.1:${PORT}/" && break
+  done
+fi
+exec chromium \
+  --app="http://127.0.0.1:${PORT}/" \
+  --class=nyxus-make \
+  --user-data-dir="${HOME}/.local/share/nyxus-make/browser" \
+  --window-size=1360,900 \
+  --no-first-run --no-default-browser-check

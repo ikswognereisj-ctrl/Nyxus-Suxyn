@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Retired on Nyxus Suxyn — alien mood/threat suite. Kept as a stub so any
+# leftover autostart fails closed instead of throwing OVERCLOCK toasts.
+echo "nyxus-mood/sense: retired on Suxyn (alien reactive suite removed)" >&2
+exit 0

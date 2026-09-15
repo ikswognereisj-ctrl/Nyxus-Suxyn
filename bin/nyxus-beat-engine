@@ -1,0 +1,1178 @@
+#!/usr/bin/env python3
+# ════════════════════════════════════════════════════════════════════
+# nyxus-beat-engine   ·   the live beat, for real
+# © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+# ════════════════════════════════════════════════════════════════════
+#
+# Real onsets from real audio. Nothing here is faked, nothing is on a
+# timer, and when the room is silent this emits silence.
+#
+# WHY THIS EXISTS ALONGSIDE Beat.qml
+# ----------------------------------
+# Beat.qml reads cava: 12 bars, already smoothed, already noise-reduced,
+# at 45 fps. That is a VU meter. You can find onsets in it -- Beat.qml
+# does -- but three things are gone before the data arrives:
+#
+#   1. Frequency resolution. 12 bars over 20 Hz..20 kHz means a kick and
+#      a bass note land in the same number. A snare and a vocal share a
+#      bar. Onset detection is fundamentally a per-band question.
+#   2. Time resolution. 45 fps = 22 ms grid, and cava's `noise_reduction`
+#      is a low-pass over time -- it deliberately smears the transient
+#      that IS the onset.
+#   3. Dynamics. cava scales for a pretty bar display, not for analysis.
+#
+# This engine takes the raw PCM instead and does the real work:
+#
+#   STFT (2048 / 512 hop @ 48 kHz = 93.75 fps, 10.7 ms grid)
+#     -> log-magnitude mel bands (compression-proof: the problem with
+#        modern masters is that they have no dynamic range left, and a
+#        LINEAR detector needs range. log() gives it back.)
+#     -> SuperFlux onset function (Boeck & Widmer, DAFx-13): positive
+#        spectral difference against a frequency-MAXIMUM-FILTERED frame
+#        two frames back. The max-filter is the trick -- it makes the
+#        detector immune to vibrato and pitch drift, which are what
+#        produce false onsets on vocals and strings.
+#     -> adaptive peak-picking (local max + local mean + delta)
+#     -> autocorrelation tempo with a log-normal prior and harmonic
+#        summing (kills the half/double-time error)
+#     -> a phase-locked loop that PREDICTS the next beat
+#
+# THE PLL IS THE POINT. An onset detector alone always looks slightly
+# late and slightly jittery, because it can only react after the
+# transient has arrived and it fires on every hit, not on the beat.
+# Locking an oscillator to the onsets and driving the visuals from the
+# OSCILLATOR means the pulse lands ON the beat -- even across a bar
+# where the drummer drops out -- and a missed hit does not drop a frame
+# of the animation. That is the difference between "reacts to loud
+# noises" and "goes to the beat".
+#
+# HONESTY RULES (owner, 2026-08-19: "do not fake a pulse")
+#   * `hot` is false when the audio is below the noise floor. No audio,
+#     no beats, no exceptions.
+#   * `lock` is false until the tempo estimate is actually confident.
+#     While unlocked the engine reports onsets only -- it will not
+#     invent a grid it cannot hear.
+#   * The predicted beat train stops the moment the music stops. It is
+#     never free-running over silence.
+#
+# MODES
+#   nyxus-beat-engine                 live: follow the playing sink, JSONL on stdout
+#   nyxus-beat-engine --device NAME   live: pin to one monitor source
+#   nyxus-beat-engine --analyze FILE  offline: same DSP over a file, report
+#   nyxus-beat-engine --selftest      prove the DSP on signals with known answers
+#
+# The offline path runs the SAME Analyzer as the live path, so a
+# measurement made on a file is a measurement of what runs on the desktop.
+
+import argparse
+import json
+import math
+import os
+import subprocess
+import sys
+import time
+
+import numpy as np
+
+# ── the analysis grid ────────────────────────────────────────────────
+SR        = 48000
+WIN       = 2048          # 42.7 ms -- long enough to resolve a bass note
+HOP       = 512           # 10.7 ms -- 93.75 frames/sec
+FPS       = SR / HOP
+
+# ── mel-ish log-spaced bands ─────────────────────────────────────────
+F_MIN     = 27.5
+F_MAX     = 16000.0
+BANDS_OCT = 24            # Boeck's SuperFlux uses 24 bands/octave
+
+# ── onset function ───────────────────────────────────────────────────
+MU        = 2             # diff lag in frames (SuperFlux: 2 @ ~100 fps)
+MAXFILT   = 3             # frequency max-filter width in bands
+LOG_GAMMA = 20.0          # log(1 + gamma*S) compression
+
+# ── peak picking ─────────────────────────────────────────────────────
+PRE_MAX   = 3             # frames: must be the local max looking back
+POST_MAX  = 3             # frames: ...and looking forward (= 32 ms latency)
+PRE_AVG   = 10            # frames of history for the moving mean
+POST_AVG  = 3
+DELTA_K   = 0.60          # threshold = mean + DELTA_K*std + DELTA_MIN
+DELTA_MIN = 0.008
+COMBINE   = 0.055         # seconds: two peaks closer than this are one hit
+
+# ── tempo ────────────────────────────────────────────────────────────
+TEMPO_WIN   = 8.0         # seconds of onset envelope to autocorrelate
+BPM_MIN     = 60.0
+BPM_MAX     = 200.0
+BPM_PRIOR   = 120.0       # log-normal prior centre
+# In octaves. MEASURED: at 0.90 the prior is so flat that it cannot break a
+# tempo-octave tie, and the raw autocorrelation of real music almost always
+# has MORE energy at half-time than at the true tempo (a bar repeats harder
+# than a beat does). Two engine instances on the same track locked to 134
+# and to 67 depending only on where in the track they started. At 0.65 the
+# same tie goes to 134 by a wide margin while a genuine 75 BPM track still
+# scores 0.58 of full weight -- enough to win when the ACF actually
+# supports it. This is the single number that decides half-time errors.
+BPM_SIGMA   = 0.65
+LOCK_CONF   = 0.14        # normalised ACF peak needed to claim a lock
+UNLOCK_CONF = 0.07        # hysteresis: fall below this to drop the lock
+
+# ── phase-locked loop ────────────────────────────────────────────────
+PLL_PHASE_GAIN  = 0.14    # how hard an onset drags the beat phase
+PLL_PERIOD_GAIN = 0.010   # ...and how hard it drags the tempo
+PLL_WINDOW      = 0.28    # onsets within this fraction of a period correct
+
+# ── silence gate ─────────────────────────────────────────────────────
+# MEASURED, not guessed. A real track (corpus 2023_07_23) swings between
+# -15.7 dB in the chorus and -61.5 dB in a breakdown. The first version of
+# this gate sat at -52 dB with a 0.45 s hold, so every quiet passage read
+# as "silence", tore down the music state, and threw away the onset
+# envelope the tempo estimator needs 3 s of. That track locked for 13.7%
+# of its frames and reported the wrong tempo. A PipeWire monitor with
+# nothing playing sits at digital zero (-inf), so the floor can go much
+# lower without ever arming on silence -- what it must not do is mistake
+# quiet MUSIC for silence.
+HOT_DB     = -62.0        # broadband RMS above this = something is playing
+HOT_HOLD   = 2.0          # seconds of quiet before we call it silent
+RMS_SMOOTH = 0.85         # gate on a smoothed level, not a single frame
+
+
+def hz_to_bin(hz):
+    return int(round(hz * WIN / SR))
+
+
+def build_filterbank():
+    """Log-spaced triangular filters, deduped so no two share a peak bin."""
+    n_bins = WIN // 2 + 1
+    n_oct = math.log2(F_MAX / F_MIN)
+    n_filt = int(round(n_oct * BANDS_OCT))
+    centres = F_MIN * (2.0 ** (np.arange(n_filt + 2) / BANDS_OCT))
+    centres = centres[centres <= SR / 2]
+    peaks = np.array([hz_to_bin(f) for f in centres])
+    # A triangle needs distinct low/peak/high bins to exist at all; at the
+    # bottom of the range the log spacing is finer than the FFT resolution,
+    # so collapse the duplicates instead of emitting empty filters.
+    keep = np.concatenate(([True], np.diff(peaks) > 0))
+    peaks = peaks[keep]
+    fb = []
+    for i in range(1, len(peaks) - 1):
+        lo, mid, hi = int(peaks[i - 1]), int(peaks[i]), int(peaks[i + 1])
+        row = np.zeros(n_bins, dtype=np.float32)
+        if mid > lo:
+            row[lo:mid] = np.linspace(0, 1, mid - lo, endpoint=False)
+        if mid < n_bins:
+            row[mid] = 1.0
+        if hi > mid:
+            row[mid:hi] = np.linspace(1, 0, hi - mid, endpoint=False)
+        s = row.sum()
+        if s > 0:
+            fb.append(row / s)
+    return np.array(fb, dtype=np.float32)
+
+
+def max_filter1d(x, size):
+    """Sliding maximum along the band axis. Pure numpy so scipy is optional."""
+    r = size // 2
+    padded = np.pad(x, (r, r), mode="edge")
+    strided = np.lib.stride_tricks.sliding_window_view(padded, size)
+    return strided.max(axis=-1)
+
+
+# Visual bands. These are for the LOOK -- the detector does not use them.
+VIS_BANDS = (
+    ("bass", 30.0, 160.0),
+    ("low", 160.0, 500.0),
+    ("mid", 500.0, 2000.0),
+    ("high", 2000.0, 8000.0),
+    ("air", 8000.0, 16000.0),
+)
+
+# ── THE FULL-WIDTH SPECTRUM (TRK-3697) ───────────────────────────────
+# The five VIS_BANDS above are a caricature: they answer "how much bass"
+# and cannot draw a graph. The bottom bar's analyser wants a SHAPE, so
+# this emits one value per display bar, out of the SAME `spec` the onset
+# detector already computed. No second FFT, no second process, no timer:
+# the whole feature costs one reduceat over an array that was going to be
+# thrown away anyway (measured below).
+#
+# ⚠ WHY 64 AND NOT 128, MEASURED — the FFT resolution is the ceiling.
+# At SR 48000 / WIN 2048 one bin is 23.44 Hz. Log-spaced bars narrower
+# than one bin do not exist, so they get forced apart, and every forced
+# bar is LINEAR in frequency rather than logarithmic. Bin widths for the
+# 64-bar layout below, low to high:
+#
+#   33 x 1 bin, then 3,4,4,4,5,6,5,7,7,7,9,9,10,11,12,13,15,16,17,19,
+#   21,23,25,28,30,33,36,40,43,48,52
+#
+# i.e. HALF the display is already at the resolution floor (bars 0..32
+# span 46.9 Hz .. 820 Hz, one bin each) and the top bar averages 52 bins.
+# At 128 bars ~97 of them would be single-bin and the low three quarters
+# of the bar would be a comb of raw FFT bins rather than a spectrum. 64
+# is where the display stops asking for detail the analysis does not have.
+# It also lands at a 30 px pitch on a 1920 px screen, which is a bar you
+# can see from across a room rather than a hairline texture.
+# ⚠ ROUND 2, TRK-3715. THE OWNER SAW 64 AND REJECTED IT: "the bars are to
+# big way to big i wanted thin like the ones i seen". Every one of his eight
+# reference images is a dense field of 2-3 px lines, which on his 1920 px
+# screen is 380-480 columns.
+#
+# The argument above is still TRUE and is kept verbatim, because it is the
+# thing a future reader has to understand before changing this number -- but
+# it was answering a different question. It asks "how many bars can be
+# LOGARITHMIC", and the answer is 64. The owner is asking for a texture. At
+# 384 the layout is measured (docs/proof/barspectrum-0901/measure-density.py)
+# as: 349 of 385 edges forced off their log frequency, nothing clipped, the
+# top bar still landing at 13992 Hz. So the display below ~8.2 kHz becomes a
+# LINEAR comb of consecutive raw FFT bins.
+#
+# That is a real loss and it is stated rather than glossed: the octaves are
+# no longer evenly spaced, so this is a texture rather than an instrument.
+# It is also, exactly, what his references are -- the wild neighbour-to-
+# neighbour variation he likes IS a raw-bin comb, and it is unavailable at
+# any bar count where the log layout survives. The frequency range does NOT
+# shrink (1025 bins to Nyquist; 14 kHz is bin 597, so there is headroom the
+# whole way), which was the failure mode worth checking for.
+SPECTRUM_BARS = 384
+SPECTRUM_MIN  = 40.0        # below this is room rumble and DC, not music
+SPECTRUM_MAX  = 14000.0     # above this is dither on most masters
+
+# ── THE DYNAMICS · every constant the owner's "too stiff" touches ────
+# One block, because these four numbers are one design decision and the
+# next person to tune them needs them beside each other rather than buried
+# in the loop. All four are measured in docs/proof/barspectrum-0901/
+# measure-motion.py, which reports the before and the after for each.
+SP_PEAK_FALL  = 0.9992      # the ceiling's decay per frame (~0.93x/s)
+# ── THE TILT, AND WHY THE FILE'S OWN COMMENT ABOUT IT IS NOW WRONG ──
+# The block below used to say the log compression "keeps the 14 kHz end
+# visible next to a kick without inventing a tilt." The photograph
+# (docs/proof/barspectrum-0901/analyser-and-flip.png, first pass) says it
+# does not: with a single shared peak and a log-frequency axis, the top
+# THIRD of the display -- everything above ~5 kHz, which is where the whole
+# blue/indigo/violet end of the owner's rainbow lives -- sat on the 2 px
+# floor while the bass filled the left half.
+#
+# That is not a defect in the analysis; it is what music IS. Broadband
+# musical energy falls at roughly 3 dB per octave, which is the definition
+# of pink noise, and every spectrum analyser that displays music applies
+# the inverse. So this is a PINK-NOISE NORMALISATION with a name and a
+# standard value, not a fudge chosen to make a picture look better: it
+# makes a pink-noise source draw a FLAT line, which is the only tilt that
+# can be argued from first principles. Set it to 0.0 and the display goes
+# back to raw magnitude.
+# ── THE DISPLAY'S OWN COMPRESSION ────────────────────────────────────
+# The spectrum used to borrow the DETECTOR's LOG_GAMMA (20.0). That number
+# was chosen for onset detection, where the whole point is to squash the
+# dynamic range flat so a quiet transient counts as much as a loud one. It
+# is the wrong number for a picture, and it is the real answer to the
+# owner's "to stiff": at gamma 20 a bin 100x below the loudest one still
+# draws at 6% of full height, so a broadband passage fills the strip
+# edge-to-edge and the field has nowhere left to move.
+# MEASURED (measure-profile.py, on the harmonically dense fixture): at 20.0
+# the field's mean drawn height is 59.5 px of 76 and not one column in
+# 46,080 ever reaches the floor -- a solid rainbow block with a ripple on
+# top. See the sweep in the brief for the value chosen and what it costs.
+SP_LOG_GAMMA = 8.0
+SP_TILT_DB_OCT = 1.5        # +dB per octave, referenced to SPECTRUM_MIN
+SP_RELEASE    = 0.62        # was 0.72. Lower = less damping = livelier fall
+# ── COUPLING: INDEPENDENCE IN TIME, COHERENCE IN SHAPE ───────────────
+# ⚠ THESE TWO WERE 0.78 / 0.72 AND THE OWNER OVERRULED THEM LIVE, watching
+# real audio on his own machine (2026-09-02):
+#
+#   "graph have to start flat and teverbe more pointed and hit at different
+#    times with the sounds or wha"
+#
+# The pair was tuned for "flow waves ups and downs", which was HIS EARLIER
+# COMPLAINT and was answered correctly at the time. Having seen the result
+# he wants the opposite property: each column firing when ITS OWN band
+# fires -- a kick on the left, a hi-hat on the right, at different instants
+# -- rather than the whole field breathing as one body.
+#
+# The two terms are NOT the same kind of coupling and only one of them was
+# the problem:
+#
+#   SP_DRIFT is the TEMPORAL one. It carries where the LEFT neighbour was
+#     on the PREVIOUS frame, so a hit anywhere walks across the whole bar
+#     over the following frames. That is precisely "everything hits at the
+#     same time, one object", and it goes to 0.0.
+#   SP_SPREAD is the SHAPE one. It is same-frame only: a hit widens into a
+#     small crest and nothing travels. It is KEPT, at 0.30 rather than
+#     0.78, because at 0.78 a single loud bin lifts its neighbours to 78%
+#     of itself and the peak reads rounded -- and he also asked for "more
+#     pointed". 0.30 leaves a peak a peak and still stops a lone needle.
+#
+# The decay (SP_RELEASE) is untouched: that is what makes the fall look
+# liquid, and it is per-column, so it costs nothing in independence.
+SP_SPREAD     = 0.30        # same-frame shape only. Was 0.78 (too round)
+SP_DRIFT      = 0.0         # OFF. This was the term that made it hit as one
+# ── THE EMISSION RATE, AND WHY IT IS HALF THE ANALYSIS RATE ──────────
+# The analysis grid is 93.75 fps because ONSET DETECTION needs it: a
+# 10.7 ms grid is what puts a kick within +-10 ms of where it really is.
+# A BAR CHART does not need it, and it is not free downstream -- MEASURED
+# on the shipped consumer, 64 bars at 93.75 fps cost 41.34 percentage
+# points of one core against 21.99 at half that, and the bar's own living
+# paint (the ruler) costs 20.78 in the same harness. Every emitted frame
+# is a JSON parse, 64 array reads and 64 scene-graph updates in the shell.
+#
+# Every SECOND frame is 46.88 fps. `cava.raw.conf`, the profile this build
+# has shipped for a month for exactly this display, runs at framerate 45,
+# so this is not a compromise reached under pressure -- it is the rate the
+# build already decided a bar display wants, arrived at again from the
+# other direction.
+#
+# The odd frames omit the key ENTIRELY rather than repeating the array: a
+# consumer that sees no `sp` has no news and holds what it has, which
+# costs it nothing at all. Silence is the exception -- see below.
+SPECTRUM_EVERY = 2
+
+
+class Analyzer:
+    """One frame in, one state dict out. Live and offline share this."""
+
+    def __init__(self):
+        self.fb = build_filterbank()
+        self.n_bands = self.fb.shape[0]
+        self.window = np.hanning(WIN).astype(np.float32)
+        self.buf = np.zeros(WIN, dtype=np.float32)
+
+        # SuperFlux compares against the frame MU back, so keep MU+1
+        self.hist = [np.zeros(self.n_bands, dtype=np.float32)
+                     for _ in range(MU + 1)]
+
+        # onset function history for peak-picking and tempo
+        self.odf = []
+        self.odf_max = int(TEMPO_WIN * FPS) + 64
+
+        self.frame_i = 0
+        self.last_onset_frame = -999
+        self.onsets = []            # frame indices of accepted onsets
+
+        # visual band envelopes with per-band adaptive gain
+        self.vis_idx = [(name, hz_to_bin(lo), max(hz_to_bin(lo) + 1, hz_to_bin(hi)))
+                        for name, lo, hi in VIS_BANDS]
+        self.vis = {name: 0.0 for name, _, _ in self.vis_idx}
+        self.vis_peak = {name: 1e-4 for name, _, _ in self.vis_idx}
+
+        # ── the full-width spectrum's layout ─────────────────────────
+        # ⚠ THE FORCED-EDGE LAYOUT WAS ABANDONED AND THE PHOTOGRAPH IS
+        # WHY. TRK-3715. The original builder walked the log-spaced
+        # edges and, wherever two landed in the same FFT bin, pushed the
+        # second one up by one bin. At 64 bars that forces 32 edges and
+        # is a rounding detail. At 384 it forces 349 of 385 -- so bar i
+        # simply BECOMES bin i, the axis stops being logarithmic and
+        # turns LINEAR, and the first 8.2 kHz of a 14 kHz display eats
+        # 90% of the width.
+        #
+        # The measurement said that was survivable (the dead-column
+        # share came out at 22%, nothing was clipped, the top bar still
+        # landed at 13992 Hz). The CAPTURE said otherwise, immediately
+        # and unarguably: every column carrying anything was crammed
+        # into the left sixth of the bar and the remaining five sixths
+        # were a flat rainbow dotted line at the 2 px floor. Music has
+        # almost all of its energy under 1 kHz, which on a linear axis
+        # is the first 7% of the screen. A metric that says 22% dead
+        # cannot see that the dead columns are all CONTIGUOUS and all on
+        # the same side -- the check ran, passed, and did not cover what
+        # broke.
+        #
+        # So the edges are NOT forced any more. They stay exactly where
+        # geomspace put them, several bars may share a bin, and the
+        # question "what is in this bar" is answered two ways depending
+        # on which side of the FFT resolution the bar falls:
+        #
+        #   WIDE bars (>= 1 whole bin, the top of the display) integrate
+        #        the power over their span, exactly as before. This is a
+        #        measurement.
+        #   NARROW bars (< 1 bin, the bottom of the display) read the
+        #        magnitude spectrum INTERPOLATED at their centre
+        #        frequency. This is a resampling of the log axis, and it
+        #        is stated as such: it does not add information the FFT
+        #        did not have. What it does is put that information
+        #        where the frequency actually is, so a bass line lands
+        #        at the left edge and a hi-hat at the right, with the
+        #        whole width in between doing something.
+        #
+        # The consequence is that adjacent low columns are correlated
+        # rather than independent -- which is not a regression here, it
+        # is the owner's "flow waves": a smooth curve through the low
+        # end is what makes the field read as water instead of as 384
+        # meters.
+        n_bins = WIN // 2 + 1
+        edges = np.geomspace(SPECTRUM_MIN, SPECTRUM_MAX, SPECTRUM_BARS + 1)
+        fb_edges = np.clip(edges * WIN / SR, 0.0, n_bins - 1)
+        lo = np.floor(fb_edges[:-1]).astype(np.intp)
+        hi = np.ceil(fb_edges[1:]).astype(np.intp)
+        self.sp_lo = lo
+        self.sp_hi = np.minimum(np.maximum(hi, lo + 1), n_bins - 1)
+        self.sp_width = (self.sp_hi - self.sp_lo).astype(np.float32)
+        # a bar is WIDE when its own span really covers a bin or more
+        self.sp_wide = (fb_edges[1:] - fb_edges[:-1]) >= 1.0
+        # the centre of each bar, in fractional bins, for the narrow ones
+        self.sp_ctr = np.sqrt(fb_edges[:-1] * np.maximum(fb_edges[1:], 1e-6))
+        self.sp_bins = np.arange(n_bins, dtype=np.float32)
+        # the tilt, precomputed per bar: an amplitude gain of
+        # 2**(dB/6.02) per octave above SPECTRUM_MIN.
+        oct_up = np.log2(np.maximum(edges[:-1], 1e-6) / SPECTRUM_MIN)
+        self.sp_tilt = (2.0 ** (SP_TILT_DB_OCT / 6.02)) ** oct_up
+        self.sp_tilt = self.sp_tilt.astype(np.float32)
+        self.sp = np.zeros(SPECTRUM_BARS, dtype=np.float32)
+        # the previous frame, for the DRIFT term. Its own array, not a view.
+        self.sp_prev = np.zeros(SPECTRUM_BARS, dtype=np.float32)
+        self.sp_peak = 1e-4
+
+        # tempo / PLL
+        self.bpm = 0.0
+        self.conf = 0.0
+        self.locked = False
+        self.period = 0.0           # seconds
+        self.next_beat = None       # seconds (analysis clock)
+        self.bar_pos = 0
+        self.bar_energy = np.zeros(4, dtype=np.float64)
+        self.last_tempo_frame = -999
+
+        self.hot = False
+        self.last_loud = -1e9
+        self.rms_db = -120.0
+        self.rms_s = 0.0
+
+        # re-acquisition: how long the ACF has been pointing somewhere else
+        self.disagree_since = None
+
+    # the analysis clock is frames, not wall time, so offline == live
+    def t(self):
+        return self.frame_i / FPS
+
+    def push(self, block):
+        """block: HOP float32 samples. Returns a state dict."""
+        if block.size < HOP:
+            block = np.pad(block, (0, HOP - block.size))
+        self.buf = np.concatenate((self.buf[HOP:], block[:HOP]))
+        self.frame_i += 1
+        now = self.t()
+
+        spec = np.abs(np.fft.rfft(self.buf * self.window)).astype(np.float32)
+
+        # ── silence gate ─────────────────────────────────────────────
+        rms = float(np.sqrt(np.mean(self.buf * self.buf)) + 1e-12)
+        self.rms_s = RMS_SMOOTH * self.rms_s + (1.0 - RMS_SMOOTH) * rms
+        self.rms_db = 20.0 * math.log10(max(self.rms_s, 1e-12))
+        if self.rms_db > HOT_DB:
+            self.last_loud = now
+        was_hot = self.hot
+        self.hot = (now - self.last_loud) < HOT_HOLD
+        if was_hot and not self.hot:
+            self._reset_music_state()
+
+        # ── visual bands ─────────────────────────────────────────────
+        for name, lo, hi in self.vis_idx:
+            e = float(np.sqrt(np.mean(spec[lo:hi] ** 2))) if hi > lo else 0.0
+            # attack fast, release slow -- a peak-follower, so a quiet
+            # track still fills the meters and a loud one does not clip.
+            if e > self.vis_peak[name]:
+                self.vis_peak[name] = e
+            else:
+                self.vis_peak[name] *= 0.9992
+            self.vis_peak[name] = max(self.vis_peak[name], 1e-5)
+            v = min(1.0, e / self.vis_peak[name]) if self.hot else 0.0
+            prev = self.vis[name]
+            self.vis[name] = v if v > prev else prev * 0.80 + v * 0.20
+
+        # ── the full-width spectrum ──────────────────────────────────
+        # Same peak-follower idea as the vis bands, but ONE shared peak
+        # across all bars instead of one per bar: a per-bar gain would
+        # normalise every bar to full scale and delete the SHAPE, which
+        # is the only thing a spectrum graph is for. log1p compression
+        # (the detector's own LOG_GAMMA) plus the pink-noise tilt
+        # (SP_TILT_DB_OCT, see its own block above) is what keeps the
+        # 14 kHz end visible next to a kick.
+        #
+        # SILENCE IS STILL. Not hot -> the bars fall to a hard zero and
+        # stay there. Nothing here can synthesise motion (owner 08-19).
+        if self.hot:
+            p2 = spec * spec
+            csum = np.concatenate(([0.0], np.cumsum(p2, dtype=np.float64)))
+            wide = np.sqrt((csum[self.sp_hi] - csum[self.sp_lo])
+                           / self.sp_width)
+            narrow = np.interp(self.sp_ctr, self.sp_bins, spec)
+            raw = np.where(self.sp_wide, wide, narrow) * self.sp_tilt
+            lg = np.log1p(SP_LOG_GAMMA * raw)
+            m = float(lg.max())
+            if m > self.sp_peak:
+                self.sp_peak = m
+            else:
+                self.sp_peak *= SP_PEAK_FALL
+            self.sp_peak = max(self.sp_peak, 1e-4)
+
+            # ── THE "COMPRESSED DYNAMIC RANGE" HYPOTHESIS, TESTED AND
+            #    REJECTED. TRK-3715. ─────────────────────────────────
+            # The owner's "to stiff" was read as a gain problem: `lg /
+            # sp_peak` divides by the ceiling and nothing else, so the
+            # display's zero is log1p(0), a level no real room reaches.
+            # A floor-tracking normalisation into [floor, peak] was
+            # built and MEASURED (measure-motion.py, 12 s of steady loud
+            # 124 BPM fixture, 384 bars): it moved the field's spread by
+            # +1.2% and the share of columns in the bottom tenth by
+            # +0.9 pp. It does nothing, because the field ALREADY spans
+            # 0.75 of full scale and already spends 49% of its columns
+            # in the bottom tenth. The code is therefore not here.
+            #
+            # The stiffness is downstream, and it is the opposite shape
+            # to the one assumed: with half the columns near zero the
+            # display was a dead flat line with a few spikes over it.
+            # That is fixed where it lives -- BarSpectrum._shape(), a
+            # gamma lift, measured in the same file.
+            v = np.clip(lg / self.sp_peak, 0.0, 1.0).astype(np.float32)
+
+            # attack instant, release over ~20 ms: the eye reads the hit,
+            # not the flicker. The consumer therefore needs NO animation,
+            # which is what keeps hundreds of bars affordable in a scene
+            # graph. SP_RELEASE was 0.72 in round 2 and is 0.62 here --
+            # the owner's "less damping", and the only easing anywhere in
+            # this feature.
+            self.sp = np.where(v > self.sp, v, self.sp * SP_RELEASE
+                               + v * (1.0 - SP_RELEASE))
+
+            # ── THE FLOW · TRK-3715 ──────────────────────────────────
+            # "flow waves ups and downs". His references read as WATER:
+            # neighbouring columns are related and movement travels
+            # across the field. A bank of independent meters cannot do
+            # that however fast it responds, because nothing in it
+            # couples one column to the next.
+            #
+            # Two terms, both MAX rather than blends, which is the whole
+            # trick: a max widens and extends a ridge without ever
+            # lowering a valley, so the field gains coupling WITHOUT
+            # losing the neighbour-to-neighbour contrast that makes it
+            # read as spikes. A conventional blur would have bought the
+            # flow by spending the spikiness.
+            #
+            #   SPREAD  each column also sees its two neighbours, at
+            #           SP_SPREAD. A single hit becomes a small crest
+            #           instead of a needle.
+            #   DRIFT   each column also sees where its LEFT neighbour
+            #           was on the PREVIOUS frame, at SP_DRIFT. That is
+            #           the travelling term: a crest walks one column per
+            #           frame toward the high end and fades as it goes,
+            #           so the eye follows movement across the bar.
+            #
+            # ⚠ NEITHER TERM CAN INVENT MOTION. Both are maxima against
+            # the field itself, so an all-zero field stays all zero and
+            # silence is unaffected -- see the `elif` below, which is
+            # still the only thing that runs when nothing is playing.
+            if SP_SPREAD > 0.0:
+                sp = self.sp
+                nb = np.maximum(np.roll(sp, 1), np.roll(sp, -1))
+                nb[0] = sp[1] if sp.size > 1 else 0.0
+                nb[-1] = sp[-2] if sp.size > 1 else 0.0
+                self.sp = np.maximum(sp, nb * SP_SPREAD)
+            if SP_DRIFT > 0.0:
+                trail = np.roll(self.sp_prev, 1)
+                trail[0] = 0.0
+                self.sp = np.maximum(self.sp, trail * SP_DRIFT)
+            self.sp_prev = self.sp
+        elif float(self.sp.max()) > 0.0:
+            self.sp *= 0.80
+            if float(self.sp.max()) < 0.004:
+                self.sp[:] = 0.0
+            self.sp_prev = self.sp
+
+        # ── SuperFlux ────────────────────────────────────────────────
+        mel = self.fb @ spec
+        logmel = np.log1p(LOG_GAMMA * mel)
+        ref = max_filter1d(self.hist[0], MAXFILT)
+        flux = float(np.maximum(0.0, logmel - ref).sum() / self.n_bands)
+        self.hist.append(logmel)
+        self.hist.pop(0)
+
+        if not self.hot:
+            flux = 0.0
+        self.odf.append(flux)
+        if len(self.odf) > self.odf_max:
+            self.odf.pop(0)
+
+        # ── peak picking, POST_MAX frames behind the newest frame ────
+        onset_now = False
+        strength = 0.0
+        onset_t = 0.0
+        cand = self.frame_i - POST_MAX          # the frame being judged
+        if self.hot and len(self.odf) > (PRE_MAX + POST_MAX + PRE_AVG + 2):
+            k = len(self.odf) - 1 - POST_MAX     # index of cand within odf
+            if k - PRE_AVG >= 0 and k - PRE_MAX >= 0:
+                v = self.odf[k]
+                win = self.odf[k - PRE_MAX:k + POST_MAX + 1]
+                avg_win = self.odf[k - PRE_AVG:k + POST_AVG + 1]
+                m = float(np.mean(avg_win))
+                s = float(np.std(avg_win))
+                thresh = m + DELTA_K * s + DELTA_MIN
+                if (v >= max(win) - 1e-12 and v >= thresh and v > 0.0
+                        and (cand - self.last_onset_frame) / FPS >= COMBINE):
+                    onset_now = True
+                    onset_t = cand / FPS
+                    self.last_onset_frame = cand
+                    self.onsets.append(cand)
+                    # how far it cleared its own threshold, 0..1
+                    strength = float(min(1.0, 0.45 + (v - thresh) * 6.0))
+                    self._on_onset(cand / FPS, strength)
+
+        # ── tempo, four times a second ───────────────────────────────
+        if self.hot and (self.frame_i - self.last_tempo_frame) > FPS * 0.25:
+            self.last_tempo_frame = self.frame_i
+            self._estimate_tempo()
+
+        # ── the predicted beat ───────────────────────────────────────
+        beat_now = False
+        downbeat = False
+        if self.locked and self.hot and self.next_beat is not None:
+            # `now` advances one hop per call, so this fires at most once
+            if now >= self.next_beat:
+                beat_now = True
+                self.next_beat += self.period
+                self.bar_pos = (self.bar_pos + 1) % 4
+                downbeat = (self.bar_pos == 0)
+        elif not self.hot:
+            self.next_beat = None
+
+        return {
+            "t": round(now, 4),
+            "hot": self.hot,
+            "rms": round(self.rms_db, 1),
+            "flux": round(flux, 5),
+            "onset": onset_now,
+            # WHEN the onset actually happened. Peak-picking judges a frame
+            # POST_MAX frames after the fact, so the frame this is REPORTED
+            # on is 32 ms later than the transient it describes. The PLL has
+            # always used the true time internally; reporting `t` as the
+            # onset time made every alignment measurement 32 ms pessimistic.
+            "ot": round(onset_t, 4),
+            "str": round(strength, 3),
+            "beat": beat_now,
+            "down": downbeat,
+            "bar": self.bar_pos,
+            # a BPM is only ever shown when it is actually being tracked
+            "bpm": round(self.bpm, 2) if self.locked else 0.0,
+            "conf": round(self.conf, 3),
+            "lock": self.locked,
+            # THE SPECTRUM. Integers 0..1000, the same scale cava's ascii
+            # raw output uses, so a consumer parses one convention. An
+            # EMPTY list when there is nothing playing -- silence costs
+            # zero bytes on the wire and tells the consumer to go still,
+            # rather than shipping 64 zeros 94 times a second.
+            **self._spectrum_field(),
+            **{n: round(self.vis[n], 4) for n, _, _ in self.vis_idx},
+        }
+
+    def _spectrum_field(self):
+        """{} on a skipped frame, {"sp": [...]} otherwise.
+
+        SILENCE IS NEVER SKIPPED. "Go still" has to arrive on the first
+        frame it is true, or a consumer holds a stale spectrum for one
+        extra frame after the music stops -- a bar moving with nothing
+        behind it, which is the one thing the 08-19 ruling forbids. It
+        costs two characters on the wire to be exact about it.
+        """
+        wire = self._spectrum_wire()
+        if not wire:
+            return {"sp": []}
+        if self.frame_i % SPECTRUM_EVERY:
+            return {}
+        return {"sp": wire}
+
+    def _spectrum_wire(self):
+        """The spectrum as integers 0..1000, or [] when it is all zero.
+
+        The emptiness test is done AFTER rounding, deliberately: the release
+        ramp spends a few frames at levels that round to 0, and a list of 64
+        zeros is a list a consumer has to look at to learn nothing. Empty
+        means still, and still means still.
+        """
+        if float(self.sp.max()) <= 0.0:
+            return []
+        q = np.rint(self.sp * 1000.0).astype(int)
+        return q.tolist() if int(q.max()) > 0 else []
+
+    def _reset_music_state(self):
+        """Real silence arrived: stop predicting. Never free-run over quiet."""
+        self.locked = False
+        self.conf = 0.0
+        self.next_beat = None
+        self.bar_energy[:] = 0.0
+        self.disagree_since = None
+        self.sp[:] = 0.0
+        self.sp_prev[:] = 0.0
+        self.sp_peak = 1e-4
+        # The envelope is stale, so it goes. `period`/`bpm` are KEPT as a
+        # seed: if the same track comes back after a gap, re-acquisition is
+        # a phase search rather than a tempo search. They are not reported
+        # while unlocked, so this cannot show a stale BPM as if it were live.
+        self.odf = []
+
+    # ── PLL: an onset drags the oscillator toward it ─────────────────
+    def _on_onset(self, t_on, strength):
+        if not self.locked or self.next_beat is None or self.period <= 0:
+            return
+        # error against the NEAREST predicted beat, not the next one
+        prev_beat = self.next_beat - self.period
+        err = t_on - prev_beat
+        if err > self.period / 2:
+            err -= self.period
+        if abs(err) <= self.period * PLL_WINDOW:
+            g = PLL_PHASE_GAIN * (0.5 + 0.5 * strength)
+            self.next_beat += g * err
+            self.period += PLL_PERIOD_GAIN * err
+            self.period = max(60.0 / BPM_MAX, min(60.0 / BPM_MIN, self.period))
+            self.bpm = 60.0 / self.period
+            # which slot of the bar carries the weight -> the downbeat
+            slot = (self.bar_pos - 1) % 4
+            self.bar_energy *= 0.995
+            self.bar_energy[slot] += strength
+
+    # ── tempo by autocorrelation, with a prior and harmonic summing ──
+    def _estimate_tempo(self):
+        n = len(self.odf)
+        if n < int(FPS * 3.0):
+            return
+        x = np.asarray(self.odf, dtype=np.float64)
+        x = x - x.mean()
+        if not np.any(x):
+            return
+
+        # ACF via FFT
+        size = 1 << (2 * n - 1).bit_length()
+        f = np.fft.rfft(x, size)
+        acf = np.fft.irfft(f * np.conj(f), size)[:n]
+        if acf[0] <= 0:
+            return
+        acf = acf / acf[0]
+
+        lag_min = int(round(60.0 / BPM_MAX * FPS))
+        lag_max = min(n - 1, int(round(60.0 / BPM_MIN * FPS)))
+        if lag_max <= lag_min + 2:
+            return
+
+        lags = np.arange(lag_min, lag_max + 1)
+        bpms = 60.0 * FPS / lags
+
+        # harmonic summing: a true period also has energy at 2x and 3x,
+        # which is what stops the tracker settling on half-time.
+        score = acf[lags].copy()
+        for mult, w in ((2, 0.55), (3, 0.30), (4, 0.15)):
+            h = lags * mult
+            ok = h <= n - 1
+            score[ok] += w * acf[h[ok]]
+
+        # log-normal prior on tempo -- 120 is more likely than 200
+        prior = np.exp(-0.5 * (np.log2(bpms / BPM_PRIOR) / BPM_SIGMA) ** 2)
+        score = score * prior
+
+        i = int(np.argmax(score))
+        best_lag = float(lags[i])
+
+        # Sub-frame peak. The lag grid is integer frames, and one frame is
+        # 10.7 ms -- at 174 BPM the true period is 32.33 frames, so the
+        # nearest integer is already 1% out and that error accumulates
+        # across a bar until the predicted beat visibly leads or drags.
+        # A parabola through the peak and its two neighbours recovers the
+        # fractional part.
+        if 0 < i < len(score) - 1:
+            y0, y1, y2 = float(score[i - 1]), float(score[i]), float(score[i + 1])
+            denom = y0 - 2.0 * y1 + y2
+            if denom != 0.0:
+                shift = 0.5 * (y0 - y2) / denom
+                if -1.0 < shift < 1.0:
+                    best_lag += shift
+
+        # normalise the peak against the field so `conf` means something
+        med = float(np.median(np.abs(score)))
+        peak = float(score[i])
+        conf = 0.0 if peak <= 0 else max(0.0, (peak - med) / (peak + 1e-9))
+        conf *= min(1.0, max(0.0, float(acf[int(lags[i])])) * 3.0)
+        self.conf = 0.7 * self.conf + 0.3 * conf
+
+        new_period = best_lag / FPS
+        if not self.locked:
+            if self.conf >= LOCK_CONF:
+                self.period = new_period
+                self.bpm = 60.0 / self.period
+                self._acquire_phase()
+                self.locked = True
+                self.disagree_since = None
+        else:
+            if self.conf < UNLOCK_CONF:
+                self.locked = False
+                self.next_beat = None
+                self.disagree_since = None
+                return
+            # The PLL handles small drift; this handles a real tempo change.
+            ratio = new_period / self.period if self.period > 0 else 1.0
+            if 0.94 < ratio < 1.06:
+                self.period = 0.85 * self.period + 0.15 * new_period
+                self.bpm = 60.0 / self.period
+                self.disagree_since = None
+            else:
+                # RE-ACQUISITION. Without this, the first confident estimate
+                # wins forever: the ratio guard above rejects everything far
+                # from it, so an early lock made on 3 s of an intro survives
+                # the whole track even once the ACF has moved on. Measured on
+                # the corpus -- a track locked at 155 BPM in a breakdown and
+                # held it against a reference of 123. So: if the ACF keeps
+                # pointing somewhere else for a sustained stretch, believe it.
+                if self.disagree_since is None:
+                    self.disagree_since = self.t()
+                elif self.t() - self.disagree_since > 3.0:
+                    self.period = new_period
+                    self.bpm = 60.0 / self.period
+                    self._acquire_phase()
+                    self.disagree_since = None
+                    return
+
+    def _acquire_phase(self):
+        """Slide a pulse train over the recent envelope; keep the best fit."""
+        if self.period <= 0 or not self.odf:
+            return
+        lag = self.period * FPS
+        n = len(self.odf)
+        x = np.asarray(self.odf, dtype=np.float64)
+        best_off, best_val = 0.0, -1.0
+        steps = max(8, int(round(lag)))
+        for s in range(steps):
+            off = s * lag / steps
+            idx = np.arange(off, n, lag)
+            idx = np.round(idx).astype(int)
+            idx = idx[(idx >= 0) & (idx < n)]
+            if idx.size == 0:
+                continue
+            v = float(x[idx].sum() / idx.size)
+            if v > best_val:
+                best_val, best_off = v, off
+        # translate that offset into "when is the next beat"
+        last_frame = n - 1
+        k = math.ceil((last_frame - best_off) / lag)
+        # odf index n-1 is the current frame, so convert to the analysis clock
+        self.next_beat = self.t() + ((best_off + k * lag) - last_frame) / FPS
+        self.bar_pos = 0
+        self.bar_energy[:] = 0.0
+
+    def align_downbeat(self):
+        """Rotate the bar so slot 0 is the heaviest -- call between bars."""
+        if self.bar_energy.sum() <= 0:
+            return
+        strongest = int(np.argmax(self.bar_energy))
+        if strongest != 0:
+            self.bar_pos = (self.bar_pos - strongest) % 4
+            self.bar_energy = np.roll(self.bar_energy, -strongest)
+
+
+# ════════════════════════════════════════════════════════════════════
+# live capture
+# ════════════════════════════════════════════════════════════════════
+
+def find_sink(tap_script):
+    """(monitor_source, playing) using the shell's own tap logic."""
+    if tap_script and os.path.exists(tap_script):
+        try:
+            p = subprocess.run(["bash", tap_script], capture_output=True,
+                               text=True, timeout=3.0)
+            lines = [l for l in p.stdout.strip().split("\n") if l]
+            if lines and lines[0]:
+                playing = len(lines) > 1 and lines[1].strip() == "1"
+                return lines[0] + ".monitor", playing
+        except Exception:
+            pass
+    try:
+        p = subprocess.run(["pactl", "get-default-sink"], capture_output=True,
+                           text=True, timeout=2.0)
+        s = p.stdout.strip()
+        if s:
+            return s + ".monitor", True
+    except Exception:
+        pass
+    return None, False
+
+
+def open_capture(device):
+    return subprocess.Popen(
+        ["parec", "--device=" + device, "--format=float32le",
+         "--rate=" + str(SR), "--channels=1", "--latency-msec=20"],
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+
+
+def read_exact(stream, n):
+    buf = b""
+    while len(buf) < n:
+        chunk = stream.read(n - len(buf))
+        if not chunk:
+            return None
+        buf += chunk
+    return buf
+
+
+def run_live(args):
+    an = Analyzer()
+    device = args.device
+    proc = None
+    need = HOP * 4
+    last_check = 0.0
+    out = sys.stdout
+    bar_count = 0
+    announced = None
+    deadline = time.time() + args.duration if args.duration else None
+
+    try:
+        while True:
+            now = time.time()
+            if deadline and now > deadline:
+                break
+            if not args.device and now - last_check > 1.0:
+                last_check = now
+                dev, _playing = find_sink(args.tap)
+                if dev and dev != device:
+                    device = dev
+                    if proc:
+                        proc.kill()
+                        proc = None
+            if proc is None:
+                if not device:
+                    device, _ = find_sink(args.tap)
+                if not device:
+                    time.sleep(0.5)
+                    continue
+                try:
+                    proc = open_capture(device)
+                except Exception:
+                    time.sleep(0.5)
+                    continue
+
+            chunk = read_exact(proc.stdout, need)
+            if chunk is None:
+                proc.kill()
+                proc = None
+                time.sleep(0.2)
+                continue
+
+            block = np.frombuffer(chunk, dtype=np.float32)
+            state = an.push(block)
+            # Which ear is open, stated once per change rather than 94
+            # times a second. A consumer that shows "following: <sink>"
+            # is showing something it was told, not something it assumed.
+            if device != announced:
+                state["dev"] = device
+                announced = device
+            if state["down"]:
+                bar_count += 1
+                if bar_count % 4 == 0:
+                    an.align_downbeat()
+            state["wall"] = int(now * 1000)
+            out.write(json.dumps(state, separators=(",", ":")) + "\n")
+            out.flush()
+    except (KeyboardInterrupt, BrokenPipeError):
+        pass
+    finally:
+        if proc:
+            proc.kill()
+    return 0
+
+
+# ════════════════════════════════════════════════════════════════════
+# offline: the same Analyzer, over a file
+# ════════════════════════════════════════════════════════════════════
+
+def decode(path, seconds=None, start=None):
+    cmd = ["ffmpeg", "-v", "quiet"]
+    if start:
+        cmd += ["-ss", str(start)]
+    cmd += ["-i", path]
+    if seconds:
+        cmd += ["-t", str(seconds)]
+    cmd += ["-f", "f32le", "-ac", "1", "-ar", str(SR), "-"]
+    raw = subprocess.run(cmd, capture_output=True).stdout
+    return np.frombuffer(raw, dtype=np.float32)
+
+
+def analyze_array(audio, jsonl=False):
+    an = Analyzer()
+    beats, onsets, bpms = [], [], []
+    n = (audio.size // HOP) * HOP
+    bar_count = 0
+    for i in range(0, n, HOP):
+        st = an.push(audio[i:i + HOP])
+        if st["onset"]:
+            onsets.append(st["ot"])
+        if st["beat"]:
+            beats.append(st["t"])
+        if st["down"]:
+            bar_count += 1
+            if bar_count % 4 == 0:
+                an.align_downbeat()
+        if st["lock"]:
+            bpms.append(st["bpm"])
+        if jsonl:
+            sys.stdout.write(json.dumps(st, separators=(",", ":")) + "\n")
+    return n, beats, onsets, bpms
+
+
+def report(n, beats, onsets, bpms, name=""):
+    dur = n / SR
+    rep = {
+        "file": name,
+        "seconds": round(dur, 2),
+        "onsets": len(onsets),
+        "onsets_per_sec": round(len(onsets) / dur, 2) if dur else 0,
+        "beats": len(beats),
+        "bpm_median": round(float(np.median(bpms)), 2) if bpms else None,
+        "bpm_stdev": round(float(np.std(bpms)), 3) if bpms else None,
+        "locked_pct": round(100.0 * len(bpms) / max(1, n // HOP), 1),
+    }
+    # How well does the predicted grid actually sit on the detected onsets?
+    # This is the number that says "it goes to the beat" rather than
+    # "it flashes a lot": median distance from each predicted beat to the
+    # nearest real onset, in ms and as a share of the beat period.
+    if beats and onsets:
+        o = np.asarray(onsets)
+        d = [float(np.min(np.abs(o - b))) for b in beats]
+        rep["beat_to_onset_ms_median"] = round(float(np.median(d)) * 1000, 1)
+        if rep["bpm_median"]:
+            per = 60.0 / rep["bpm_median"]
+            rep["beat_to_onset_pct_of_period"] = round(
+                float(np.median(d)) / per * 100, 1)
+    return rep
+
+
+def run_analyze(args):
+    audio = decode(args.analyze, args.seconds, args.start)
+    if audio.size < WIN:
+        print("no audio decoded", file=sys.stderr)
+        return 2
+    n, beats, onsets, bpms = analyze_array(audio, args.jsonl)
+    rep = report(n, beats, onsets, bpms, os.path.basename(args.analyze))
+    txt = json.dumps(rep, indent=2)
+    if args.jsonl:
+        sys.stderr.write(txt + "\n")
+    else:
+        print(txt)
+    return 0
+
+
+# ════════════════════════════════════════════════════════════════════
+# selftest: signals whose right answer is known by construction
+# ════════════════════════════════════════════════════════════════════
+
+def _click_track(bpm, seconds, sr=SR, decay=0.06, noise=0.0, seed=1,
+                 alternate=True):
+    """A test signal whose tempo is known by construction.
+
+    `alternate` puts a kick on odd beats and a snare on even ones. That is
+    what real drums do -- and it is also, deliberately, AMBIGUOUS: a
+    kick/snare alternation at 174 BPM is the same waveform as a backbeat
+    pattern at 87 BPM, and both readings are correct. Human annotators
+    disagree about exactly this. With alternate=False every beat gets the
+    same sound, which removes the two-beat periodicity and leaves the
+    tempo with only one defensible answer.
+    """
+    rng = np.random.default_rng(seed)
+    x = np.zeros(int(seconds * sr), dtype=np.float32)
+    period = 60.0 / bpm
+    t = np.arange(int(decay * sr)) / sr
+    env = np.exp(-t / (decay / 4)).astype(np.float32)
+    kick = (np.sin(2 * np.pi * 55 * t).astype(np.float32) * env)
+    snare = (rng.standard_normal(t.size).astype(np.float32) * env * 0.6)
+    # A single "drum" with both a body and a transient, so the uniform
+    # track is still something an onset detector can see.
+    both = np.clip(kick + snare * 0.7, -1, 1).astype(np.float32)
+    k = 0
+    while k * period < seconds:
+        i = int(k * period * sr)
+        j = min(x.size, i + kick.size)
+        if alternate:
+            src = kick if k % 2 == 0 else snare
+        else:
+            src = both
+        x[i:j] += src[:j - i] * (1.0 if k % 4 == 0 else 0.75)
+        k += 1
+    if noise:
+        x += rng.standard_normal(x.size).astype(np.float32) * noise
+    return np.clip(x, -1, 1)
+
+
+def _octave_err(got, want):
+    """Percent error against the nearest octave-equivalent of `want`."""
+    if not got:
+        return 100.0, "none"
+    best, name = 1e9, "none"
+    for mult, label in ((1.0, "1x"), (0.5, "half"), (2.0, "double")):
+        cand = want * mult
+        e = abs(got - cand) / cand * 100
+        if e < best:
+            best, name = e, label
+    return best, name
+
+
+def run_selftest(args):
+    print("nyxus-beat-engine selftest -- signals with a known answer\n")
+    ok = True
+
+    # ── UNAMBIGUOUS: the same drum on every beat. One correct answer. ──
+    print("  uniform hits (one defensible tempo) -- strict:")
+    for bpm in (75.0, 90.0, 120.0, 128.0, 140.0, 174.0):
+        x = _click_track(bpm, 20.0, noise=0.004, seed=int(bpm), alternate=False)
+        n, beats, onsets, bpms = analyze_array(x)
+        got = float(np.median(bpms)) if bpms else 0.0
+        err = abs(got - bpm) / bpm * 100 if got else 100.0
+        good = err < 2.0
+        ok &= good
+        print(f"   {bpm:6.1f} BPM  ->  {got:7.2f}   err {err:5.2f}%   "
+              f"onsets {len(onsets):4d}  beats {len(beats):4d}  "
+              f"{'PASS' if good else 'FAIL'}")
+
+    # ── AMBIGUOUS: kick/snare alternation is a backbeat at half the rate.
+    # Both readings are musically correct, so an octave-equivalent answer
+    # passes -- but which one it picked is printed, never hidden.
+    print("\n  kick/snare backbeat (tempo octave is genuinely ambiguous)")
+    print("  -- octave-equivalent accepted, choice reported:")
+    for bpm in (75.0, 90.0, 120.0, 128.0, 140.0, 174.0):
+        x = _click_track(bpm, 20.0, noise=0.004, seed=int(bpm), alternate=True)
+        n, beats, onsets, bpms = analyze_array(x)
+        got = float(np.median(bpms)) if bpms else 0.0
+        err, rel = _octave_err(got, bpm)
+        good = err < 2.0
+        ok &= good
+        print(f"   {bpm:6.1f} BPM  ->  {got:7.2f}   err {err:5.2f}% ({rel:>6})  "
+              f"onsets {len(onsets):4d}  beats {len(beats):4d}  "
+              f"{'PASS' if good else 'FAIL'}")
+
+    # silence must produce nothing at all
+    an = Analyzer()
+    sil = np.zeros(SR * 4, dtype=np.float32)
+    fired = 0
+    for i in range(0, sil.size - HOP, HOP):
+        st = an.push(sil[i:i + HOP])
+        if st["onset"] or st["beat"] or st["hot"]:
+            fired += 1
+    good = (fired == 0)
+    ok &= good
+    print(f"\n  silence (4 s)  ->  {fired} frames hot/onset/beat  "
+          f"{'PASS' if good else 'FAIL'}")
+    print("\n" + ("ALL PASS" if ok else "FAILURES ABOVE"))
+    return 0 if ok else 1
+
+
+def main():
+    ap = argparse.ArgumentParser(description="NYXUS live beat engine")
+    ap.add_argument("--device", help="monitor source to capture (default: follow playback)")
+    ap.add_argument("--tap", default=os.path.expanduser(
+        "~/.config/quickshell/nyxus/nyxus-beat-tap.sh"),
+        help="path to nyxus-beat-tap.sh")
+    ap.add_argument("--duration", type=float, help="live: stop after N seconds")
+    ap.add_argument("--analyze", metavar="FILE", help="offline analysis of a file")
+    ap.add_argument("--seconds", type=float, help="with --analyze, limit to N seconds")
+    ap.add_argument("--start", type=float, help="with --analyze, skip N seconds in")
+    ap.add_argument("--jsonl", action="store_true", help="with --analyze, stream frames")
+    ap.add_argument("--selftest", action="store_true")
+    args = ap.parse_args()
+
+    if args.selftest:
+        return run_selftest(args)
+    if args.analyze:
+        return run_analyze(args)
+    return run_live(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main() or 0)

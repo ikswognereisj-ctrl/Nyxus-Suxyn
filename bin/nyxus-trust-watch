@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# nyxus-trust-watch — weekly (not realtime) security notices.
+#
+# TRK-3160. Hemera already notify-sends on a finding (critical). This unit
+# does NOT scan. It repeats three facts the person may have missed: firewall
+# off, nyxus-doctor FAIL, Hemera vault still waiting. wget is not in scope.
+#
+# Off:  touch ~/.config/nyxus/trust-watch.disabled
+#
+# Guards are `[ -x path ]`, not `command -v` — 13q46 treats command -v as a
+# hard package requirement.
+set -euo pipefail
+
+[[ -f "${HOME}/.config/nyxus/trust-watch.disabled" ]] && exit 0
+
+_notify() {
+  local urg=$1 title=$2 body=$3
+  if [[ -x /usr/bin/notify-send ]]; then
+    /usr/bin/notify-send --app-name "Nyxus" --urgency "$urg" \
+      --icon "security-medium" "$title" "$body" || true
+  fi
+}
+
+fw=off
+if [[ -x /usr/local/bin/nyxus-secure ]]; then
+  if /usr/local/bin/nyxus-secure status 2>/dev/null | grep -q '^firewall=on'; then
+    fw=on
+  fi
+fi
+if [[ "$fw" == off ]]; then
+  _notify critical "Firewall is off" \
+    "Unsolicited inbound is not blocked. Open Settings ▸ Security to turn it on."
+fi
+
+# ⚠ THE DOCTOR CLAUSE IS GONE, AND IT WAS BROKEN THE WHOLE TIME (TRK-3804).
+#
+# What stood here grepped the doctor's JSON for
+#     '"status"[[:space:]]*:[[:space:]]*"(fail|failed|error)"'
+# but `nyxus_doctor.py`'s add() has always emitted the key "level", never
+# "status". `fails` was therefore always 0 and this weekly "System check
+# failed" notice COULD NEVER FIRE — a check that ran, exited green and did
+# not cover the thing it was written for. It was never observed because a
+# notification that does not arrive looks exactly like a healthy machine.
+#
+# It is not repaired here, because a correct version would be the WRONG
+# feature: once a week, with no confirmation, no cooldown, no hysteresis and
+# no memory of a dismissal, is not how you tell someone their disk is
+# filling. `nyxus-sentry` (TRK-3802) now owns doctor-derived alerting — it
+# reads the same `nyxus-doctor --json --fast`, every ten minutes, and speaks
+# under the restraint rules documented in nyxus_sentry.py. Two programs
+# notifying from one source is the TRK-3275/TRK-3371 shape, so there is one.
+#
+# This file keeps the two facts sentry does NOT read: the firewall above and
+# the Hemera vault below.
+
+if [[ -x /usr/local/bin/nyxus-hemera ]]; then
+  waiting=$(/usr/local/bin/nyxus-hemera status --json 2>/dev/null \
+    | grep -oE '"awaiting_decision"[[:space:]]*:[[:space:]]*[0-9]+' \
+    | grep -oE '[0-9]+$' || true)
+  waiting=${waiting:-0}
+  if [[ "$waiting" =~ ^[0-9]+$ ]] && (( waiting > 0 )); then
+    _notify critical "Hemera is waiting" \
+      "${waiting} file(s) in quarantine. Nothing was deleted. Open Settings ▸ Security."
+  fi
+fi
+
+exit 0

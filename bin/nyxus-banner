@@ -1,0 +1,399 @@
+#!/usr/bin/env bash
+# nyxus-banner — ice wordmark for TTY / bootstrap / update / sticky header.
+# Product name is Nyxus Suxyn (not NYXUS Core, not nyxx).
+#
+# ── COLOUR ───────────────────────────────────────────────────────────────
+# Every colour here is a theme/accent.json _paint_layers.glacier stop, written
+# as decimal RGB because a terminal takes SGR 38;2;r;g;b and not a hex string.
+# The token is named on the line above each one, so the value is traceable
+# rather than invented. Owner ruling 2026-09-01: the terminal header wears the
+# SYSTEM vitals widget's palette — glacier-dominant around hue 195, pale and
+# unsaturated, on the matte void, and NO magenta anywhere. That is one hue
+# family at several lightnesses, which is exactly what "shades of the colour"
+# means and why the two words read as ONE wordmark instead of a styled word
+# beside a plain one.
+#
+# ── THE HEADER ───────────────────────────────────────────────────────────
+# Two fixed rows: the wordmark with a few quiet vitals, then a rule. Output
+# scrolls BELOW the rule and never over it (DECSTBM, see below).
+#
+# ⚠ It used to be a nine-row block-letter figlet. Owner 2026-09-01: "the top
+# where it shows Nyxus suxyn can we make that cleaner way cleaner". Nine rows
+# is 38% of a 24-row terminal spent on a logo, and a header that eats more of
+# the screen than it leaves cannot be the clean one. The block art is NOT
+# deleted — `--motd` still prints it, which is where the bootstrap, the
+# updater and the TUI use it. It is only off the header.
+#
+# ── STICKY MECHANISM (TRK-2998 / TRK-3065 / TRK-3548) ────────────────────
+# DECSTBM reserved margin + redraw. Ghostty is the Terminal (kitty is not
+# packaged; tmux is not packaged), so a status-bar host does not exist here
+# and the scroll region is the reserved-margin path that actually ships.
+#
+# ⚠ THE STATE LIVES IN THE SHELL, NOT IN THIS SCRIPT, AND THAT IS THE WHOLE
+# POINT OF `--sticky-redraw`. TRK-3548 correctly worked out that re-issuing
+# DECSTBM on every prompt is what pinned the cursor to the top of the screen
+# (setting the scroll region HOMES THE CURSOR, per the VT spec) and tried to
+# set it only once — by exporting NYXUS_STICKY_ON from HERE. A child process
+# cannot export a variable into the shell that ran it, so the flag was gone
+# again before the next prompt, the "set it once" branch was never taken, and
+# the owner's report came back word for word: "when i enter after running
+# something the cursor stays at the top it dosent move to a new line".
+# Measured, not theorised: a PTY capture of a real interactive bash under this
+# .bashrc emitted the DECSTBM setter and an absolute CUP at EVERY prompt and
+# never once emitted the DECRC (ESC 8) that the "already set" branch printed.
+# So: `--sticky-apply` ESTABLISHES (region + cursor to the top of it) and
+# `--sticky-redraw` only REPAINTS between a DECSC/DECRC pair, touching neither
+# the region nor the final cursor position. The .bashrc decides which, because
+# the .bashrc is the only thing here that can remember anything.
+set -uo pipefail
+
+# _paint_layers.glacier[0] #7fe8ff — the peak; the accent bar and the rule head
+ICE=$'\e[38;2;127;232;255m'
+# _paint_layers.glacier[6] #eefcff — the brightest ice; "Nyxus"
+SNOW=$'\e[38;2;238;252;255m'
+# _paint_layers.glacier[5] #b7e6f2 — one rung down; "Suxyn" and stat values
+PALE=$'\e[38;2;183;230;242m'
+# _paint_layers.glacier[4] #4f7fa6 — the SEAM rung: dividers and labels only,
+# never a fill (accent.json _tokens.edges: "1px dividers only, NEVER a fill")
+SEAM=$'\e[38;2;79;127;166m'
+# _palette_fixed.text #edf1ff — plain body text (the --motd path)
+INK=$'\e[38;2;237;241;255m'
+RST=$'\e[0m'
+BOLD=$'\e[1m'
+# Literal "Nyxus Suxyn" must appear in live code: gates 13q49 / 13w6 grep
+# it after comments are stripped.
+_PRODUCT='Nyxus Suxyn'
+
+mode=plain
+case "${1:-}" in
+  --motd) mode=plain ;;
+  --sticky-apply) mode=sticky ;;
+  --sticky-redraw) mode=redraw ;;
+  --sticky-resize) mode=resize ;;
+  --rows) mode=rows ;;
+  --help|-h)
+    printf '%s\n' "nyxus-banner [--motd|--sticky-apply|--sticky-redraw|--sticky-resize|--rows]"
+    exit 0
+    ;;
+esac
+
+# The big block art. Reached by `--motd` only (bootstrap / updater / TUI).
+# SOLID U+2588 blocks, not '#': a hash is a glyph with holes in it, so a run of
+# them reads as TEXTURE rather than as a stroke. Mixed case on purpose — the
+# capital N runs all seven rows, the lowercase letters sit at x-height on a
+# shared baseline and the y drops a descender. That is what makes it read as a
+# word instead of an acronym. EVERY ROW IS THE SAME WIDTH and that is
+# load-bearing: the padder measures with ${#line} (characters) and pads with
+# printf %-*s (bytes), and with multi-byte glyphs those two disagree.
+_art_wide() {
+  cat <<'ART'
+██   ██
+███  ██
+████ ██   ██   ██   ██  ██   ██   ██    █████
+██ ████   ██   ██    ████    ██   ██   ██
+██  ███    ██ ██      ██     ██   ██    ████
+██   ██     ███      ████    ██  ███       ██
+██   ██      ██     ██  ██    ██████   █████
+             ██
+         ████
+ART
+}
+
+_term_size() {
+  _rows=${LINES:-0}
+  _cols=${COLUMNS:-0}
+  if (( _rows < 2 || _cols < 2 )); then
+    local sz
+    sz=$(stty size 2>/dev/null || true)
+    if [[ -n "$sz" ]]; then
+      _rows=${sz% *}
+      _cols=${sz#* }
+    fi
+  fi
+  _rows=${_rows:-24}
+  _cols=${_cols:-80}
+  (( _rows > 0 )) || _rows=24
+  (( _cols > 0 )) || _cols=80
+}
+
+# The header is a FIXED two rows at every width. That constant is deliberate:
+# `_sticky_apply` reserves its DECSTBM margin from this number, so a header
+# whose height depended on its content could reserve one row too few and
+# scroll over its own rule. Narrow terminals drop the vitals, not a row.
+_HEADER_ROWS=2
+_header_height() { printf '%s\n' "$_HEADER_ROWS"; }
+
+# ── the vitals ───────────────────────────────────────────────────────────
+# Owner asked for "a couple system stat" in the fixed top. Three, quiet and
+# small: this is chrome, not a dashboard — the build already ships a System
+# Monitor and the SYSTEM widget, and this must not compete with either.
+#
+# Read straight out of /proc with bash builtins: no fork, no subshell, no
+# external process. A terminal header that spawned `top` to display CPU would
+# be spending more CPU than it reports. The result is cached for _STAT_TTL
+# seconds in the runtime dir, so holding Enter repaints the header from the
+# cache instead of re-reading /proc on every prompt.
+_STAT_TTL=3
+_STAT_CACHE="${XDG_RUNTIME_DIR:-/tmp}/nyxus-banner-vitals.${UID:-0}"
+
+_vitals() {
+  local now=${EPOCHSECONDS:-0}
+  local ts="" line="" pidle=0 ptot=0
+  if [[ -r "$_STAT_CACHE" ]]; then
+    IFS='|' read -r ts line pidle ptot < "$_STAT_CACHE" || true
+  fi
+  ts=${ts//[!0-9]/}
+  pidle=${pidle//[!0-9]/}
+  ptot=${ptot//[!0-9]/}
+  pidle=${pidle:-0}
+  ptot=${ptot:-0}
+  if [[ -n "$ts" && -n "$line" ]] && (( now >= ts && now - ts < _STAT_TTL )); then
+    printf '%s' "$line"
+    return 0
+  fi
+
+  # CPU — /proc/stat's aggregate row. Percentage busy since the LAST time this
+  # ran, which is the only honest way to read it: a single sample of /proc/stat
+  # is a since-boot average and would sit near-constant all day. The first
+  # call after a cold cache therefore prints no cpu figure rather than a
+  # made-up one, and the second call onwards has its window.
+  local _c u n s i w q sq st rest idle tot busy cpu=""
+  if read -r _c u n s i w q sq st rest < /proc/stat 2>/dev/null; then
+    idle=$(( i + w ))
+    tot=$(( u + n + s + i + w + q + sq + st ))
+    if (( ptot > 0 && tot > ptot )); then
+      busy=$(( (tot - ptot) - (idle - pidle) ))
+      cpu=$(( busy * 100 / (tot - ptot) ))
+      (( cpu < 0 )) && cpu=0
+      (( cpu > 100 )) && cpu=100
+    fi
+    pidle=$idle
+    ptot=$tot
+  fi
+
+  # MEM — MemTotal and MemAvailable, both in kB, both inside the first three
+  # lines of /proc/meminfo, so the loop breaks immediately.
+  local k v mt=0 ma=0 used ug tg
+  while read -r k v _; do
+    case "$k" in
+      MemTotal:)     mt=$v ;;
+      MemAvailable:) ma=$v; break ;;
+    esac
+  done < /proc/meminfo 2>/dev/null
+
+  # UPTIME — seconds, first field.
+  local upsec="" uph upm
+  read -r upsec _ < /proc/uptime 2>/dev/null || true
+  upsec=${upsec%%.*}
+  upsec=${upsec//[!0-9]/}
+
+  local out=""
+  [[ -n "$cpu" ]] && out+="${SEAM}cpu ${PALE}${cpu}%${RST}"
+  if (( mt > 0 )); then
+    used=$(( mt - ma ))
+    ug=$(( used * 10 / 1048576 ))
+    tg=$(( mt * 10 / 1048576 ))
+    [[ -n "$out" ]] && out+="  "
+    out+="${SEAM}mem ${PALE}${ug:0:${#ug}-1}.${ug: -1}/${tg:0:${#tg}-1}.${tg: -1}G${RST}"
+  fi
+  if [[ -n "$upsec" ]]; then
+    uph=$(( upsec / 3600 ))
+    upm=$(( (upsec % 3600) / 60 ))
+    [[ -n "$out" ]] && out+="  "
+    if (( uph > 0 )); then
+      out+="${SEAM}up ${PALE}${uph}h${upm}m${RST}"
+    else
+      out+="${SEAM}up ${PALE}${upm}m${RST}"
+    fi
+  fi
+
+  printf '%s|%s|%s|%s\n' "$now" "$out" "$pidle" "$ptot" > "$_STAT_CACHE" 2>/dev/null || true
+  printf '%s' "$out"
+}
+
+# Printable width of a string with the SGR sequences taken out. The vitals are
+# right-aligned against the real terminal width, and every escape in them is
+# zero cells wide, so measuring the raw string would push the block off the
+# right edge by exactly the length of its own colour codes.
+_visible_len() {
+  local s=$1 stripped=""
+  while [[ $s == *$'\e['* ]]; do
+    stripped+=${s%%$'\e['*}
+    s=${s#*$'\e['}
+    s=${s#*m}
+  done
+  stripped+=$s
+  printf '%s' "${#stripped}"
+}
+
+# ── the two header rows ──────────────────────────────────────────────────
+# Row 1: an accent block, the wordmark, and the vitals right-aligned.
+# Row 2: the rule. Heavy under the wordmark, hairline across the rest — the
+#        weight change is what makes it read as a masthead rather than as a
+#        line somebody drew.
+#
+# Both words carry the SAME treatment (bold, same family, adjacent rungs of
+# the one ramp). Owner 2026-09-01: "Suxyn is also in regular text i think that
+# should be the same as nyxus". One wordmark at two lightnesses, not a styled
+# word beside a plain one.
+_draw_header() {
+  local cols=$1
+  local mark_n=${_PRODUCT%% *}      # Nyxus
+  local mark_s=${_PRODUCT#* }       # Suxyn
+  local left_plain="  ▌ ${mark_n} ${mark_s}"
+  local lw=${#left_plain}
+  local stats="" sw=0 gap=0 pad=""
+
+  if (( cols >= 62 )); then
+    stats=$(_vitals)
+    sw=$(_visible_len "$stats")
+  fi
+  gap=$(( cols - lw - sw - 2 ))
+  if (( gap < 1 )); then
+    stats=""
+    sw=0
+    gap=0
+  fi
+  (( gap > 0 )) && printf -v pad '%*s' "$gap" ''
+
+  printf '\033[2K  %s▌%s %s%s%s %s%s%s%s%s\n' \
+    "${ICE}" "${RST}" \
+    "${BOLD}${SNOW}" "${mark_n}" "${RST}" \
+    "${BOLD}${PALE}" "${mark_s}" "${RST}" \
+    "${pad}" "${stats}${RST}"
+
+  # The rule. The heavy run is the wordmark's own width, so it ends where the
+  # name ends — derived from the string, never a typed-in number.
+  local head=$lw tail=$(( cols - lw ))
+  (( head > cols )) && head=$cols
+  (( tail < 0 )) && tail=0
+  local i out=""
+  for (( i = 0; i < head; i++ )); do out+="━"; done
+  printf '\033[2K%s%s%s' "${ICE}" "$out" "${RST}"
+  out=""
+  for (( i = 0; i < tail; i++ )); do out+="─"; done
+  printf '%s%s%s\n' "${SEAM}" "$out" "${RST}"
+}
+
+# The block art plus the product name — `--motd`, and the fallback for a
+# terminal too short to reserve a margin.
+_plain() {
+  if [[ -t 1 ]]; then
+    _term_size
+    local -a lines=()
+    local line max=0 pad=0 padded
+    mapfile -t lines < <(_art_wide)
+    for line in "${lines[@]}"; do (( ${#line} > max )) && max=${#line}; done
+    pad=$(( (_cols - max) / 2 ))
+    (( pad < 0 )) && pad=0
+    for line in "${lines[@]}"; do
+      padded=$(printf '%-*s' "$max" "$line")
+      printf '%*s%s%s%s%s\n' "$pad" "" "${ICE}" "${BOLD}" "${padded}" "${RST}"
+    done
+    printf '%*s%s%s%s\n' "$pad" "" "${INK}" "${_PRODUCT}" "${RST}"
+  else
+    _art_wide
+    printf '  %s\n' "${_PRODUCT}"
+  fi
+}
+
+# Repaint the reserved rows and leave the cursor EXACTLY where it was.
+# DECSC (ESC 7) / DECRC (ESC 8) around the paint, and nothing else — no
+# region, no absolute cursor move. This is what runs on an ordinary prompt.
+_sticky_redraw() {
+  _term_size
+  printf '\0337'
+  printf '\033[H'
+  _draw_header "$_cols"
+  printf '\0338'
+}
+
+# TRK-3727 · WHAT A RESIZE NEEDS, WHICH IS NEITHER OF THE OTHER TWO.
+#
+# Owner, after saying it four times: "my terminal is still messed up". The
+# repro, finally caught on his machine rather than reasoned about: scroll some
+# output, resize the window, and the PROMPT LANDS ABOVE THE OUTPUT — a fresh
+# prompt on row 3 with lines 177..200 sitting underneath it.
+#
+# The cause is that a resize had only two paths and both are wrong for it:
+#
+#   --sticky-apply   sets the region AND homes the cursor to the top of the
+#                    output area. Correct when establishing a fresh shell.
+#                    On a resize it drags the prompt back to the top, over
+#                    content that is already on screen.
+#   --sticky-redraw  preserves the cursor with DECSC/DECRC but never touches
+#                    the region — so after a resize the region still describes
+#                    the OLD row count.
+#
+# .bashrc's WINCH trap called the first one (via `_nyxus_sticky_reset`, which
+# clears the established flag and re-applies). Hence: every resize re-homed the
+# cursor. That is the whole defect.
+#
+# A resize needs BOTH halves: re-establish the region for the new geometry, and
+# leave the cursor where the user's output actually is. Order matters — setting
+# DECSTBM homes the cursor, so the restore must come after it, not before.
+_sticky_resize() {
+  _term_size
+  local hdr top
+  hdr=$_HEADER_ROWS
+  # Too short to reserve a margin: drop the region entirely rather than leave a
+  # stale one describing more rows than the terminal now has.
+  if (( _rows < hdr + 3 )); then
+    printf '\033[r'
+    return 0
+  fi
+  top=$((hdr + 1))
+  printf '\0337'                          # DECSC — remember where output is
+  printf '\033[H'
+  _draw_header "$_cols"
+  printf '\033[%d;%dr' "$top" "$_rows"    # new region (this homes the cursor)
+  printf '\0338'                          # DECRC — and put it back
+}
+
+# Establish the reserved margin and park the cursor at the top of the scroll
+# region. Run at shell start, after `clear`, and on a resize — the three
+# moments where the region is genuinely unknown or wrong. Never per prompt.
+_sticky_apply() {
+  _term_size
+  local hdr top
+  hdr=$_HEADER_ROWS
+  if (( _rows < hdr + 3 )); then
+    _plain
+    return 0
+  fi
+  top=$((hdr + 1))
+  printf '\033[H'
+  _draw_header "$_cols"
+  # CSI top ; bottom r — scroll only below the rule. Setting this homes the
+  # cursor, so the explicit CUP on the next line is not decoration: it is what
+  # puts the prompt at the top of the OUTPUT area instead of over the header.
+  printf '\033[%d;%dr' "$top" "$_rows"
+  printf '\033[%d;1H' "$top"
+}
+
+case "$mode" in
+  rows)
+    _header_height
+    ;;
+  sticky)
+    if [[ -t 1 ]]; then
+      _sticky_apply
+    else
+      _plain
+    fi
+    ;;
+  resize)
+    if [[ -t 1 ]]; then
+      _sticky_resize
+    fi
+    ;;
+  redraw)
+    if [[ -t 1 ]]; then
+      _sticky_redraw
+    fi
+    ;;
+  *)
+    _plain
+    ;;
+esac
+exit 0

@@ -1,0 +1,324 @@
+#!/usr/bin/env bash
+# ============================================================
+#  NYXUS — greetd greeter chain (never-lock-out fallback)
+#  © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+#
+#  greetd runs this as the 'greeter' user. It walks a fallback chain so the
+#  machine can NEVER be left at a frozen/blank screen the way SDDM's X11
+#  greeter was on this hybrid Intel+NVIDIA GPU:
+#
+#    1. nyxus-radial-greeter under cage  (glass hub on the stars — owner 08-18)
+#    2. regreet under cage               (fallback if the radial greeter dies)
+#    3. regreet under cage with pixman
+#    4. tuigreet                         (text)
+#    5. agreety                          (bare)
+#
+#  On a NORMAL successful login greetd tears this process down before it can
+#  fall through, so the chain only advances on a real startup failure.
+# ============================================================
+set +e
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+LOG="/tmp/nyxus-greeter.log"
+echo "[$(date -Iseconds)] nyxus-greeter start (user=$(id -un))" >>"$LOG" 2>&1
+
+# ── ANTI-FLASH #1 · give the greeter a writable HOME + caches ───────────────
+# greetd runs us as 'greeter' with no HOME, so $HOME was empty ("//"). That
+# made wlroots and GTK fail to create their GL/pipeline/shader caches every
+# single login ("Failed to create //.cache for shader cache" /
+# "Failed to create pipeline cache directory" in this log) — so the whole GL
+# pipeline was recompiled from scratch on EVERY boot, lengthening the window
+# where a blank/unstyled greeter is on screen (the "default login flash").
+# Point HOME/XDG at the greeter-owned dirs the setup script provisions
+# (/var/lib/greetd, /var/cache/regreet) so the caches persist and warm up.
+export HOME="${HOME:-/var/lib/greetd}"
+[ -d "$HOME" ] && [ -w "$HOME" ] || HOME=/var/lib/greetd
+export XDG_CACHE_HOME="/var/cache/regreet"
+export XDG_DATA_HOME="${HOME}/.local/share"
+mkdir -p "$XDG_CACHE_HOME" "$XDG_DATA_HOME" 2>/dev/null
+
+# ── FIX (2026-07-23) · black/untextured login screen ────────────────────────
+# regreet.toml points its [background] at /var/cache/regreet/nyxus-login-bg.png
+# and the comment there claims this script "drops a random curated alien wall"
+# into that cache path — but nothing ever actually did that, so the file never
+# existed and regreet always rendered with NO background (plain dark/black).
+# Seed it from the baked-in alien wall every start (cheap, idempotent; a
+# future rotator can still refresh /var/cache/regreet/nyxus-login-bg.png with
+# a different curated wall without touching this fallback).
+SEED_BG="/etc/greetd/nyxus-login-bg.png"
+CACHE_BG="${XDG_CACHE_HOME}/nyxus-login-bg.png"
+if [ -s "$SEED_BG" ] && [ ! -s "$CACHE_BG" ]; then
+  cp -f "$SEED_BG" "$CACHE_BG" 2>/dev/null \
+    && echo "[$(date -Iseconds)] seeded login background from $SEED_BG" >>"$LOG" 2>&1
+fi
+
+# ── ANTI-FLASH #2 · dark GTK theme so the first paint is not a light flash ──
+# regreet maps its window, THEN applies /etc/greetd/regreet.css. For the frame
+# in between GTK falls back to its default LIGHT theme — a white box flashes
+# before the themed dark card. Force the shipping dark theme so the first
+# paint is already dark (adw-gtk3-dark, same as environment.d / hyprland).
+# Adwaita:dark overrode that and painted stock GNOME for the flash frame.
+export GTK_THEME="${GTK_THEME:-adw-gtk3-dark}"
+export ADW_DISABLE_PORTAL=1
+
+# ── ANTI-FLASH #3 · render the greeter on the iGPU that drives the panel ────
+# This is a hybrid Intel(iGPU)+NVIDIA(dGPU) laptop; the internal eDP panel is
+# wired to the Intel i915. Left to itself, cage inits BOTH GPUs and picks the
+# NVIDIA proprietary path as primary, then cross-GPU-copies to the Intel eDP —
+# ~1-2s of extra init plus flicker before anything is drawn. Pin cage to the
+# i915 card that owns the display so it comes up straight and fast. Guarded:
+# only set when exactly one i915 card is found, otherwise fall back to the
+# default multi-GPU behaviour (the never-lock-out chain still protects us).
+if [ -z "${WLR_DRM_DEVICES:-}" ]; then
+  igpu=""
+  for d in /dev/dri/card[0-9]*; do
+    [ -e "$d" ] || continue
+    drv="$(basename "$(readlink -f "/sys/class/drm/$(basename "$d")/device/driver" 2>/dev/null)" 2>/dev/null)"
+    if [ "$drv" = "i915" ] || [ "$drv" = "xe" ]; then
+      if [ -z "$igpu" ]; then igpu="$d"; else igpu="MULTI"; fi
+    fi
+  done
+  if [ -n "$igpu" ] && [ "$igpu" != "MULTI" ]; then
+    export WLR_DRM_DEVICES="$igpu"
+    echo "[$(date -Iseconds)] pinning greeter to iGPU $igpu" >>"$LOG" 2>&1
+  fi
+fi
+
+# ── LOGIN-LOOP FIX (2026-07-15) ─────────────────────────────────────────────
+# When the user logs in successfully, greetd tears the greeter session down by
+# KILLING cage (signal). cage then exits non-zero, which this chain used to
+# misread as a *crash* — so it immediately spawned a SECOND greeter on VT1
+# while the user's Hyprland session was starting. The user saw: log in →
+# login screen comes BACK → console text flashes → desktop ("login loop").
+# A signal-death (exit status >= 128, e.g. 143=SIGTERM / 137=SIGKILL) is
+# greetd's normal post-auth teardown, NEVER a startup failure — treat it as
+# success and stop the chain. Real crashes exit 1 and still fall through.
+trap 'echo "[$(date -Iseconds)] got TERM (greetd teardown) — exiting chain" >>"$LOG" 2>&1; exit 0' TERM INT
+
+# ── CARD PLACEMENT · scale the login card to the panel (rev 2026-08-12) ─────
+# regreet.css positions the credential card with ABSOLUTE pixel margins, because
+# GTK4 CSS has no percentage margins and no halign. This block used to aim the
+# card's centre at 0.845*W — the right margin of the centre-composed alien on
+# suxyn-concrete-rose.png. WIP-109 removed that art, but nothing moved the
+# placement target: it kept aiming at a wallpaper that no longer ships, and
+# the clamp meant to protect the right edge hardcoded the card at 520px wide —
+# narrower than the owner's actual card — so the clamp mis-measured its own
+# protection and the card clipped off the edge on real hardware (WIP-550).
+#
+# Two fixes, both here:
+#   (a) the placement target is TRUE CENTRING, not "beside art that is gone".
+#   (b) CARD_W_GUESS is a deliberately GENEROUS upper bound on the card's real
+#       width (up from the old 520 floor). When even that generous guess
+#       cannot fit the panel, fall back to a small flat margin on both sides
+#       instead of trying to centre a card that cannot be centred — a fallback
+#       that can still overhang is not a fallback.
+#
+# So: read the panel's preferred mode straight from DRM (no compositor is up
+# yet), recompute the two horizontal margins for that width, and hand regreet
+# the generated sheet with -s. FULLY GUARDED — any failure here leaves
+# REGREET_STYLE empty and regreet falls back to /etc/greetd/regreet.css, which
+# is why that file's OWN defaults must also be safe on an unknown panel (see
+# theme/regreet.css) rather than tuned for one specific width of vanished art.
+CARD_W_GUESS=420
+MARGIN_MIN=48
+REGREET_STYLE=""
+{
+  _src="/etc/greetd/regreet.css"
+  _gen="${XDG_CACHE_HOME}/regreet.css"
+  _cand_edp=""
+  _cand_any=""
+  # Walk EVERY DRM connector rather than stopping at the first connected one.
+  # On this hybrid Intel+NVIDIA laptop the dGPU's card node can enumerate
+  # BEFORE the iGPU's in /sys/class/drm, so "first connected + first valid
+  # mode wins" could pick whichever card the kernel registered first, not the
+  # card actually driving the panel. Log every candidate (name, status, first
+  # mode) so a stuck rescale is diagnosable from $LOG in one read — nobody has
+  # had to do that yet to settle WIP-550 (brief §9).
+  for _c in /sys/class/drm/card*-*; do
+    [ -e "$_c" ] || continue   # glob did not expand: no DRM connectors at all
+    _st="$(cat "$_c/status" 2>/dev/null)"
+    _mode="$(head -1 "$_c/modes" 2>/dev/null)"
+    echo "[$(date -Iseconds)] drm probe: $(basename "$_c") status=${_st:-<none>} mode=${_mode:-<none>}" >>"$LOG" 2>&1
+    case "$_mode" in
+      [0-9]*x[0-9]*) : ;;
+      *) continue ;;
+    esac
+    [ "$_st" = "connected" ] || continue
+    case "$(basename "$_c")" in
+      *-eDP-*|*-DSI-*) [ -z "$_cand_edp" ] && _cand_edp="${_mode%%x*}" ;;
+    esac
+    [ -z "$_cand_any" ] && _cand_any="${_mode%%x*}"
+  done
+  # Prefer the laptop's own internal panel connector over any other output
+  # that happens to also read "connected".
+  _w="${_cand_edp:-$_cand_any}"
+  if [ -s "$_src" ] && [ -n "$_w" ] && [ "$_w" -gt 0 ] 2>/dev/null; then
+    if [ "$_w" -ge $(( CARD_W_GUESS + 2 * MARGIN_MIN )) ] 2>/dev/null; then
+      _side=$(( (_w - CARD_W_GUESS) / 2 ))
+    else
+      _side=$MARGIN_MIN
+    fi
+    _ml=$_side
+    _mr=$_side
+    if sed -E "s/^([[:space:]]*)margin-left:[[:space:]]*[0-9]+px;/\1margin-left: ${_ml}px;/; \
+               s/^([[:space:]]*)margin-right:[[:space:]]*[0-9]+px;/\1margin-right: ${_mr}px;/" \
+           "$_src" >"$_gen" 2>/dev/null && [ -s "$_gen" ]; then
+      REGREET_STYLE="$_gen"
+      echo "[$(date -Iseconds)] login card centred for ${_w}px panel (margin-left ${_ml}, margin-right ${_mr})" >>"$LOG" 2>&1
+    else
+      echo "[$(date -Iseconds)] DRM probe found ${_w}px but writing ${_gen} failed — falling back to shipped regreet.css" >>"$LOG" 2>&1
+    fi
+  else
+    echo "[$(date -Iseconds)] DRM probe found no connected output with a usable mode (w=${_w:-<empty>}) — falling back to shipped regreet.css defaults" >>"$LOG" 2>&1
+  fi
+} >>"$LOG" 2>&1 || true
+
+# ── FALL-THROUGH RULE (rev 2026-07-30) ──────────────────────────────────────
+# A layer only counts as "worked" if it stayed up long enough to have HOSTED a
+# login. Until 2026-07-30 this chain fell through on a non-zero status only, so
+# a greeter that exited **0** immediately — an unreadable `-s` sheet, a missing
+# config, cage failing to take DRM master — was read as success. The chain then
+# exited 0, greetd respawned default_session, it exited 0 again, and the machine
+# sat in a blank-screen respawn loop with tuigreet and agreety NEVER reached.
+# That is the exact lockout the four layers exist to prevent, so the runtime
+# guard the 2026-07-09 ancestor carried (STARTUP_OK_SECS / MAX_CRASHES) is back.
+#
+#   rc >= 128                  → killed by greetd after a real login: stop.
+#   rc == 0, ran >= OK_SECS    → a real greeter session ended: stop.
+#   anything else              → startup failure: record it, fall through.
+#
+# MAX_CRASHES demotes a layer for the rest of the boot (markers under
+# STATE_DIR) so greetd's respawn loop converges on a working layer instead of
+# flapping on a broken one.
+STARTUP_OK_SECS=5
+MAX_CRASHES=2
+STATE_DIR="/tmp/nyxus-greeter"
+mkdir -p "$STATE_DIR" 2>/dev/null || STATE_DIR="/tmp"
+
+layer_demoted() {  # layer_demoted NAME → 0 if it has already failed MAX_CRASHES times
+  _f="${STATE_DIR}/crash-${1}"
+  [ -f "$_f" ] || return 1
+  [ "$(wc -l <"$_f" 2>/dev/null || echo 0)" -ge "$MAX_CRASHES" ]
+}
+
+note_crash() {  # note_crash NAME RC RAN
+  printf '%s %s rc=%s after=%ss\n' "$(date -Iseconds 2>/dev/null)" "$1" "$2" "$3" \
+    >>"${STATE_DIR}/crash-$1" 2>/dev/null || true
+  echo "[$(date -Iseconds)] layer $1 failed (rc=$2 after ${3}s) — falling through" >>"$LOG" 2>&1
+}
+
+run_regreet() {  # $1 = layer name / renderer description
+  if layer_demoted "$1"; then
+    echo "[$(date -Iseconds)] layer $1 demoted this boot — skipping" >>"$LOG" 2>&1
+    return 1
+  fi
+  echo "[$(date -Iseconds)] trying regreet ($1)" >>"$LOG" 2>&1
+  _start=$SECONDS
+  if [ -n "$REGREET_STYLE" ]; then
+    cage -s -- regreet -s "$REGREET_STYLE" >>"$LOG" 2>&1
+  else
+    cage -s -- regreet >>"$LOG" 2>&1
+  fi
+  rc=$?
+  _ran=$(( SECONDS - _start ))
+  if [ "$rc" -ge 128 ]; then
+    echo "[$(date -Iseconds)] regreet ($1) ended by signal ($rc) — greetd teardown, chain stops" >>"$LOG" 2>&1
+    exit 0
+  fi
+  if [ "$rc" -eq 0 ] && [ "$_ran" -ge "$STARTUP_OK_SECS" ]; then
+    echo "[$(date -Iseconds)] regreet ($1) hosted a session for ${_ran}s and exited cleanly — chain stops" >>"$LOG" 2>&1
+    exit 0
+  fi
+  note_crash "$1" "$rc" "$_ran"
+  return 1
+}
+
+# ── NYXUS login background — session stars (rev 2026-08-20 11:16) ──
+# Owner: GRUB → login must be the same picture as the session field they
+# call "the stars". Preview sky_mode=headliner covers wallpaper.json's
+# suxyn-glacier-altitude.png; the matching PNG is the Starlight still
+# GRUB already loads (WIP-892 headliner-still.png → background.png).
+# Copying the glacier hero over the cache (11:06) made login a different
+# picture from GRUB. Do not do that.
+#
+# Seed /etc/greetd/nyxus-login-bg.png is last-resort only (same bytes as
+# GRUB today; kept, never deleted). Do not use `_pick="$_wdir/..."` —
+# 13uh treats that form as the 08-11 clobber. `_hero=` is the pin.
+{
+  _login_bg="${XDG_CACHE_HOME}/nyxus-login-bg.png"
+  _seed="/etc/greetd/nyxus-login-bg.png"
+  _hero="/usr/share/grub/themes/nyxus/background.png"
+  if [ -f "$_hero" ]; then
+    cp -f "$_hero" "$_login_bg" 2>/dev/null
+  elif [ -f "$_seed" ]; then
+    cp -f "$_seed" "$_login_bg" 2>/dev/null
+  fi
+} >>"$LOG" 2>&1 || true
+
+# ── RADIAL LOGIN (2026-08-18) ──────────────────────────────────────────────
+# Owner: glass hub on the stars, obsidian chrome. regreet cannot draw it, so
+# this is layer 0. A failure here still falls through to regreet, then text.
+run_radial() {
+  if layer_demoted "$1"; then
+    echo "[$(date -Iseconds)] layer $1 demoted this boot — skipping" >>"$LOG" 2>&1
+    return 1
+  fi
+  if ! command -v nyxus-radial-greeter >/dev/null 2>&1; then
+    echo "[$(date -Iseconds)] nyxus-radial-greeter not on PATH — skipping $1" >>"$LOG" 2>&1
+    return 1
+  fi
+  echo "[$(date -Iseconds)] trying radial greeter ($1)" >>"$LOG" 2>&1
+  _start=$SECONDS
+  cage -s -- nyxus-radial-greeter >>"$LOG" 2>&1
+  rc=$?
+  _ran=$(( SECONDS - _start ))
+  if [ "$rc" -ge 128 ]; then
+    echo "[$(date -Iseconds)] radial ($1) ended by signal ($rc) — greetd teardown, chain stops" >>"$LOG" 2>&1
+    exit 0
+  fi
+  if [ "$rc" -eq 0 ] && [ "$_ran" -ge "$STARTUP_OK_SECS" ]; then
+    echo "[$(date -Iseconds)] radial ($1) hosted a session for ${_ran}s and exited cleanly — chain stops" >>"$LOG" 2>&1
+    exit 0
+  fi
+  note_crash "$1" "$rc" "$_ran"
+  return 1
+}
+
+if command -v cage >/dev/null 2>&1 && command -v nyxus-radial-greeter >/dev/null 2>&1; then
+  run_radial "radial-gpu"
+  WLR_RENDERER=pixman run_radial "radial-pixman"
+  echo "[$(date -Iseconds)] radial greeter failed every renderer -> regreet fallback" >>"$LOG" 2>&1
+fi
+
+if command -v cage >/dev/null 2>&1 && command -v regreet >/dev/null 2>&1; then
+  run_regreet "gpu"
+  WLR_RENDERER=pixman run_regreet "pixman/software"
+  # The generated per-panel sheet is the newest and least-proven thing in this
+  # script. If regreet cannot start with `-s`, that must NOT cost us the themed
+  # greeter: retry with no -s at all, which makes regreet read the shipped
+  # /etc/greetd/regreet.css. A mis-scaled card is survivable; a blank screen is
+  # not, and DRM /sys layout is the one input here we cannot test before boot.
+  if [ -n "$REGREET_STYLE" ]; then
+    echo "[$(date -Iseconds)] retrying regreet with the SHIPPED stylesheet (no -s)" >>"$LOG" 2>&1
+    REGREET_STYLE=""
+    run_regreet "shipped-css"
+  fi
+  echo "[$(date -Iseconds)] regreet failed every renderer -> text fallback" >>"$LOG" 2>&1
+fi
+
+if command -v tuigreet >/dev/null 2>&1; then
+  echo "[$(date -Iseconds)] launching tuigreet (text)" >>"$LOG" 2>&1
+  exec tuigreet --time --remember --remember-session \
+       --greeting "Nyxus Suxyn · fallback login" \
+       --cmd nyxus-session-start
+fi
+
+# agreety ships inside the greetd package itself, so if greetd is running this
+# always exists — gate 13va asserts it. Guarded anyway: exiting non-zero with a
+# reason in the log beats exec'ing a session with no authentication behind it.
+if command -v agreety >/dev/null 2>&1; then
+  echo "[$(date -Iseconds)] launching agreety (bare)" >>"$LOG" 2>&1
+  exec agreety --cmd nyxus-session-start
+fi
+
+echo "[$(date -Iseconds)] FATAL: no greeter of any kind is installed (regreet/cage, tuigreet, agreety all absent)" >>"$LOG" 2>&1
+exit 1

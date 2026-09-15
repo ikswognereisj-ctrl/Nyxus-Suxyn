@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Nyxus Suxyn — raise glass Calculator. Never GTK nyxus_calculator.py.
+set -u
+if ! command -v qs >/dev/null 2>&1; then
+  echo "Calculator needs the desktop shell (qs)." >&2
+  exit 2
+fi
+out="$(qs ipc call calculator engage 2>&1)" || true
+if [[ "${out}" == *"Target not found."* ]]; then
+  out="$(qs ipc call nyxus calculator 2>&1)" || true
+fi
+if [[ "${out}" == *"Target not found."* ]]; then
+  echo "Calculator is not in the running shell." >&2
+  printf '%s\n' "${out}" >&2
+  exit 2
+fi
+printf '%s\n' "${out}"
+exit 0

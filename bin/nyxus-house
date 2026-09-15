@@ -1,0 +1,375 @@
+#!/usr/bin/env bash
+# nyxus-house — THE ROOMS: walk your workspaces as a 2-D GRID (TRK-1700).
+#
+#   nyxus-house up|down|left|right       walk one room in that direction
+#   nyxus-house carry                    grab / drop the focused window (it travels with you)
+#   nyxus-house carry --drop             drop it wherever you are (the HUD calls this when it dies)
+#   nyxus-house goto <ROOM>              go straight there (the map's click lands here)
+#   nyxus-house where                    JSON: room, cell, workspace, neighbours, carry (for HUDs)
+#   nyxus-house map                      print the grid in the terminal
+#   nyxus-house shelf <ROOM> [N]         launch item N of that room's shelf, IN that room (default 1)
+#   nyxus-house shelf-add <ROOM> <JSON>  pin an app/folder to a room  (Settings writes through this)
+#   nyxus-house shelf-del <ROOM> <N>     unpin item N
+#   nyxus-house wallpaper <ROOM> <PATH>  give one room its own wallpaper
+#   nyxus-house wallpaper <ROOM> --clear   put it back to the main wallpaper
+#   nyxus-house wallsync                 re-apply this room's wallpaper (the HUD calls this)
+#   nyxus-house rename <ROOM> <LABEL>    rename a room's caption
+#   nyxus-house resize <COLS> <ROWS>     reshape the grid (2..4 each; HOME lands in the centre)
+#   nyxus-house wrap on|off              walking off an edge: nothing (off, the default) or round
+#   nyxus-house speed <MS>               how long a room switch takes, 100..600 ms
+#   nyxus-house mappath                  print which map file is in use
+#   NYXUS_STATION_DRY=1 nyxus-house up   print what would happen, touch nothing
+#
+# THE FORMULA. `grid` is row-major and a room's workspace is fixed by
+#     ws = row * cols + col + 1
+# so the shipped 3x3 is workspaces 1..9 and SUPER+1..9 still land you exactly
+# where the map says. HOME is the centre cell (3x3 -> ws 5), which puts every
+# room at most two moves away. Nothing else in this file decides a workspace:
+# one formula, one code path, the keys and the map's click share it.
+#
+# The map file: ~/.config/nyxus/station.json if present, else
+# /usr/share/nyxus/station.json (NYXUS_STATION_MAP overrides both). Re-read on
+# every step, and the USER copy is the only file this script ever writes.
+#
+# Settings > System > Rooms: `station_enabled` in ~/.config/nyxus/settings.json.
+# DEFAULT ON (the owner asked for this feature) - but a `false` there stands the
+# whole thing down and every dispatching verb below exits 0 with a note.
+set -u
+CFG="${XDG_CONFIG_HOME:-$HOME/.config}/nyxus"
+USER_MAP="$CFG/station.json"
+SYS_MAP="/usr/share/nyxus/station.json"
+if [ -n "${NYXUS_STATION_MAP:-}" ]; then MAP="$NYXUS_STATION_MAP"
+elif [ -f "$USER_MAP" ]; then MAP="$USER_MAP"
+else MAP="$SYS_MAP"; fi
+DRY="${NYXUS_STATION_DRY:-}"
+STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/nyxus-rooms"; mkdir -p "$STATE_DIR"
+CARRY_F="$STATE_DIR/carry"          # the address of the window travelling with you
+WALL_MAIN="$STATE_DIR/wall-main"    # the main wallpaper, remembered while a room overrides it
+
+say() { if [ -n "$DRY" ]; then echo "DRY: $*" >&2; else "$@"; fi; }
+hypr() { say hyprctl "$@"; }
+qs_call() { command -v qs >/dev/null 2>&1 && say qs ipc call house "$@" >/dev/null 2>&1 || true; }
+
+enabled() { # Settings > System > Rooms. DEFAULT ON: a missing file or key is ON.
+  python3 - "$CFG/settings.json" <<'PY'
+import json, sys
+try:
+    v = json.load(open(sys.argv[1])).get("station_enabled", True)
+except Exception:
+    v = True
+sys.exit(1 if v is False else 0)
+PY
+}
+off_note() { echo "rooms are off - Settings > System > Rooms turns them on" >&2; exit 0; }
+
+cur_ws() { hyprctl activeworkspace -j 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin).get("id",-99))' 2>/dev/null || echo -99; }
+
+# ══ THE FORMULA, once, for every python below ════════════════════════════════
+# Four things need to know which workspace a room sits on - walking, the map,
+# carrying and the shelf - and each of them runs in a separate python. They all
+# `exec` THIS string, so the formula is written once in this file and once in
+# shell/Rooms.qml, and nowhere else in either language.
+export NYX_PY_LIB='
+def ws_of(r, c, cols): return r * cols + c + 1          # THE FORMULA - the only one
+def cell_of(w, cols, rows):
+    if w < 1 or w > rows * cols: return None
+    return divmod(w - 1, cols)
+def shape(m):
+    g = m.get("grid") or []
+    return g, len(g), (len(g[0]) if g else 0)
+'
+# ═════════════════════════════════════════════════════════════════════════════
+
+plan() { # plan <ws> <dir|here|room:NAME> -> room|row|col|ws|cols|rows|label|color|wall  (or WALL / OUTSIDE / NOROOM)
+python3 - "$MAP" "$1" "$2" <<'PY'
+import json, os, sys
+exec(os.environ["NYX_PY_LIB"])
+m = json.load(open(sys.argv[1])); ws = int(sys.argv[2]); d = sys.argv[3]
+grid, rows, cols = shape(m)
+if rows == 0 or cols == 0: print("NOROOM"); sys.exit(0)
+def out(r, c):
+    name = grid[r][c]
+    print("|".join([name, str(r), str(c), str(ws_of(r, c, cols)), str(cols), str(rows),
+                    m.get("labels", {}).get(name, name),
+                    m.get("colors", {}).get(name, "tealGlow"),
+                    m.get("wallpapers", {}).get(name, "")]))
+if d.startswith("room:"):
+    want = d[5:]
+    for r in range(rows):
+        for c in range(cols):
+            if grid[r][c] == want: out(r, c); sys.exit(0)
+    print("NOROOM"); sys.exit(0)
+pos = cell_of(ws, cols, rows)
+if pos is None:
+    # outside the grid: walking takes you HOME (the centre), which is where a
+    # person means to go when they start walking from somewhere off the map.
+    if d == "here": print("OUTSIDE"); sys.exit(0)
+    hr, hc = rows // 2, cols // 2
+    home = m.get("home", "")
+    for r in range(rows):
+        for c in range(cols):
+            if grid[r][c] == home: hr, hc = r, c
+    out(hr, hc); sys.exit(0)
+r, c = pos
+if d == "here": out(r, c); sys.exit(0)
+dr, dc = {"up": (-1, 0), "down": (1, 0), "left": (0, -1), "right": (0, 1)}.get(d, (0, 0))
+nr, nc = r + dr, c + dc
+if not (0 <= nr < rows and 0 <= nc < cols):
+    if m.get("wrap") is True: nr, nc = nr % rows, nc % cols
+    else: print("WALL"); sys.exit(0)
+out(nr, nc)
+PY
+}
+anim() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["animations"][sys.argv[2]])' "$MAP" "$1"; }
+restore_rest() { ( sleep 0.6; hypr keyword animation "$(anim rest)" >/dev/null 2>&1 ) & }
+
+carry_addr() { [ -s "$CARRY_F" ] && cat "$CARRY_F" || echo ""; }
+carry_alive() { # the carried window still exists?
+  local a="$1"; [ -z "$a" ] && return 1
+  hyprctl clients -j 2>/dev/null | python3 -c 'import sys,json
+try: print("yes" if any(c.get("address")==sys.argv[1] for c in json.load(sys.stdin)) else "no")
+except Exception: print("yes")' "$a" | grep -q yes
+}
+carry_check() { local a; a="$(carry_addr)"; if [ -n "$a" ] && ! carry_alive "$a"; then rm -f "$CARRY_F"; qs_call carrystate ""; fi; }
+
+# ── wallpaper: global by default. Nothing here runs unless a room overrides. ──
+wall_apply() { # wall_apply <override-path-or-empty>
+  local want="$1"
+  if [ -n "$want" ]; then
+    [ -f "$WALL_MAIN" ] || { grep -h '^WALLPAPER_PATH=' "$CFG/wallpaper.conf" 2>/dev/null | head -1 | cut -d'"' -f2 > "$WALL_MAIN"; }
+    say nyxus-set-wallpaper "$want" --no-accent >/dev/null 2>&1 || true
+  elif [ -f "$WALL_MAIN" ]; then
+    local main; main="$(cat "$WALL_MAIN")"
+    rm -f "$WALL_MAIN"
+    [ -n "$main" ] && say nyxus-set-wallpaper "$main" --no-accent >/dev/null 2>&1 || true
+  fi
+}
+
+enter() { # enter <plan-line> <dir>
+  local p="$1" dir="$2"
+  IFS='|' read -r room row col ws cols rows label color wall <<<"$p"
+  local style="horizontal"; { [ "$dir" = up ] || [ "$dir" = down ]; } && style="vertical"
+  local a; a="$(carry_addr)"
+  local batch="keyword animation $(anim "$style")"
+  [ -n "$a" ] && batch="$batch ; dispatch movetoworkspacesilent $ws,address:$a"
+  batch="$batch ; dispatch workspace $ws"
+  hypr --batch "$batch" >/dev/null
+  qs_call arrive "$room" "$label" "$dir"
+  wall_apply "$wall"
+  restore_rest
+}
+
+step() { # step <dir>
+  carry_check
+  local p; p="$(plan "$(cur_ws)" "$1")"
+  case "$p" in
+    NOROOM)  echo "station.json has no grid" >&2; return 1;;
+    WALL)    qs_call bump "$1"; return 0;;
+  esac
+  enter "$p" "$1"
+}
+
+# ── the USER map is the only file we write, and python writes it atomically ──
+edit_map() { # edit_map <op> <args...>
+  python3 - "$MAP" "$USER_MAP" "$@" <<'PY'
+import json, os, sys
+src, dst, op = sys.argv[1], sys.argv[2], sys.argv[3]
+a = sys.argv[4:]
+m = json.load(open(src))
+grid = m.get("grid") or []
+rooms = [n for row in grid for n in row]
+def need_room(n):
+    if n not in rooms: sys.stderr.write("no such room: %s\n" % n); sys.exit(1)
+if op == "shelf-add":
+    need_room(a[0])
+    try: item = json.loads(a[1])
+    except ValueError as e: sys.stderr.write("shelf item is not JSON: %s\n" % e); sys.exit(2)
+    if not isinstance(item, dict) or not item.get("label"):
+        sys.stderr.write("shelf item needs at least a label\n"); sys.exit(2)
+    if not (item.get("exec") or item.get("folder") or item.get("desktop")):
+        sys.stderr.write("shelf item needs one of exec / folder / desktop\n"); sys.exit(2)
+    m.setdefault("shelves", {}).setdefault(a[0], []).append(item)
+elif op == "shelf-del":
+    need_room(a[0])
+    sh = m.setdefault("shelves", {}).get(a[0], [])
+    i = int(a[1]) - 1
+    if not (0 <= i < len(sh)): sys.stderr.write("no shelf item %s in %s\n" % (a[1], a[0])); sys.exit(1)
+    sh.pop(i)
+elif op == "wallpaper":
+    need_room(a[0])
+    w = m.setdefault("wallpapers", {})
+    if a[1] == "--clear": w.pop(a[0], None)
+    else:
+        p = os.path.expanduser(a[1])
+        if not os.path.isfile(p): sys.stderr.write("cannot read %s\n" % p); sys.exit(1)
+        w[a[0]] = p
+elif op == "rename":
+    need_room(a[0]); m.setdefault("labels", {})[a[0]] = a[1]
+elif op == "speed":
+    ms = int(a[0])
+    if not (100 <= ms <= 600):
+        sys.stderr.write("animation speed must be 100..600 ms\n"); sys.exit(2)
+    ds = max(1, int(round(ms / 100.0)))       # Hyprland counts DECIseconds
+    an = m.setdefault("animations", {})
+    for kind in ("horizontal", "vertical"):
+        parts = [x.strip() for x in an.get(kind, "workspaces, 1, 2, nyx-glass, slidefade 15%").split(",")]
+        if len(parts) >= 3:
+            parts[2] = str(ds)
+            an[kind] = ", ".join(parts)
+elif op == "wrap":
+    m["wrap"] = (a[0] == "on")
+elif op == "resize":
+    cols, rows_ = int(a[0]), int(a[1])
+    if not (2 <= cols <= 4 and 2 <= rows_ <= 4):
+        sys.stderr.write("grid must be 2..4 by 2..4\n"); sys.exit(2)
+    home = m.get("home", "HOME")
+    pool = [n for n in (m.get("pool") or []) if n != home]
+    # keep the rooms already placed, in reading order, then top up from the pool
+    keep = [n for n in rooms if n != home] + [n for n in pool if n not in rooms]
+    hr, hc = rows_ // 2, cols // 2
+    g, k = [], 0
+    for r in range(rows_):
+        row = []
+        for c in range(cols):
+            if (r, c) == (hr, hc): row.append(home)
+            else:
+                row.append(keep[k] if k < len(keep) else "ROOM%d" % (len(g) * cols + len(row) + 1)); k += 1
+        g.append(row)
+    m["grid"], m["cols"], m["rows"] = g, cols, rows_
+else:
+    sys.stderr.write("unknown edit %s\n" % op); sys.exit(2)
+os.makedirs(os.path.dirname(dst), exist_ok=True)
+tmp = dst + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(m, f, indent=2, ensure_ascii=False); f.write("\n")
+os.replace(tmp, dst)
+print(dst)
+PY
+}
+
+shelf_cmd() { # shelf_cmd <ROOM> <N> -> the command line to run
+  python3 - "$MAP" "$1" "$2" <<'PY'
+import json, os, shlex, sys
+m = json.load(open(sys.argv[1])); room = sys.argv[2]; n = int(sys.argv[3] or 1)
+sh = (m.get("shelves") or {}).get(room) or []
+if not (1 <= n <= len(sh)): sys.exit(1)
+it = sh[n - 1]
+if it.get("desktop"):
+    d = it["desktop"]
+    if not d.endswith(".desktop"): d += ".desktop"
+    # the same handling nyxus-context-menu.sh uses - gio launch, then gtk-launch
+    print("sh -c " + shlex.quote(
+        'gio launch /usr/share/applications/%s 2>/dev/null'
+        ' || gio launch "$HOME/.local/share/applications/%s" 2>/dev/null'
+        ' || exec gtk-launch %s' % (d, d, shlex.quote(d[:-8]))))
+elif it.get("folder"):
+    print("xdg-open " + shlex.quote(os.path.expanduser(it["folder"])))
+elif it.get("exec"):
+    print(it["exec"])
+else:
+    sys.exit(1)
+PY
+}
+
+case "${1:-}" in
+  up|down|left|right) enabled || off_note; step "$1";;
+  carry)
+    enabled || off_note
+    if [ "${2:-}" = "--drop" ]; then rm -f "$CARRY_F"; qs_call carrystate ""; echo dropped; exit 0; fi
+    carry_check
+    if [ -s "$CARRY_F" ]; then rm -f "$CARRY_F"; qs_call carrystate ""; echo dropped; exit 0; fi
+    addr="$(hyprctl activewindow -j 2>/dev/null | python3 -c 'import sys,json
+try: print(json.load(sys.stdin).get("address") or "")
+except Exception: print("")')"
+    # nothing focused is not an error - it is simply nothing to pick up
+    [ -z "$addr" ] && { echo "nothing focused - nothing to carry" >&2; exit 0; }
+    if [ -n "$DRY" ]; then echo "DRY: would carry $addr" >&2; exit 0; fi
+    printf '%s' "$addr" > "$CARRY_F"; qs_call carrystate "$addr"; echo "carrying $addr";;
+  goto)
+    enabled || off_note
+    carry_check
+    p="$(plan "$(cur_ws)" "room:${2:-}")"
+    [ "$p" = NOROOM ] && { echo "no such room: ${2:-}" >&2; exit 1; }
+    # the direction is derived from the cell delta so the slide still matches
+    # the axis you travelled on - a jump across the grid is not a generic fade
+    IFS='|' read -r _room trow tcol _tws _c _r _l _col _w <<<"$p"
+    hp="$(plan "$(cur_ws)" here)"
+    dir=right
+    if [ "$hp" != OUTSIDE ] && [ "$hp" != NOROOM ]; then
+      IFS='|' read -r _hr hrow hcol _rest <<<"$hp"
+      if [ "$((trow - hrow))" -ne 0 ]; then [ "$trow" -gt "$hrow" ] && dir=down || dir=up
+      else [ "$tcol" -lt "$hcol" ] && dir=left || dir=right; fi
+    fi
+    enter "$p" "$dir";;
+  shelf)
+    enabled || off_note
+    room="${2:-}"; n="${3:-1}"
+    p="$(plan "$(cur_ws)" "room:$room")"
+    [ "$p" = NOROOM ] && { echo "no such room: $room" >&2; exit 1; }
+    IFS='|' read -r _rm _rw _cl ws _c _r _l _col _w <<<"$p"
+    cmd="$(shelf_cmd "$room" "$n")" || { echo "no shelf item $n in $room" >&2; exit 1; }
+    # opens IN that room without taking you there (silent), so a shelf launched
+    # from the Settings page or from another room lands where it belongs
+    hypr dispatch exec "[workspace $ws silent] $cmd" >/dev/null;;
+  shelf-add)  edit_map shelf-add "${2:-}" "${3:-}"; qs_call reload;;
+  shelf-del)  edit_map shelf-del "${2:-}" "${3:-}"; qs_call reload;;
+  wallpaper)  edit_map wallpaper "${2:-}" "${3:-}"; qs_call reload;;
+  rename)     edit_map rename "${2:-}" "${3:-}"; qs_call reload;;
+  wrap)       edit_map wrap "${2:-}"; qs_call reload;;
+  speed)      edit_map speed "${2:-}"; qs_call reload;;
+  resize)     edit_map resize "${2:-}" "${3:-}"; qs_call reload;;
+  wallsync)
+    # re-apply whatever THIS room asks for. Called by the HUD after a step and
+    # by nothing else; while no room overrides, `wall_apply ""` with no
+    # remembered main is a no-op, so the shipped state costs nothing.
+    enabled || off_note
+    p="$(plan "$(cur_ws)" here)"
+    case "$p" in OUTSIDE|NOROOM|WALL) wall_apply ""; exit 0;; esac
+    IFS='|' read -r _rm _rw _cl _ws _c _r _l _col wall <<<"$p"
+    wall_apply "$wall";;
+  mappath)    echo "$MAP";;
+  where)
+    carry_check
+    python3 - "$MAP" "$(cur_ws)" "$(carry_addr)" <<'PY'
+import json, os, sys
+exec(os.environ["NYX_PY_LIB"])
+m = json.load(open(sys.argv[1])); ws = int(sys.argv[2]); carry = sys.argv[3]
+grid, rows, cols = shape(m)
+here, r, c = "", -1, -1
+_p = cell_of(ws, cols, rows) if rows else None
+if _p is not None:
+    r, c = _p; here = grid[r][c]
+nb = {}
+for d, (dr, dc) in (("up", (-1, 0)), ("down", (1, 0)), ("left", (0, -1)), ("right", (0, 1))):
+    nb[d] = None
+    if here:
+        nr, nc = r + dr, c + dc
+        if not (0 <= nr < rows and 0 <= nc < cols):
+            if m.get("wrap") is True: nr, nc = nr % rows, nc % cols
+            else: continue
+        nb[d] = grid[nr][nc]
+print(json.dumps({"shape": "grid", "room": here, "row": r, "col": c, "ws": ws,
+                  "cols": cols, "rows": rows, "wrap": m.get("wrap") is True,
+                  "label": m.get("labels", {}).get(here, here),
+                  "carrying": carry, "neighbours": nb, "grid": grid,
+                  "workspaces": [[ws_of(rr, cc, cols) for cc in range(cols)] for rr in range(rows)],
+                  "map": sys.argv[1]}))
+PY
+    ;;
+  map)
+    # printed FROM `where`, so the terminal map cannot disagree with the HUD
+    # about which workspace a room is on
+    "$0" where | python3 -c '
+import json, sys
+w = json.load(sys.stdin)
+print("THE ROOMS - %dx%d, ws = row * %d + col + 1%s" % (
+      w["cols"], w["rows"], w["cols"],
+      ("   [carrying %s]" % w["carrying"]) if w["carrying"] else ""))
+for row, wsrow in zip(w["grid"], w["workspaces"]):
+    cells = [("<%s %d>" % (n, x)) if x == w["ws"] else ("[%s %d]" % (n, x))
+             for n, x in zip(row, wsrow)]
+    print("  " + "  ".join("%-16s" % c for c in cells))
+'
+    ;;
+  *) sed -n '3,22p' "$0"; exit 1;;
+esac

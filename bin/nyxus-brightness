@@ -1,0 +1,189 @@
+#!/usr/bin/env bash
+# ════════════════════════════════════════════════════════════════════
+# nyxus-brightness · the ONE writer for the panel backlight
+#
+# TRK-980 (Alienware live boot, 2026-08-20 23:39): Settings ▸ Display at
+# 100% drove the panel as dark as it goes. Both shell surfaces called bare
+# `brightnessctl set N%` — no `-c`, no `-d` — which means brightnessctl's
+# OWN pick of device: the first entry it finds across its classes, which on
+# a hybrid AMD+NVIDIA laptop is whichever of acpi_video0 / amdgpu_bl* /
+# nvidia_0 / nvidia_wmi_ec_backlight sysfs lists first. Two of those are
+# dead or inverted on Dell/Alienware ECs and one has a max_brightness too
+# small to drive in 5% steps. The shell also read `get`/`max` from that same
+# unnamed device, so the slider could never even tell it had written the
+# wrong one.
+#
+# This helper is the single writer. Policy, in order:
+#   · class `backlight` only — never an LED (`-c backlight` on every call);
+#   · among backlight devices, the one with the LARGEST max_brightness wins
+#     (the real panel has hundreds or thousands of steps; the dead EC
+#     shims have 7, 15 or 100 and the stub ones report 0 or 1);
+#   · a device with max_brightness <= 1 is refused outright;
+#   · the request is clamped to [FLOOR, 100] so a bug can never black the
+#     panel (FLOOR is the same 5 the Settings slider starts at);
+#   · device / max / requested / applied / readback go to STDERR every
+#     time, so the next Alienware boot names the device in the shell log;
+#   · no usable backlight → a MESSAGE on stderr and a non-zero exit, never
+#     silence. Settings reads that message into the row's unavailable state.
+#
+#   probe                 → stdout "<device> <max> <current%>", exit 0
+#                           (exit 2 + message when there is no backlight)
+#   get [-d name]         → stdout "<current%>" of the chosen device
+#   set [-d name] <0-100> → apply; stdout "<applied%>"; exit = brightnessctl's
+#
+# Default (no `-d`) is the largest-max pick. A named pin that is missing
+# or max<=1 fails the same way "no backlight" does (stderr + exit 2) and
+# NEVER silently retargets a different node (TRK-980 / TRK-1530).
+# `probe` does not take `-d`.
+#
+# Test seams (gate 13q51 drives them; unset on a real machine):
+#   NYXUS_BACKLIGHT_SYS   dir that stands in for /sys/class/backlight
+#   NYXUS_BRIGHTNESSCTL   binary that stands in for brightnessctl
+# © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+# ════════════════════════════════════════════════════════════════════
+set -u
+
+FLOOR=5
+CEIL=100
+SYS="${NYXUS_BACKLIGHT_SYS:-/sys/class/backlight}"
+BCTL="${NYXUS_BRIGHTNESSCTL:-brightnessctl}"
+me="nyxus-brightness"
+
+say() { printf '%s: %s\n' "$me" "$*" >&2; }
+
+usage() {
+  say "usage: $me probe | get [-d name] | set [-d name] <0-100>"
+  exit 64
+}
+
+# ── scan class backlight: default pick = largest max_brightness, max > 1 ──
+seen=""; def=""; def_max=0
+if [[ -d "$SYS" ]]; then
+  for d in "$SYS"/*; do
+    [[ -e "$d/max_brightness" ]] || continue
+    name="${d##*/}"
+    m="$(tr -cd '0-9' < "$d/max_brightness" 2>/dev/null)"
+    [[ -n "$m" ]] || m=0
+    seen="${seen:+$seen }${name}(max=$m)"
+    if (( m <= 1 )); then
+      say "refusing $name: max_brightness=$m is not a panel"
+      continue
+    fi
+    if (( m > def_max )); then
+      def="$name"; def_max="$m"
+    fi
+  done
+fi
+dev="$def"
+dev_max="$def_max"
+
+cur_raw() { tr -cd '0-9' < "$SYS/$dev/brightness" 2>/dev/null; }
+cur_pct() {
+  local c; c="$(cur_raw)"; [[ -n "$c" ]] || c=0
+  echo $(( (100 * c + dev_max / 2) / dev_max ))
+}
+
+# Pin a named node. Missing or max<=1 → exit 2 with the same "no backlight"
+# sentence the default empty-class path uses. The default pick is discarded
+# first so a labelled slider cannot write a different device.
+pin_device() {
+  local want="$1"
+  local d="$SYS/$want"
+  local m
+  dev=""; dev_max=0
+  if [[ -z "$want" || ! -e "$d/max_brightness" ]]; then
+    say "no backlight on this machine (class backlight lists: ${seen:-nothing}; requested -d ${want:-?} missing)"
+    exit 2
+  fi
+  m="$(tr -cd '0-9' < "$d/max_brightness" 2>/dev/null)"
+  [[ -n "$m" ]] || m=0
+  if (( m <= 1 )); then
+    say "refusing $want: max_brightness=$m is not a panel"
+    say "no backlight on this machine (class backlight lists: ${seen:-nothing}; requested -d $want is not a panel)"
+    exit 2
+  fi
+  dev="$want"
+  dev_max="$m"
+}
+
+op="${1:-}"
+[[ -n "$op" ]] || usage
+shift
+
+pin=""
+req=""
+while (( $# )); do
+  case "$1" in
+    -d)
+      if (( $# < 2 )) || [[ -z "${2:-}" || "${2}" == -* ]]; then
+        usage
+      fi
+      pin="$2"
+      shift 2
+      ;;
+    -*)
+      usage
+      ;;
+    *)
+      [[ -z "$req" ]] || usage
+      req="$1"
+      shift
+      ;;
+  esac
+done
+
+case "$op" in
+  probe)
+    # Unchanged: no -d, no extra positional.
+    [[ -z "$pin" && -z "$req" ]] || usage
+    ;;
+  get)
+    [[ -z "$req" ]] || usage
+    ;;
+  set)
+    ;;
+  *)
+    usage
+    ;;
+esac
+
+if [[ -n "$pin" ]]; then
+  pin_device "$pin"
+fi
+
+if [[ -z "$dev" ]]; then
+  say "no backlight on this machine (class backlight lists: ${seen:-nothing})"
+  exit 2
+fi
+
+case "$op" in
+  probe)
+    printf '%s %s %s\n' "$dev" "$dev_max" "$(cur_pct)"
+    ;;
+  get)
+    cur_pct
+    ;;
+  set)
+    if ! [[ "$req" =~ ^[0-9]+$ ]]; then
+      say "set wants an integer 0-100, got '${req}'"
+      usage
+    fi
+    pct="$req"
+    (( pct < FLOOR )) && pct="$FLOOR"
+    (( pct > CEIL ))  && pct="$CEIL"
+    if ! command -v "$BCTL" >/dev/null 2>&1; then
+      say "brightnessctl is not installed"
+      exit 3
+    fi
+    # -c backlight -d <name>: the device we chose, never brightnessctl's pick.
+    "$BCTL" -c backlight -d "$dev" -q set "${pct}%"
+    rc=$?
+    rb="$(cur_pct)"
+    say "device=$dev max=$dev_max requested=$req applied=${pct}% readback=$(cur_raw)/$dev_max (${rb}%) rc=$rc"
+    if (( rc == 0 )) && (( rb > pct + 10 || rb + 10 < pct )); then
+      say "readback ${rb}% is not the ${pct}% just written — this device may be the wrong one or inverted"
+    fi
+    echo "$pct"
+    exit "$rc"
+    ;;
+esac

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Start the brain server if it is not running, wait for it, open a real window.
+PORT=7861
+if ! curl -sf -o /dev/null "http://127.0.0.1:${PORT}/"; then
+  nohup nyx-brain > /tmp/nyx-brain.log 2>&1 &
+  for i in $(seq 1 40); do
+    sleep 0.5
+    curl -sf -o /dev/null "http://127.0.0.1:${PORT}/" && break
+  done
+fi
+exec chromium \
+  --app="http://127.0.0.1:${PORT}/" \
+  --class=nyxus-mind \
+  --user-data-dir="${HOME}/.local/share/nyxus-mind/browser" \
+  --window-size=900,880 \
+  --no-first-run --no-default-browser-check

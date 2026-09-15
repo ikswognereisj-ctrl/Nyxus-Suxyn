@@ -1,0 +1,215 @@
+#!/usr/bin/env bash
+# ============================================================================
+#  measure-boot.sh / nyxus-measure-boot — boot-time collector  (TRK-1271)
+#  © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+#
+#  TWO COPIES, BYTE-IDENTICAL (audit item 28 holds them together):
+#      scripts/measure-boot.sh                                  — the repo copy
+#      iso-builder/nyx-profile/airootfs/usr/local/bin/nyxus-measure-boot — ships
+#  The shipped copy is what nyxus-smoke-probe runs inside the VM; the repo copy
+#  is what a human runs on a booted NYXUS (or on this host, to see the shape).
+#
+#  WHAT IT COLLECTS — on the machine it runs on, as JSON on stdout:
+#    · systemd-analyze time            firmware / loader / kernel / initrd /
+#                                      userspace seconds, parsed
+#    · systemd-analyze blame           the 20 slowest units, seconds
+#    · systemd-analyze critical-chain  raw text (the path to graphical.target)
+#    · greeter                         greetd.service ActiveEnterTimestamp
+#                                      (monotonic, s since boot) and the
+#                                      greeter process start (from
+#                                      /proc/<pid>/stat, CLK_TCK) — the
+#                                      "greeter-visible" proxy the guest can
+#                                      see; the host-side still is the eye
+#    · shell                           qs process start, s since boot
+#    · uptime_s, hostname, kernel, date
+#
+#  JUDGING: `--budgets <file>` (default: scripts/smoke-budgets.json beside the
+#  repo copy, when present) judges greeter_process_start_s against
+#  boot_to_greeter_s and exits 1 on a miss. `--from-serial <serial.log>`
+#  takes a vm-smoke.sh transcript instead of measuring this machine: it pulls
+#  the RESULT document's "boot" block and judges THAT. A missing or unparseable
+#  input is a FAIL (exit 2), never a skip.
+#
+#  Every figure printed carries its unit in its key name (_s = seconds,
+#  _mb = MiB). A number whose unit cannot be stated does not get quoted.
+# ============================================================================
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BUDGETS=""
+SERIAL=""
+JSON_ONLY=0
+for b in "${HERE}/smoke-budgets.json" "${HERE}/../scripts/smoke-budgets.json" /usr/share/nyxus/smoke-budgets.json; do
+  [[ -f "$b" ]] && { BUDGETS="$b"; break; }
+done
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --json) JSON_ONLY=1 ;;
+    --budgets) BUDGETS="${2:-}"; shift ;;
+    --from-serial) SERIAL="${2:-}"; shift ;;
+    -h|--help) sed -n '2,40p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    *) echo "measure-boot: unknown argument $1" >&2; exit 3 ;;
+  esac
+  shift
+done
+
+if [[ -z "$SERIAL" ]] && ! command -v systemd-analyze >/dev/null 2>&1; then
+  echo '{"error":"systemd-analyze not found"}'
+  exit 2
+fi
+
+export MB_BUDGETS="$BUDGETS" MB_SERIAL="$SERIAL" MB_JSON_ONLY="$JSON_ONLY"
+exec python3 - <<'PY'
+import glob, json, os, re, subprocess, sys, time
+
+budgets_path = os.environ.get("MB_BUDGETS") or ""
+serial_path = os.environ.get("MB_SERIAL") or ""
+json_only = os.environ.get("MB_JSON_ONLY") == "1"
+CLK = os.sysconf("SC_CLK_TCK")
+
+
+def sh(cmd, timeout=60):
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return p.returncode, p.stdout, p.stderr
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return 127, "", str(exc)
+
+
+def to_s(txt):
+    """'1min 2.345s' / '4.567s' / '890ms' -> float seconds"""
+    total = 0.0
+    for num, unit in re.findall(r"([0-9.]+)\s*(min|ms|s)", txt):
+        v = float(num)
+        total += v * 60 if unit == "min" else v / 1000 if unit == "ms" else v
+    return round(total, 3)
+
+
+def proc_start(names):
+    best = None
+    for d in os.listdir("/proc"):
+        if not d.isdigit():
+            continue
+        try:
+            with open(f"/proc/{d}/cmdline", "rb") as f:
+                cmd = [c.decode("utf-8", "replace") for c in f.read().split(b"\0") if c]
+            with open(f"/proc/{d}/stat") as f:
+                st = f.read()
+        except OSError:
+            continue
+        comm = st[st.index("(") + 1: st.rindex(")")]
+        bases = {os.path.basename(c) for c in cmd[:2]} | {comm}
+        if bases & names:
+            start = int(st[st.rindex(")") + 2:].split()[19]) / CLK
+            if best is None or start < best["start_s"]:
+                best = {"pid": int(d), "name": (cmd[0] if cmd else comm), "start_s": round(start, 3)}
+    return best
+
+
+def measure_here():
+    doc = {"collected_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "hostname": os.uname().nodename,
+           "kernel": os.uname().release}
+    try:
+        with open("/proc/uptime") as f:
+            doc["uptime_s"] = float(f.read().split()[0])
+    except OSError:
+        pass
+    rc, out, err = sh(["systemd-analyze", "time"])
+    doc["systemd_analyze_time_raw"] = (out or err).strip()
+    if rc == 0:
+        parts = {}
+        for key in ("firmware", "loader", "kernel", "initrd", "userspace"):
+            m = re.search(r"([0-9.]+(?:min )?[0-9.]*m?s) \(" + key + r"\)", out)
+            if m:
+                parts[key + "_s"] = to_s(m.group(1))
+        m = re.search(r"= ([^\n]+)", out)
+        if m:
+            parts["total_s"] = to_s(m.group(1))
+        m = re.search(r"graphical\.target reached after ([^\n]+) in userspace", out)
+        if m:
+            parts["graphical_target_s"] = to_s(m.group(1))
+        doc["systemd_analyze"] = parts
+    else:
+        doc["systemd_analyze"] = {"error": (err or out).strip()[:200]}
+    rc, out, _ = sh(["systemd-analyze", "blame", "--no-pager"])
+    blame = []
+    for line in out.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        m = re.match(r"^(.+?)\s+(\S+)$", line)
+        if m:
+            blame.append({"unit": m.group(2), "s": to_s(m.group(1))})
+    doc["blame_top"] = blame[:20]
+    rc, out, _ = sh(["systemd-analyze", "critical-chain", "--no-pager"])
+    doc["critical_chain"] = out.strip()[:4000]
+    rc, out, _ = sh(["systemctl", "show", "greetd.service", "-p", "ActiveEnterTimestampMonotonic", "-p", "ActiveState"])
+    g = {}
+    for line in out.splitlines():
+        k, _, v = line.partition("=")
+        if k == "ActiveEnterTimestampMonotonic" and v.isdigit() and int(v) > 0:
+            g["greetd_active_s"] = round(int(v) / 1e6, 3)
+        elif k == "ActiveState":
+            g["greetd_state"] = v
+    gp = proc_start({"nyxus-radial-greeter", "regreet", "tuigreet", "agreety"})
+    if gp:
+        g["greeter_process"] = gp["name"]
+        g["greeter_process_start_s"] = gp["start_s"]
+    doc["greeter"] = g
+    qp = proc_start({"qs", "quickshell"})
+    doc["shell"] = {"qs_start_s": qp["start_s"], "qs_pid": qp["pid"]} if qp else {}
+    return doc
+
+
+def from_serial(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
+    except OSError as exc:
+        return None, f"cannot read {path}: {exc}"
+    for line in reversed(lines):
+        if line.startswith("NYXUS-SMOKE-RESULT "):
+            try:
+                res = json.loads(line[len("NYXUS-SMOKE-RESULT "):])
+            except ValueError as exc:
+                return None, f"RESULT line is not JSON: {exc}"
+            boot = res.get("boot")
+            if not isinstance(boot, dict):
+                return None, "RESULT has no boot block"
+            boot["_from_serial"] = path
+            boot["_timeline"] = res.get("timeline", {})
+            return boot, None
+    return None, "no NYXUS-SMOKE-RESULT line in transcript"
+
+
+if serial_path:
+    doc, err = from_serial(serial_path)
+    if doc is None:
+        print(json.dumps({"error": err}))
+        sys.exit(2)
+else:
+    doc = measure_here()
+
+verdicts = []
+if budgets_path:
+    try:
+        with open(budgets_path, encoding="utf-8") as f:
+            budgets = json.load(f)
+    except (OSError, ValueError) as exc:
+        print(json.dumps({"error": f"budgets unreadable: {exc}", "measured": doc}))
+        sys.exit(2)
+    ceiling = budgets.get("boot_to_greeter_s")
+    got = (doc.get("greeter") or {}).get("greeter_process_start_s")
+    if isinstance(ceiling, (int, float)):
+        if got is None:
+            verdicts.append({"key": "boot_to_greeter_s", "ok": None, "got": None, "ceiling": ceiling,
+                             "note": "no greeter process on this machine — not judged"})
+        else:
+            verdicts.append({"key": "boot_to_greeter_s", "ok": got <= ceiling, "got": got, "ceiling": ceiling,
+                             "ruler": "guest seconds since kernel start to the greeter process starting (proc stat)"})
+    doc["budgets"] = budgets_path
+doc["verdicts"] = verdicts
+print(json.dumps(doc, indent=None if json_only else 2))
+sys.exit(1 if any(v["ok"] is False for v in verdicts) else 0)
+PY

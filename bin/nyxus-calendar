@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Nyxus Suxyn — raise glass Calendar. Never GTK nyxus_calendar.py.
+set -u
+if ! command -v qs >/dev/null 2>&1; then
+  echo "Calendar needs the desktop shell (qs)." >&2
+  exit 2
+fi
+out="$(qs ipc call calendar engage 2>&1)" || true
+if [[ "${out}" == *"Target not found."* ]]; then
+  out="$(qs ipc call nyxus calendar 2>&1)" || true
+fi
+if [[ "${out}" == *"Target not found."* ]]; then
+  echo "Calendar is not in the running shell." >&2
+  printf '%s\n' "${out}" >&2
+  exit 2
+fi
+printf '%s\n' "${out}"
+exit 0

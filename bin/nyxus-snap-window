@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# ============================================================================
+#  nyxus-snap-window — Windows-style window snapping for floating windows
+#
+#      nyxus-snap-window left|right|up|down|tl|tr|bl|br
+#
+#  Super+Left / Super+Right snap the focused window to half the screen.
+#  Super+Up maximises. Super+Down restores, then un-maximises toward the
+#  bottom half. Corners give quarters.
+#
+#  WHY: this is the single most-used window shortcut on Windows, and everyone
+#  arriving from Windows tries it within the first minute. Hyprland ships
+#  magnetic edge snapping for drags (general:snap) but has no half-screen
+#  dispatcher, and Super+Arrow was bound to `movefocus` — correct for a tiling
+#  WM, wrong for a desktop someone is meant to recognise.
+#
+#  Only acts on FLOATING windows, which is the default here (see
+#  conf.d/nyxus-window-mode.conf). On a tiled window it floats it first, so the
+#  key does what the user expects rather than nothing.
+#
+#  The pre-snap geometry is remembered per window address so Super+Down can
+#  put a window back exactly where it was instead of guessing a size.
+# ============================================================================
+set -uo pipefail
+
+STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/nyxus-snap"
+mkdir -p "$STATE_DIR"
+
+die() { printf 'nyxus-snap-window: %s\n' "$1" >&2; exit 1; }
+command -v hyprctl >/dev/null || die "hyprctl not found"
+command -v jq      >/dev/null || die "jq not found"
+
+WHERE="${1:-}"
+[[ -n "$WHERE" ]] || die "usage: nyxus-snap-window left|right|up|down|tl|tr|bl|br"
+
+active="$(hyprctl -j activewindow 2>/dev/null)"
+[[ -n "$active" && "$active" != "null" && "$active" != "{}" ]] || exit 0
+
+addr="$(jq -r '.address' <<<"$active")"
+floating="$(jq -r '.floating' <<<"$active")"
+fullscreen="$(jq -r '.fullscreen' <<<"$active")"
+
+# Usable area = monitor minus reserved space (the taskbar's exclusive zone),
+# so a snapped window never hides behind the bar.
+read -r mx my mw mh rl rt rr rb <<<"$(hyprctl -j monitors \
+  | jq -r '.[] | select(.focused) |
+      "\(.x) \(.y) \(.width) \(.height) \(.reserved[0]) \(.reserved[1]) \(.reserved[2]) \(.reserved[3])"')"
+[[ -n "${mw:-}" ]] || die "could not read the focused monitor"
+
+scale="$(hyprctl -j monitors | jq -r '.[] | select(.focused) | .scale')"
+# Hyprland reports width/height in physical pixels but positions windows in
+# logical ones. Divide once, here, rather than in five places below.
+mw=$(awk -v w="$mw" -v s="$scale" 'BEGIN{printf "%d", w/s}')
+mh=$(awk -v h="$mh" -v s="$scale" 'BEGIN{printf "%d", h/s}')
+
+x=$((mx + rl)); y=$((my + rt))
+w=$((mw - rl - rr)); h=$((mh - rt - rb))
+hw=$((w / 2)); hh=$((h / 2))
+
+save_geometry() {
+  jq -r '"\(.at[0]) \(.at[1]) \(.size[0]) \(.size[1])"' <<<"$active" \
+    > "${STATE_DIR}/${addr}" 2>/dev/null || true
+}
+
+place() {   # $1=x $2=y $3=w $4=h
+  hyprctl --batch "\
+dispatch setfloating active ; \
+dispatch resizewindowpixel exact $3 $4,address:${addr} ; \
+dispatch movewindowpixel exact $1 $2,address:${addr}" >/dev/null
+}
+
+# A fullscreen window must leave fullscreen first or the move is ignored.
+[[ "$fullscreen" != "0" ]] && hyprctl dispatch fullscreen 0 >/dev/null
+
+case "$WHERE" in
+  left)  [[ "$floating" == "true" ]] && save_geometry; place "$x"          "$y"          "$hw" "$h"  ;;
+  right) [[ "$floating" == "true" ]] && save_geometry; place "$((x + hw))" "$y"          "$hw" "$h"  ;;
+  up)    [[ "$floating" == "true" ]] && save_geometry; place "$x"          "$y"          "$w"  "$h"  ;;
+  tl)    [[ "$floating" == "true" ]] && save_geometry; place "$x"          "$y"          "$hw" "$hh" ;;
+  tr)    [[ "$floating" == "true" ]] && save_geometry; place "$((x + hw))" "$y"          "$hw" "$hh" ;;
+  bl)    [[ "$floating" == "true" ]] && save_geometry; place "$x"          "$((y + hh))" "$hw" "$hh" ;;
+  br)    [[ "$floating" == "true" ]] && save_geometry; place "$((x + hw))" "$((y + hh))" "$hw" "$hh" ;;
+  down)
+    # Restore to the remembered geometry if we have one; otherwise a sane
+    # centred default. Never leave the window in an unusable sliver.
+    if [[ -r "${STATE_DIR}/${addr}" ]]; then
+      read -r ox oy ow oh < "${STATE_DIR}/${addr}"
+      if [[ -n "${oh:-}" && "$ow" -gt 100 && "$oh" -gt 80 ]]; then
+        place "$ox" "$oy" "$ow" "$oh"; rm -f "${STATE_DIR}/${addr}"; exit 0
+      fi
+    fi
+    place "$((x + w / 8))" "$((y + h / 8))" "$((w * 3 / 4))" "$((h * 3 / 4))"
+    ;;
+  *) die "unknown position '${WHERE}'" ;;
+esac
+
+# Glass knock: the window just hit a wall. Super+Down restore is not a bump.
+if [[ "$WHERE" != "down" ]] && command -v nyxus-sound >/dev/null; then
+  nyxus-sound --pitch 0.92 ui-knock >/dev/null 2>&1 &
+fi

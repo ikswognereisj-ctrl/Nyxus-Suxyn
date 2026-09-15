@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+# ════════════════════════════════════════════════════════════════════
+# nyxus-secure · the opt-in protection engine
+#
+# The owner's rule, verbatim: security must be genuinely useful for the
+# people who choose it, and pushed on nobody. This is the ONE place that
+# turns each protection on or off; the first-boot wizard's Protection step
+# and Settings → Security both call it, so the answer to "what is my
+# machine doing" never depends on who asked.
+#
+#   nyxus-secure status                       one line per feature: on/off
+#   nyxus-secure apply k=on k=off ...         set several in one privileged call
+#   nyxus-secure enable|disable <feature>
+#   nyxus-secure --lsm-edit FILE              drive the kernel-cmdline editor
+#                                             against FILE (gate 13t20; no grub)
+#
+# Features:
+#   firewall   firewalld — blocks unsolicited inbound, quiet outbound
+#   apparmor   AppArmor confinement (service now; adds the lsm= kernel line
+#              and regenerates grub when run on an installed system)
+#   dns        encrypted DNS via nyxus-doh (quad9, DoH+DNSSEC) — off = system DNS
+#   macrandom  Wi-Fi MAC randomization via NetworkManager
+#
+# Root required for everything but `status`. Never interactive.
+# © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+# ════════════════════════════════════════════════════════════════════
+set -u
+FEATURES=(firewall apparmor dns macrandom)
+NM_MAC=/etc/NetworkManager/conf.d/30-nyxus-mac-random.conf
+LSM_WANT="apparmor"
+LSM_STACK="landlock,lockdown,yama,integrity,apparmor,bpf"
+GRUB_SYSTEM_DEFAULT="/etc/default/grub"
+
+need_root() { [[ $EUID -eq 0 ]] || { echo "nyxus-secure: root required" >&2; exit 1; }; }
+
+# systemctl in a chroot (no running systemd) still ENABLES units fine; only
+# --now needs a live manager. Detect once, degrade quietly.
+SYS_LIVE=0
+[[ -d /run/systemd/system ]] && SYS_LIVE=1
+sysctl_on()  { systemctl enable "$1" >/dev/null 2>&1; (( SYS_LIVE )) && systemctl start "$1" >/dev/null 2>&1; }
+sysctl_off() { systemctl disable "$1" >/dev/null 2>&1; (( SYS_LIVE )) && systemctl stop "$1" >/dev/null 2>&1; }
+
+st_firewall()  { systemctl is-enabled firewalld >/dev/null 2>&1 && echo on || echo off; }
+st_apparmor()  { systemctl is-enabled apparmor  >/dev/null 2>&1 && echo on || echo off; }
+st_dns()       { nyxus-doh --json 2>/dev/null | grep -q '"mode": *"off"' && echo off || { nyxus-doh --json >/dev/null 2>&1 && echo on || echo off; }; }
+st_macrandom() { [[ -f "$NM_MAC" ]] && echo on || echo off; }
+
+# Rewrite the LAST GRUB_CMDLINE_LINUX_DEFAULT assignment in FILE so its lsm=
+# list contains apparmor. Prints changed|unchanged|missing on stdout.
+# Quote-agnostic: Calamares grubcfg writes single quotes (f"'{value}'");
+# Arch's stock file and this build's live /etc/default/grub use double.
+# The retired editor was sed matching only double quotes, so every Calamares
+# install left AppArmor enabled as a service and absent from the LSM list.
+#
+# Looks only at live assignments (a commented example must not satisfy the
+# guard). Merges into an existing lsm= rather than appending a second one.
+# Never calls grub — apparmor_cmdline does that, and only for the real
+# system file, so --lsm-edit / gate 13t20 cannot rewrite this machine.
+lsm_edit() {
+  local g="$1" tmp status
+  [[ -f "$g" ]] || { echo "missing"; return 1; }
+  tmp="$(mktemp "${g}.nyxus-lsm.XXXXXX" 2>/dev/null)" || { echo "error"; return 1; }
+  status="$(awk -v want="$LSM_WANT" -v stack="$LSM_STACK" -v out="$tmp" -v sq="'" '
+    { line[NR] = $0
+      if ($0 ~ /^[ \t]*GRUB_CMDLINE_LINUX_DEFAULT[ \t]*=/) last = NR }
+    END {
+      n = NR
+      key = "GRUB_CMDLINE_LINUX_DEFAULT"
+      if (last == 0) {
+        for (i = 1; i <= n; i++) print line[i] > out
+        print key "=\"lsm=" stack "\"" > out
+        print "changed"
+        exit 0
+      }
+      v = line[last]
+      sub(/^[ \t]*GRUB_CMDLINE_LINUX_DEFAULT[ \t]*=[ \t]*/, "", v)
+      q = substr(v, 1, 1)
+      if ((q == "\"" || q == sq) && length(v) >= 2 && substr(v, length(v), 1) == q)
+        v = substr(v, 2, length(v) - 2)
+      cnt = split(v, tok, /[ \t]+/)
+      found = 0
+      for (i = 1; i <= cnt; i++) {
+        if (tok[i] ~ /^lsm=/) {
+          found = 1
+          list = substr(tok[i], 5)
+          have = 0
+          m = split(list, e, ",")
+          for (j = 1; j <= m; j++) if (e[j] == want) have = 1
+          if (!have) list = (list == "" ? want : list "," want)
+          tok[i] = "lsm=" list
+        }
+      }
+      if (!found) { cnt++; tok[cnt] = "lsm=" stack }
+      val = ""
+      for (i = 1; i <= cnt; i++) {
+        if (tok[i] == "") continue
+        val = (val == "" ? tok[i] : val " " tok[i])
+      }
+      if (index(val, "\"") > 0) newl = key "=" sq val sq
+      else                      newl = key "=\"" val "\""
+      for (i = 1; i <= n; i++) print (i == last ? newl : line[i]) > out
+      print (newl == line[last] ? "unchanged" : "changed")
+    }
+  ' "$g")" || { rm -f "$tmp"; echo "error"; return 1; }
+  [[ -s "$tmp" ]] || { rm -f "$tmp"; echo "error"; return 1; }
+  cat "$tmp" > "$g" || { rm -f "$tmp"; echo "error"; return 1; }
+  rm -f "$tmp"
+  echo "$status"
+  return 0
+}
+
+apparmor_cmdline() {
+  # On an installed system, AppArmor needs lsm= in the kernel command line.
+  # Harmless if grub tooling is absent (live session): the service alone
+  # still loads what it can, and the wizard's copy says so.
+  local g="${NYXUS_GRUB_DEFAULT:-$GRUB_SYSTEM_DEFAULT}" r
+  [[ -f "$g" ]] || return 0
+  r="$(lsm_edit "$g")" || return 0
+  [[ "$r" == changed ]] || return 0
+  # Regenerate grub.cfg ONLY for the real system file. Gate 13t20 drives this
+  # editor against mktemp copies; neither may rewrite the host boot loader.
+  [[ "$g" == "$GRUB_SYSTEM_DEFAULT" ]] || return 0
+  command -v grub-mkconfig >/dev/null 2>&1 && grub-mkconfig -o /boot/grub/grub.cfg >/dev/null 2>&1
+  return 0
+}
+
+en_firewall()  { sysctl_on firewalld; }
+dis_firewall() { sysctl_off firewalld; }
+en_apparmor()  { sysctl_on apparmor; apparmor_cmdline; }
+dis_apparmor() { sysctl_off apparmor; }
+en_dns()       { nyxus-doh --set quad9 >/dev/null 2>&1; }
+dis_dns()      { nyxus-doh --set off   >/dev/null 2>&1; }
+en_macrandom() {
+  mkdir -p "$(dirname "$NM_MAC")"
+  printf '[device]\nwifi.scan-rand-mac-address=yes\n\n[connection]\nwifi.cloned-mac-address=random\n' > "$NM_MAC"
+  (( SYS_LIVE )) && systemctl try-reload-or-restart NetworkManager >/dev/null 2>&1
+  return 0
+}
+dis_macrandom() {
+  rm -f "$NM_MAC"
+  (( SYS_LIVE )) && systemctl try-reload-or-restart NetworkManager >/dev/null 2>&1
+  return 0
+}
+
+valid() { local f; for f in "${FEATURES[@]}"; do [[ "$f" == "$1" ]] && return 0; done; return 1; }
+
+case "${1:-status}" in
+  --lsm-edit)
+    [[ -n "${2:-}" ]] || { echo "usage: nyxus-secure --lsm-edit <file>" >&2; exit 2; }
+    lsm_edit "$2"; exit $? ;;
+  status)
+    for f in "${FEATURES[@]}"; do printf '%s=%s\n' "$f" "$("st_$f")"; done ;;
+  enable|disable)
+    need_root
+    valid "${2:-}" || { echo "nyxus-secure: unknown feature '${2:-}'" >&2; exit 2; }
+    [[ "$1" == enable ]] && "en_${2}" || "dis_${2}" ;;
+  apply)
+    need_root; shift
+    rc=0
+    for kv in "$@"; do
+      f="${kv%%=*}"; v="${kv#*=}"
+      valid "$f" || { echo "skip unknown: $f" >&2; continue; }
+      case "$v" in
+        on)  "en_${f}"  || rc=1 ;;
+        off) "dis_${f}" || rc=1 ;;
+        *) echo "skip bad value: $kv" >&2 ;;
+      esac
+    done
+    exit "$rc" ;;
+  *) echo "usage: nyxus-secure [status|enable FEAT|disable FEAT|apply k=on ...]" >&2; exit 2 ;;
+esac

@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+# ============================================================================
+#  /usr/local/bin/nyxus-kernel-switch                       rev 2026-07-24 r2
+#
+#  NYXUS Kernel Switcher — Kage-Ryu (primary) + stock linux (rescue).
+#
+#  Lists installed kernels (linux-kage-ryu, linux), prints the currently-
+#  active one (uname -r), and lets the user set the GRUB default by editing
+#  /etc/default/grub:GRUB_DEFAULT and re-running grub-mkconfig. Privileged
+#  steps go through pkexec.
+#
+#  Usage:
+#    nyxus-kernel-switch                       List installed + active
+#    nyxus-kernel-switch --json                Same, machine-readable
+#    nyxus-kernel-switch --set linux-kage-ryu  Make Kage-Ryu the default
+#    nyxus-kernel-switch --set linux           Make stock linux the rescue default
+#    nyxus-kernel-switch --help
+#
+#  Logs to ~/.cache/nyxus/kernel-switch.log
+#
+#  (c) 2026 JOSEPH SIERENGOWSKI - NYX-J5W-2026-SIERENGOWSKI-LOCKED
+# ============================================================================
+set -euo pipefail
+
+LOG_DIR="${HOME}/.cache/nyxus"
+LOG="${LOG_DIR}/kernel-switch.log"
+mkdir -p "${LOG_DIR}"; touch "${LOG}"
+ts()   { date '+%Y-%m-%dT%H:%M:%S%z'; }
+log()  { printf '[%s] %s\n' "$(ts)" "$*" >>"${LOG}"; }
+die()  { log "FATAL: $*"; printf 'nyxus-kernel-switch: %s\n' "$*" >&2; exit 1; }
+
+# Canonical NYXUS pair — Kage-Ryu primary, stock linux rescue only.
+# (lts/zen/hardened were dropped from packages.x86_64 2026-07-23.)
+KNOWN=(linux-kage-ryu linux)
+
+list_installed() {
+  local out=()
+  for k in "${KNOWN[@]}"; do
+    if pacman -Q "$k" &>/dev/null; then
+      ver="$(pacman -Q "$k" | awk '{print $2}')"
+      out+=("${k}|${ver}")
+    fi
+  done
+  printf '%s\n' "${out[@]}"
+}
+
+cmd_list() {
+  local active; active="$(uname -r)"
+  printf 'active: %s\n' "${active}"
+  printf 'policy: Kage-Ryu = primary · stock linux = rescue\n'
+  printf 'installed:\n'
+  list_installed | while IFS='|' read -r name ver; do
+    [[ -z "${name}" ]] && continue
+    role="rescue"
+    [[ "${name}" == "linux-kage-ryu" ]] && role="primary"
+    printf '  %-18s %s  (%s)\n' "${name}" "${ver}" "${role}"
+  done
+}
+
+cmd_json() {
+  local active rows="["
+  active="$(uname -r)"
+  local first=1
+  while IFS='|' read -r name ver; do
+    [[ -z "${name}" ]] && continue
+    role="rescue"
+    [[ "${name}" == "linux-kage-ryu" ]] && role="primary"
+    [[ ${first} -eq 0 ]] && rows+=","
+    rows+="{\"name\":\"${name}\",\"version\":\"${ver}\",\"role\":\"${role}\"}"
+    first=0
+  done < <(list_installed)
+  rows+="]"
+  printf '{"active":"%s","policy":"kage-primary-stock-rescue","installed":%s}\n' \
+    "${active}" "${rows}"
+}
+
+cmd_set() {
+  local target="$1"
+  case "${target}" in
+    linux-kage-ryu|linux) ;;
+    *) die "unknown kernel: ${target} (allowed: ${KNOWN[*]})" ;;
+  esac
+  pacman -Q "${target}" &>/dev/null || die "not installed: ${target}"
+  log "set default kernel: ${target}"
+
+  # Prefer the dedicated Kage helper when flipping back to Kage-Ryu —
+  # it sets GRUB_DEFAULT=saved + grub-set-default on the kage menuentry.
+  if [[ "${target}" == "linux-kage-ryu" ]] && command -v nyxus-set-grub-default-kage >/dev/null 2>&1; then
+    if pkexec nyxus-set-grub-default-kage; then
+      printf 'default kernel set: linux-kage-ryu (via nyxus-set-grub-default-kage)\n'
+      printf 'reboot to apply.\n'
+      return 0
+    fi
+    log "nyxus-set-grub-default-kage failed — falling back to GRUB_DEFAULT rewrite"
+  fi
+
+  local entry=""
+  local cfg=/boot/grub/grub.cfg
+  [[ -r "${cfg}" ]] || die "${cfg} unreadable (run as root or after grub-install)"
+
+  if [[ "${target}" == "linux-kage-ryu" ]]; then
+    entry="$(grep -E "^[[:space:]]*menuentry .*kage-ryu" "${cfg}" \
+              | head -1 \
+              | grep -oP "'\K[^']+(?=' *\{)" || true)"
+    if [[ -z "${entry}" ]]; then
+      entry="$(grep -oP "menuentry '\K[^']*kage-ryu[^']*" "${cfg}" | head -1 || true)"
+    fi
+    [[ -n "${entry}" ]] || die "no Kage-Ryu menuentry in ${cfg}"
+  else
+    # Stock linux rescue entry — prefer an explicit "rescue" / "stock"
+    # title, else the first non-kage linux menuentry.
+    entry="$(grep -oP "menuentry '\K[^']*(stock|rescue)[^']*linux[^']*" "${cfg}" | head -1 || true)"
+    if [[ -z "${entry}" ]]; then
+      entry="$(awk -F\' '
+        /^[[:space:]]*menuentry / {
+          if ($2 ~ /linux/ && $2 !~ /kage/ && $2 !~ /fallback/ && $2 !~ /recovery/) {
+            print $2; exit
+          }
+        }
+      ' "${cfg}")"
+    fi
+    [[ -n "${entry}" ]] || die "no stock linux menuentry in ${cfg}"
+  fi
+
+  local tmp; tmp="$(mktemp -t nyxus-grub-XXXXXX)"
+  printf 'GRUB_DEFAULT="%s"\n' "${entry}" >"${tmp}"
+  pkexec sh -c "
+    set -e
+    [ -f /etc/default/grub.bak.nyxus ] \
+      || cp /etc/default/grub /etc/default/grub.bak.nyxus
+    grep -v '^GRUB_DEFAULT=' /etc/default/grub > /etc/default/grub.tmp.nyxus
+    cat '${tmp}' >> /etc/default/grub.tmp.nyxus
+    install -m 0644 -o root -g root /etc/default/grub.tmp.nyxus /etc/default/grub
+    rm -f /etc/default/grub.tmp.nyxus
+    grub-mkconfig -o /boot/grub/grub.cfg
+  "
+  local rc=$?
+  rm -f "${tmp}"
+  [[ ${rc} -eq 0 ]] || die "pkexec failed (admin denied or grub-mkconfig errored)"
+  printf 'default kernel set: %s (entry: %s)\n' "${target}" "${entry}"
+  printf 'reboot to apply.\n'
+}
+
+case "${1:-list}" in
+  list|"")        cmd_list ;;
+  --json|-j)      cmd_json ;;
+  --set|-s)       [[ $# -ge 2 ]] || die "usage: --set <kernel>"; cmd_set "$2" ;;
+  --help|-h)      sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *)              die "unknown arg: $1 (try --help)" ;;
+esac

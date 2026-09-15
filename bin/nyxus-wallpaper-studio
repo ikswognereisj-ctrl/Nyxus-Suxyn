@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec python3 "${NYXUS_APP_DIR:-/opt/nyxus}"/nyxus_wallpaper_studio.py "$@"

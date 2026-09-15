@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# nyxus-pdf-thumbnailer — first page of a PDF as a PNG, for the freedesktop
+# Thumbnail Managing Standard.
+#
+#   nyxus-pdf-thumbnailer <size> <input.pdf> <output.png>
+#
+# ── WHY THIS EXISTS AT ALL (WIP-710) ────────────────────────────────────────
+#
+# `WIP-502` ruled that `tumbler` is the wrong fix for this build's missing
+# thumbnails, and it is right: nothing here speaks tumbler's D-Bus interface.
+# The mechanism that IS used — by nautilus, and now by NYXUS Files — is the
+# `.thumbnailer` definition file, and a package only gets a preview if it
+# ships one.
+#
+# Measured on 2026-08-16 against the definitions this image's packages
+# install: `ffmpegthumbnailer` covers video and audio, `glycin` (which arrives
+# with nautilus) covers still images. **NOTHING on the ISO ships a
+# `.thumbnailer` for `application/pdf`** — `zathura-pdf-mupdf` is a plugin
+# with no command line, and poppler's tools describe themselves to nobody.
+#
+# So the missing half is a definition, not a package: `poppler` is already in
+# `packages.x86_64` (it is what `pdftoppm` comes from) and can rasterise a
+# page today. The three lines of `usr/share/thumbnailers/nyxus-pdf.thumbnailer`
+# are the whole feature, and this script exists only because `pdftoppm` names
+# its output `<prefix>.png` rather than writing to the exact path the standard
+# hands it in `%o`.
+#
+# Because it is a definition and not a special case inside our file manager,
+# **nautilus gets PDF thumbnails from it too**. A fix that only our app can
+# see would have left the two file managers still disagreeing, which is the
+# complaint `WIP-502` opens with.
+#
+# © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+set -euo pipefail
+
+size="${1:-128}"
+src="${2:-}"
+out="${3:-}"
+
+[[ -n "$src" && -n "$out" ]] || {
+  echo "usage: $(basename "$0") <size> <input.pdf> <output.png>" >&2
+  exit 2
+}
+[[ -r "$src" ]] || exit 1
+
+# A size that is not a positive integer is not clamped, it is refused: passing
+# junk to -scale-to makes pdftoppm render at its default 150 DPI, which for an
+# A0 poster is a 12,000-pixel PNG dropped into the user's thumbnail cache.
+[[ "$size" =~ ^[0-9]+$ ]] && (( size > 0 && size <= 4096 )) || size=128
+
+command -v pdftoppm >/dev/null 2>&1 || exit 1
+
+# pdftoppm appends its own ".png", so it is given a PREFIX and the result is
+# moved onto the path the caller actually asked for. The temporary lives beside
+# the destination so the move is a rename within one filesystem and never a
+# copy that another reader could catch half-done.
+tmp="$(mktemp -u "${out}.XXXXXX")"
+trap 'rm -f -- "${tmp}.png"' EXIT
+
+# -f 1 -l 1 -singlefile : the first page and only the first page, with no page
+# number glued onto the filename. Without -singlefile the output is
+# "<prefix>-1.png" and the move below finds nothing.
+if ! pdftoppm -png -singlefile -f 1 -l 1 -scale-to "$size" -- "$src" "$tmp" \
+     >/dev/null 2>&1; then
+  exit 1
+fi
+[[ -s "${tmp}.png" ]] || exit 1
+mv -f -- "${tmp}.png" "$out"

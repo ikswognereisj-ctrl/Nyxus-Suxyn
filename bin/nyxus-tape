@@ -1,0 +1,1849 @@
+#!/usr/bin/env python3
+r"""NYXUS Suxyn — the tape: keep the song you are hearing.       TRK-3817
+
+ARM it, and every song that plays through from its start is kept into your
+own library — the audio, the artist, the title, the album, the cover art and
+the synced words, as files you own and can play with the power off.
+
+    nyxus-tape --arm          start collecting
+    nyxus-tape --disarm       stop
+    nyxus-tape --resume       re-honour a standing `armed: true` at session
+                              start. Started by an exec-once; starts NOTHING
+                              if he had it off. See resume()'s docstring for
+                              the measurement that opened it     TRK-3959
+    nyxus-tape --toggle       the bar's right-click entry and Settings both
+                              call this; there is one state, two surfaces
+    nyxus-tape --status       JSON: armed, what is on tape, what was kept
+    nyxus-tape --probe        JSON: is this image able to do it at all
+
+── ⚠ THE STATE IS A FACT, AND THESE ARE THE FIELDS THAT MAKE IT ONE ───────
+`--status` prints the state file CORRECTED AGAINST /proc, never the file as
+written. The three fields a surface must not ignore:  TRK-3829
+
+    "beat":    unix seconds, re-stamped every 10 s by the running daemon.
+               A surface that reads ~/.config/nyxus/tape.json directly (the
+               bar does) has no pid to check, so it treats a heartbeat older
+               than 45 s as OFF. This is what makes a SIGKILLed daemon decay
+               to "off" on his bar instead of lying there lit for ever.
+    "stale":   true when the FILE said armed and reality disagreed. Always
+               present, true or false -- it used to be written only on the
+               failing branch, so a reader could not tell "fresh" from "this
+               build does not say".
+    "daemons": how many tape daemons are actually running. It is 1 when
+               armed and 0 when not. TWO IS THE DEFECT of 2026-09-07 and a
+               surface should be able to see it rather than infer it.
+
+Exit codes: 0 done · 4 tools missing · 5 the daemon did not come up ·
+6 --disarm could not stop it (the state is deliberately LEFT ARMED, because
+a control that cannot stop the tape must not draw itself as off).
+
+── ⚠ THIS RECORDS YOUR OWN OUTPUT. IT IS NOT A DOWNLOADER. ────────────────
+Written down because the next lane WILL be tempted to "improve" it, and the
+improvement would be a different feature with a different meaning.
+
+This reads the PulseAudio monitor of the sink the player is already feeding
+— the same signal your speakers get, on your machine, that you are already
+listening to. It is taping the radio. It never contacts a music service, it
+holds no session, it sends no identifiers, and it cannot fetch anything you
+are not currently playing: a four-minute song takes four minutes, because
+there is nothing here that goes faster than sound.
+
+⛔ DO NOT replace this with yt-dlp or any stream-ripper. That is not what was
+asked for ("keep the song we hear"), it is a materially different act, and it
+would break the one property that makes this honest: **you can only keep what
+you are actually listening to.**
+
+── ⚠ ARM/DISARM IS THE WHOLE DESIGN, AND IT IS THE OWNER'S ────────────────
+The obvious shape — "press KEEP on the song you like" — cannot work, because
+by the time you press it the song is half over. The expensive answer is a
+permanent rolling buffer, and this build's stated principle is that idle cost
+is the point.
+
+The owner's own instruction removed the problem: *"i want a button to turn it
+on or off incase i need to switch through songs that way i dont record
+2seconds then i skips."* So the model is not "keep this one", it is
+**"I am collecting now"**:
+
+  DISARMED (the default)  Nothing runs. No daemon, no `parec`, no buffer, no
+                          disk, no CPU, no audio device held. Idle cost is
+                          not "small", it is **zero**.
+  ARMED                   Every qualifying track that plays FROM ITS START is
+                          taped whole, because arming happened before the
+                          track began.
+
+Consequence, deliberate and stated: **arming in the middle of a song does not
+keep that song.** The tape starts at the next track boundary. A half-track is
+not a library file, and a feature that silently produced them is the exact
+pile of two-second fragments the owner asked for a button to prevent. The
+surfaces say "starts with the next song" rather than pretending otherwise.
+
+No rolling buffer was built. The only buffer here is PREROLL_SEC (0.6 s), and
+it exists for a different reason — see THE HEAD, below.
+
+── ⚠ COMMERCIALS. THE OWNER ASKED, AND HE WAS RIGHT TO. ───────────────────
+"one thing real fast what about if it plays comericals". A recorder that
+opens a stream and writes until the track ends splices an advert into the
+middle of a saved song, and you find out months later while listening to it.
+
+MEASURED ON THE OWNER'S OWN SESSION, 2026-09-07 01:20, YouTube Music free
+tier in Chromium — not theorised:
+
+    01:20:16  Playing | South River Technologies | WebDrive | …  len 36.301s
+    01:20:17  <no player at all, for one poll>
+    01:20:17  Playing | Dove US | Dove Body Wash | 15s | …       len 15.021s
+    01:20:32  Stopped | (artist, title, album ALL EMPTY)         len 0
+    01:20:33  Playing | TheHipHopCanal | Lil Wayne - Run This Town  len 164.961s
+
+Four things follow, and two of them kill the obvious implementation:
+
+1. **`xesam:artist`, `xesam:title` and `mpris:length` DO change for an
+   advert.** MPRIS is a reliable ad signal here. Good.
+2. ⚠ **`mpris:trackid` DOES NOT CHANGE. EVER.** All five rows above carry the
+   identical `…/Track5279E7E6D748D91A0EC5A4AF0CC1AE43` — two different adverts
+   AND two different songs. Chromium publishes one static trackid for the
+   whole tab. **Keying the recorder on trackid, which is the first thing
+   anybody would write, would have spliced every advert into every file and
+   looked correct while doing it.** Never trackid.
+   ⚠ Identity is `xesam:artist` + `xesam:title`, with `mpris:length` checked
+   separately to a tolerance — NOT as part of the key. An earlier revision
+   made length part of the key and it was one millisecond from deleting
+   finished songs at random; `Now.ident` carries the measurement.
+3. ⚠ **`xesam:album` being empty is NOT an ad signal**, however plausible it
+   looks. It is empty for the adverts *and* empty for "TheHipHopCanal | Lil
+   Wayne - Run This Town", a perfectly real track played from a YouTube
+   video. A heuristic on album would have thrown away real songs.
+4. There is a transient state at every boundary where the player briefly
+   vanishes or reports `Stopped` with every field blank. That is NOT an
+   error and must not be treated as one — it is simply "not my track", which
+   closes the gate.
+
+── ⚠ THE AD BREAK, OBSERVED END TO END WITH ITS OUTCOME ───────────────────
+The 01:20 rows above are transitions. This one is the whole event WITH what
+the tape actually did, captured 2026-09-07 01:44 on his session while he was
+listening, armed, unprompted — the proof that the rule below works:
+
+    01:43:47  Playing | City Girls | Good Love | RAW | 232.801s   ← taping
+    01:44:33  Stopped | City Girls | Good Love …  trackid → …/NoTrack
+    01:44:34  Playing | NEMLUVIO… | Scratch Resistance Pool Out 30 | 30.061s
+    01:45:04  Playing | Pantene   | Pantene-KOL-ENG-SunkissGlow…   | 36.281s
+    01:45:41  Playing | Imperium Music Group | Pretty Problems | 131.000s
+
+  → `Good Love.flac` was written at 01:44, at the song's end and BEFORE the
+    first advert. Neither advert opened a tape (30.1 s and 36.3 s are under
+    the 60 s floor) and neither reached a file. The next song opened a clean
+    tape of its own. `silencedetect` over the finished file finds exactly one
+    span above -50 dB for 1 s — at 229.4–233.0 s, the track's own outro tail,
+    contiguous with the end. **No gap anywhere in the body: no splice, no
+    dropout, no doubled audio at the join.**
+
+⚠ TWO THINGS THIS RUN CORRECTED, both of which look like nothing in a log:
+
+a) **The adverts carry a real `xesam:artist` AND `xesam:title`** ("Pantene").
+   So `eligible()`'s requirement that a track be *named* rejects nothing —
+   MIN_TRACK_SEC is doing ALL of the work of keeping adverts out. That is why
+   the floor is a setting and why this file refuses to imply more.
+
+b) **MPRIS fields arrive ONE AT A TIME, not as one atomic update.** At
+   01:45:41 the same track was published four times in a second, gaining
+   artist, then album, then `Playing` — the first row had an EMPTY artist.
+   Opening a tape on a partial row would file a real song under
+   "Unknown artist". Nothing here does, but only because `eligible()` also
+   requires `Playing`, which is the LAST field to land. That is load-bearing
+   and was previously accidental; do not relax it.
+
+**THE RULE: audio is written ONLY while MPRIS still reports the same track
+the tape was opened on.** The moment it deviates — advert, boundary, blank,
+player gone — the gate closes and bytes are dropped on the floor. When the
+triple comes back, the gate reopens and writing resumes into the same tape.
+No new dependency, no level heuristic.
+
+⚠ A LEVEL/SILENCE HEURISTIC WAS CONSIDERED AND REJECTED. It would eventually
+cut a quiet passage out of a real song, which is a worse and much less
+visible failure than an advert in a file.
+
+⚠ WHAT THIS DOES NOT GUARANTEE. Adverts do not open a tape of their own
+because of MIN_TRACK_SEC (60 s) — the two measured adverts were 36.3 s and
+15.0 s. An advert longer than that floor, carrying a non-empty artist and
+title, WOULD be eligible to open a tape. There is no field in what Chromium
+publishes that separates a long advert from a short song; `mpris:trackid` is
+constant, there is no `xesam:url`, and `CanSeek`/`CanGoNext`/`CanPause` were
+all true during playback. So the floor is the honest bound, it is a setting,
+and this docstring says so rather than the feature quietly pretending.
+
+── ⚠ WHICH MONITOR. THERE ARE TWO AND THEY ARE NOT THE SAME SIGNAL. ───────
+The owner runs EasyEffects, so his machine carries two RUNNING monitors:
+
+    easyeffects_sink.monitor                     float32le 2ch 48000Hz
+    alsa_output.pci-…analog-stereo.monitor       s32le     2ch 48000Hz
+
+MEASURED: Chromium's sink-input is on sink 34 = `easyeffects_sink`. So the
+easyeffects monitor carries **the music, pre-effects**, and the hardware
+monitor carries **everything the machine plays, post-effects**.
+
+DEFAULT `tape_source = "player"` — the monitor of whatever sink the player is
+actually feeding, RESOLVED AT RUNTIME rather than hardcoded. Three reasons,
+in order of weight:
+
+1. **Nothing else is on it.** The hardware sink is where notifications, event
+   sounds and every other app land. Recording there bakes a notification blip
+   permanently into a library file, and he finds out on playback.
+2. **EasyEffects is a listening preference, not part of the song.** Baking his
+   EQ into the file is irreversible, and it gets applied a SECOND time when he
+   plays the file back through the same chain. Doubled EQ.
+3. **It follows him.** Resolving the player's sink means moving Chromium's
+   output moves the tape with it, with nothing to reconfigure.
+
+`tape_source = "output"` records the default sink's monitor instead — literally
+what came out of the speakers, effects and all — for anyone who wants that.
+Both are offered because "the song we hear" is genuinely ambiguous once an
+effects chain is in the path, and guessing silently is worse than asking.
+
+⚠ READING A MONITOR IS PASSIVE. `parec` on a `.monitor` source is a reader;
+it does not take the device, does not change the sink's format, and cannot
+pause, seek or interrupt the player. Proven, not assumed — see
+docs/proof/tape-0907/.
+
+── ⚠ THE HEAD, AND WHY THE FILE IS TRIMMED FROM THE FRONT ─────────────────
+MPRIS announces the new track slightly BEFORE its audio reaches the monitor
+(the sink has tens of ms of buffering), so opening the gate on the boundary
+event captures a little of the previous track's tail rather than losing this
+one's head — the safe direction. PREROLL_SEC guarantees it.
+
+The END boundary is the trustworthy one, so the finished file is aligned to
+it: take the LAST `mpris:length` seconds of what was captured. That drops the
+pre-roll and the previous tail exactly, with no guesswork about latency.
+
+── ⚠ A SKIPPED TRACK IS NEVER SAVED ───────────────────────────────────────
+A tape is written to the library only if its gated audio reaches
+COMPLETE_FRACTION (0.95) of the track's own `mpris:length`. Skip at two
+seconds and the tape is deleted, which is the entire point of the button.
+Disarming mid-track deletes the tape in progress; it never leaves a stub.
+
+── where the scratch lives, and what it costs while ARMED ─────────────────
+Scratch PCM goes in $XDG_RUNTIME_DIR (tmpfs — RAM, not disk), so a song that
+is never kept costs **zero disk writes and zero disk wear**. s16le/48k/stereo
+is 187.5 KB/s, so a 4-minute song holds about 45 MB of RAM while it plays and
+frees it at the boundary. MAX_TRACK_SEC caps that: past 15 minutes it is a DJ
+set or a livestream, not a song, and the tape is abandoned.
+
+── format, and why lossless is not obviously right ────────────────────────
+⚠ The source is ALREADY LOSSY (YouTube Music streams compressed audio). FLAC
+therefore preserves lossy audio at roughly six times the size — it buys no
+fidelity over the stream. What it does buy is the avoidance of a SECOND
+generation of loss, and that matters here precisely because **this capture is
+unrepeatable**: it happened in real time, once.
+
+Default `tape_format = "flac"`, because FLAC → MP3 is always available later
+and MP3 → FLAC never undoes anything. `"mp3"` (320k, ID3v2.3 + APIC) is
+offered for size. Both carry tags and embedded cover art; both are read by
+the Media app, which takes tags from GStreamer's Discoverer.
+
+⚠ NO mutagen. It is not installed on the owner's machine and adding a Python
+dependency to ship a tag is the wrong trade when `ffmpeg` — already present,
+already a package — writes Vorbis comments, ID3v2 and an embedded picture in
+one invocation. Verified on his ffmpeg 9.0.1 for both containers.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import threading
+import time
+import unicodedata
+from pathlib import Path
+
+# ── the constants the docstring argues for ────────────────────────────────
+RATE = 48000
+CHANNELS = 2
+SAMPLE_BYTES = 2                     # s16le
+BYTES_PER_SEC = RATE * CHANNELS * SAMPLE_BYTES      # 192000
+CHUNK = 16384                        # ~85 ms; small enough that a gate edge
+                                     # lands within a tenth of a second
+
+PREROLL_SEC = 0.6                    # see THE HEAD
+COMPLETE_FRACTION = 0.95             # see A SKIPPED TRACK IS NEVER SAVED
+MAX_TRACK_SEC = 900                  # 15 min: past this it is not a song
+HOLD_SEC = 240                       # how long a paused tape waits for its
+                                     # track to come back from an advert
+DEFAULT_MIN_TRACK_SEC = 60           # the honest advert floor
+BEAT_SEC = 10                        # how often the daemon re-stamps `beat`
+STALE_BEAT_SEC = 45                  # a heartbeat older than this is not a
+                                     # running tape. See THE HEARTBEAT.
+STOP_GRACE_SEC = 5.0                 # SIGTERM, then SIGKILL. See stop_daemons()
+LENGTH_TOL_SEC = 2.0                 # see Now.ident: mpris:length re-publishes
+                                     # with small variations DURING a track,
+                                     # measured at 99 ms. Exact equality on it
+                                     # silently deletes finished songs.
+
+HOME = Path.home()
+CONF_DIR = HOME / ".config" / "nyxus"
+SETTINGS = CONF_DIR / "settings.json"
+STATE = CONF_DIR / "tape.json"
+KEEPS_DIR = HOME / "Music" / "NYXUS Keeps"
+
+# ⚠ THE INDEX IS A CONTRACT WITH THE MEDIA APP, NOT A CACHE. TRK-3822.
+# Written here, read there, specified in docs/CONTRACT_KEPT_LIBRARY.md.
+# It sits beside Media's own `library.json` in the same XDG data directory
+# on purpose: it is the same kind of object, it is regenerable, and it must
+# never live inside ~/Music, where it would show up as a file in his library.
+#
+# ⚠ IT IS NOT THE SOURCE OF TRUTH. The FILES are. The index records what the
+# tape cannot re-derive from a file later -- WHEN a song was kept, and which
+# monitor it came off -- plus the tags, so a library view can group and sort
+# without decoding every FLAC. A missing or stale index must degrade to a
+# directory walk, never to an empty library: see the contract doc.
+INDEX = Path(os.environ.get("XDG_DATA_HOME") or (HOME / ".local" / "share")) \
+    / "nyxus" / "media" / "keeps.json"
+
+# ══ THE COVER LEDGER ══════════════════════════════════════════════ TRK-3859
+#
+# ⚠ WHAT WAS ACTUALLY WRONG, BECAUSE THE BRIEF HAD IT ONE STEP OFF. The brief
+# said this recorder "embeds whatever MPRIS exposed" and should be changed to
+# read `mpris:artUrl` the way the bar's popup does. It ALREADY read artUrl,
+# and already copied the bytes at tape-open rather than holding the path --
+# the comment in `Tape.__init__` says why. So `artUrl` was never the missing
+# piece; TWO other things were, and they are what changed:
+#
+#   1 · WHEN. The URL is sampled once, at the instant the tape opens, which
+#       is the instant the metadata CHANGED. Chromium publishes a track's
+#       fields in stages: the artist and title land first and `artUrl` can
+#       still be pointing at the previous song's temp file, or at the
+#       channel avatar YouTube shows before the album art resolves. One
+#       sample at the earliest possible moment is the worst moment to take
+#       it. `Tape.settle_art()` now re-copies while the metadata for THIS
+#       track keeps arriving, for ART_SETTLE_SEC, so the value that gets
+#       embedded is the settled one rather than the first one.
+#
+#   2 · WHETHER. Nothing checked that the image was a cover at all. Measured
+#       on the owner's machine: 92 kept FLACs carrying essentially TWO
+#       distinct images -- a channel avatar reading "JOSEPH PLAYLIST" and the
+#       Chromium logo. That is a CONTENT defect; every tile in Media looked
+#       identical because every file genuinely held the same picture.
+#
+# The test is `nyxus_media.py`'s own, moved upstream to where the damage is
+# done: AN IMAGE THAT TURNS UP UNDER MORE THAN ONE ALBUM IS NOT A COVER
+# (commit 3ff54348, `Library._reject_source_icons`). Here that is one lookup
+# -- the sha1 of the bytes against a ledger of digest -> album -- and the
+# verdict is remembered, so a source icon is caught once and skipped for
+# ever after.
+#
+# ⚠ A WRONG COVER IS WORSE THAN NONE. When the verdict is "icon" the art is
+# simply not embedded and Media draws its honest NO COVER plate.
+#
+# ⚠ AND THE FIRST SIGHTING CANNOT BE JUDGED. A digest with no history is
+# embedded, because one observation cannot distinguish a cover from an icon.
+# `--covers-scan` exists for exactly that: it reads the files already kept
+# and seeds the ledger from them, so the guard is armed by history instead of
+# waiting to accumulate it.
+COVERS = INDEX.parent / "cover-ledger.json"
+COVER_LEDGER_MAX = 5000              # digests kept; oldest dropped past this
+COVER_ALBUMS_KEPT = 64               # album keys remembered per image
+
+# ── ⚠ TWO ALBUMS WAS NOT ENOUGH EVIDENCE. THREE IS.        TRK-3960
+# The original bound was "more than one album", which is the right IDEA and
+# the wrong THRESHOLD, because the album key is derived from tags a browser
+# publishes and those are not clean. MEASURED on his 315 kept songs, the
+# distinct-album counts split with nothing anywhere near the middle:
+#
+#     the Chromium logo        104 distinct albums   a source icon
+#     a channel avatar          16 distinct albums   a source icon
+#     every real cover           1 distinct album    a cover
+#     the four false convictions 1 distinct album    (2 under the old key)
+#
+# There is a gap of a hundred albums between the two populations and the
+# rule was drawing its line at two. Every wrong verdict on his machine was a
+# 2, and no correct verdict was below 16. Three costs nothing real and puts
+# the line inside the gap instead of on top of the noise.
+#
+# ⚠ THE COST OF THE TWO DIRECTIONS IS NOT SYMMETRIC, which is why the line
+# goes here and not lower. Missing an icon embeds one wrong picture in one
+# file. Convicting a cover destroys a real one for every song of that album
+# from then on, and the file is written once -- `--covers-scan` reads what
+# was embedded, it cannot put back what never was.
+COVER_ICON_ALBUMS = 3
+ART_SETTLE_SEC = 25.0                # see 1 above
+
+
+def runtime_dir() -> Path:
+    """tmpfs if we have one, so an unkept song costs no disk wear at all."""
+    rd = os.environ.get("XDG_RUNTIME_DIR")
+    base = Path(rd) if rd and os.path.isdir(rd) else Path("/tmp")
+    return base / "nyxus" / "tape"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  settings + state
+# ═══════════════════════════════════════════════════════════════════════════
+
+def read_json(path: Path) -> dict:
+    """Never raises. A missing or corrupt file is 'no opinion', not an error;
+    this process must never put a traceback in front of the owner."""
+    try:
+        d = json.loads(path.read_text(encoding="utf-8"))
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def write_json(path: Path, doc: dict) -> None:
+    """Atomic, because the shell has a FileView watching this path and a
+    half-written file would be parsed as garbage exactly once per write."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=2),
+                       encoding="utf-8")
+        os.replace(tmp, path)
+    except Exception:
+        pass
+
+
+def index_add(dest: Path, lrc: Path | None, now: Now, fmt: str,
+              source: str, art: bool) -> None:
+    """Append one kept song to the index. See docs/CONTRACT_KEPT_LIBRARY.md.
+
+    ⚠ REBUILT BY PATH, NOT APPENDED BLINDLY. An entry whose file no longer
+    exists is dropped on every write, so trashing a song from the Media app
+    (which uses Gio trash, and cannot be expected to know about this file)
+    cannot leave a ghost row in a library view for ever. The index converges
+    on the directory instead of drifting away from it.
+    """
+    try:
+        doc = read_json(INDEX)
+        rows = [r for r in (doc.get("tracks") or [])
+                if isinstance(r, dict) and r.get("path")
+                and r.get("path") != str(dest)
+                and os.path.exists(r["path"])]
+        rows.append({
+            "path": str(dest),
+            "lrc": str(lrc) if lrc and lrc.exists() else None,
+            "artist": now.artist,
+            "album": now.album,
+            "title": now.title,
+            # The track's own length as the PLAYER reported it. The file's
+            # decoded duration can differ by a chunk boundary; a library view
+            # that wants the exact figure should read the file.
+            "duration": round(now.length, 3),
+            "kept_at": int(time.time()),
+            "format": fmt,
+            "source": source,
+            "art": bool(art),
+        })
+        rows.sort(key=lambda r: r.get("kept_at", 0))
+        INDEX.parent.mkdir(parents=True, exist_ok=True)
+        tmp = INDEX.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps({"v": 1, "dir": str(KEEPS_DIR),
+                                   "tracks": rows},
+                                  ensure_ascii=False, indent=2),
+                       encoding="utf-8")
+        os.replace(tmp, INDEX)
+    except Exception:
+        # ⚠ The index is a convenience. Failing to write it must never cost
+        # the owner the song, which is already safely on disk by this point.
+        pass
+
+
+def settings() -> dict:
+    return read_json(SETTINGS)
+
+
+def opt_format() -> str:
+    v = str(settings().get("tape_format", "flac")).lower()
+    return v if v in ("flac", "mp3") else "flac"
+
+
+def opt_source() -> str:
+    v = str(settings().get("tape_source", "player")).lower()
+    return v if v in ("player", "output") else "player"
+
+
+def opt_min_track() -> int:
+    try:
+        n = int(settings().get("tape_min_seconds", DEFAULT_MIN_TRACK_SEC))
+    except Exception:
+        return DEFAULT_MIN_TRACK_SEC
+    return max(5, min(600, n))
+
+
+def state() -> dict:
+    return read_json(STATE)
+
+
+def _cmdline(pid: int) -> bytes:
+    try:
+        return Path("/proc/%d/cmdline" % pid).read_bytes()
+    except Exception:
+        return b""
+
+
+def pid_alive(pid: int) -> bool:
+    if not pid or pid == os.getpid():
+        return False
+    try:
+        os.kill(pid, 0)
+    except Exception:
+        return False
+    # ⚠ A recycled pid would read as alive. Confirm it is actually us before
+    # believing the state file — a stale `armed: true` with somebody else's
+    # pid would make the toggle un-pressable.
+    return b"nyxus-tape" in _cmdline(pid)
+
+
+def daemon_pids() -> list[int]:
+    """EVERY tape daemon this user is running, found in /proc — never from
+    the state file.                                              TRK-3829
+
+    ⚠ THIS IS THE FIX FOR THE BUG THAT MADE THE STATE UNTRUSTWORTHY, and
+    the shape of it is worth reading before touching anything here.
+
+    `--disarm` used to SIGTERM the ONE pid the state file recorded, wait
+    three seconds, and then write `armed: false` whether or not the daemon
+    had actually gone. The daemon's SIGTERM handler sets a flag, but the
+    main loop is blocked in `self.follow.stdout.readline()` — and under
+    PEP 475 Python RETRIES an interrupted read, so the handler runs and the
+    loop goes straight back to sleep until the player publishes another
+    line. On a paused player that is never. So:
+
+        press disarm → daemon survives → file says disarmed
+        press arm    → arm() believes the file → A SECOND DAEMON
+
+    Two daemons then recorded the same audio and took turns writing the one
+    state file, which is precisely why "is it on?" could not be answered.
+    Found on the owner's machine 2026-09-07 (two live pids, 25 MB of orphan
+    PCM in his tmpfs). Three things fix it and all three are needed:
+      • the daemon tears its children down inside the handler, so the
+        readline returns EOF at once (Deck.run § bye);
+      • stop_daemons() escalates to SIGKILL and CONFIRMS death;
+      • arm() and disarm() both work from THIS list, not from the file, so
+        a daemon the file has forgotten is still found and still stopped.
+
+    Cheap: /proc scan of numeric entries only, no subprocess.
+    """
+    me = os.getpid()
+    out = []
+    try:
+        names = os.listdir("/proc")
+    except Exception:
+        return out
+    for name in names:
+        if not name.isdigit():
+            continue
+        pid = int(name)
+        if pid == me:
+            continue
+        cmd = _cmdline(pid)
+        # ⚠ ARGV ELEMENTS, NOT A SUBSTRING OF THE WHOLE COMMAND LINE.
+        #                                                     TRK-3959
+        # This used to be `b"nyxus-tape" in cmd and b"--daemon" in cmd`, a
+        # substring test against the raw NUL-joined buffer, so ANY process
+        # whose command line merely MENTIONS both strings counted as a tape
+        # daemon. Tripped by accident on 2026-09-08: one ssh command
+        # containing the words `nyxus-tape --daemon` made `--status` report
+        # `"daemons": 1` on a machine with no daemon running at all.
+        #
+        # ⚠ AND IT IS NOT A COSMETIC MISCOUNT, WHICH IS WHY IT IS FIXED
+        # RATHER THAN NOTED. `arm()` and `disarm()` both work from this
+        # list BY DESIGN (that is TRK-3829's fix and it is right), and
+        # `stop_daemons()` escalates to SIGKILL and confirms death. So a
+        # false positive here does not just miscount — it makes
+        # `nyxus-tape --arm` SIGKILL an unrelated process because its
+        # command line quoted this program's own name. A shell wrapper, a
+        # log tail, `pgrep -af`, or an agent's own ssh line all qualify.
+        # `--resume` reads the same list, so a stray match would also make
+        # it silently decline to restore the tape.
+        #
+        # ⚠ AND ARGV MEMBERSHIP ALONE IS STILL NOT ENOUGH — round 1 of this
+        # fix asserted exactly that and its own test passed for the wrong
+        # reason (the decoy process died on startup, so nothing was ever
+        # matched against). `sh -c 'sleep 5' nyxus-tape --daemon` has both
+        # strings as genuine argv ELEMENTS and is not a tape.
+        #
+        # So: POSITION, not membership. The daemon is spawned exactly one
+        # way — `arm()` runs `[sys.executable, exe, "--daemon"]` — and a
+        # shebang launch is `[exe, "--daemon"]`. In both, this program is
+        # argv[0] or argv[1] and `--daemon` is the argument right after it.
+        # Nothing that merely quotes the name can occupy that slot.
+        argv = [a for a in cmd.split(b"\0") if a]
+        for i in (0, 1):
+            if len(argv) > i + 1 \
+                    and (argv[i] == b"nyxus-tape"
+                         or argv[i].endswith(b"/nyxus-tape")) \
+                    and argv[i + 1] == b"--daemon":
+                out.append(pid)
+                break
+    return sorted(out)
+
+
+def stop_daemons(pids: list[int] | None = None) -> int:
+    """SIGTERM, confirm, SIGKILL, confirm. Returns how many are STILL alive.
+
+    ⚠ Never reports success it has not measured: the caller writes the
+    disarmed state only after this has come back 0.
+    """
+    live = [p for p in (daemon_pids() if pids is None else pids) if p]
+    for pid in live:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except Exception:
+            pass
+    deadline = time.time() + STOP_GRACE_SEC
+    while time.time() < deadline:
+        live = [p for p in live if pid_alive(p)]
+        if not live:
+            return 0
+        time.sleep(0.05)
+    for pid in live:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except Exception:
+            pass
+    deadline = time.time() + 2.0
+    while time.time() < deadline:
+        live = [p for p in live if pid_alive(p)]
+        if not live:
+            return 0
+        time.sleep(0.05)
+    return len(live)
+
+
+def clean_scratch() -> int:
+    """Delete the raw PCM scratch. Returns the bytes reclaimed.  TRK-3829
+
+    ⚠ `/run/user/<uid>` IS RAM. A daemon killed with SIGKILL never runs
+    its `finally`, so its half-written tape stays in tmpfs until the next
+    reboot — 25 MB of the owner's memory was sitting there on 2026-09-07,
+    from daemons that had already been killed. Called on every arm, on
+    every disarm, and by the daemon before it starts recording.
+
+    ⚠ CALLED ONLY WHEN NO DAEMON IS ALIVE. It would otherwise unlink the
+    file a running tape is still writing into, and the song would be lost
+    at the exact moment it was about to be kept.
+    """
+    freed = 0
+    if daemon_pids():
+        return 0
+    d = runtime_dir()
+    try:
+        for f in d.iterdir():
+            if f.suffix not in (".pcm", ".art"):
+                continue
+            try:
+                freed += f.stat().st_size
+                f.unlink()
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return freed
+
+
+def live_state() -> dict:
+    """The state file, corrected against reality. The daemon can be killed
+    (a reboot, an OOM, a crash) without getting to rewrite the file, and a
+    surface that believed it would show ARMED for ever.
+
+    ⚠ `stale` is ALWAYS present now, true or false. It was documented in
+    the status contract and only ever written on the failing branch, so a
+    reader could not tell "fresh" from "this build does not say".
+
+    ⚠ `daemons` is the /proc count, not a wish: two of them is the defect
+    this file spent a night on and a surface should be able to see it.
+    """
+    s = state()
+    pids = daemon_pids()
+    recorded = int(s.get("pid") or 0)
+    # Alive means: the recorded pid is one of the daemons actually running.
+    # A daemon running under a pid the file has FORGOTTEN is not "armed" as
+    # far as the file goes -- but it is still counted, and arm() stops it.
+    alive = recorded in pids if recorded else False
+    if s.get("armed") and not alive:
+        s["armed"] = False
+        s["taping"] = ""
+    beat = int(s.get("beat") or 0)
+    if s.get("armed") and beat and (time.time() - beat) > STALE_BEAT_SEC:
+        # The pid is alive but the daemon has stopped stamping. Something is
+        # wedged; do not tell a surface it is recording.
+        s["armed"] = False
+        s["taping"] = ""
+    s["stale"] = bool(state().get("armed")) and not s.get("armed")
+    s["daemons"] = len(pids)
+    return s
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  which monitor
+# ═══════════════════════════════════════════════════════════════════════════
+
+def run(cmd: list[str], timeout: float = 5.0) -> str:
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True,
+                           timeout=timeout)
+        return p.stdout
+    except Exception:
+        return ""
+
+
+def default_sink() -> str:
+    return run(["pactl", "get-default-sink"]).strip()
+
+
+def player_sink() -> str:
+    """The sink the player is actually feeding.
+
+    ⚠ Parsed out of `pactl list sink-inputs` TEXT rather than `-f json`,
+    because the json formatter is a newer pactl and this has to work on
+    whatever the image ships. Text output is stable and has been for years.
+    """
+    out = run(["pactl", "list", "sink-inputs"])
+    sink_no = ""
+    for block in out.split("Sink Input #"):
+        if not block.strip():
+            continue
+        m = re.search(r"^\s*Sink:\s*(\d+)\s*$", block, re.M)
+        if not m:
+            continue
+        # any browser/player stream will do; the point is to find the sink
+        # a *media* stream is on, not to identify the app
+        if re.search(r'application\.name\s*=\s*"[^"]*"', block):
+            sink_no = m.group(1)
+            if re.search(r"media\.role\s*=\s*\"?music", block) or \
+               re.search(r"media\.name\s*=\s*\"Playback\"", block):
+                break
+    if not sink_no:
+        return ""
+    for line in run(["pactl", "list", "short", "sinks"]).splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 2 and parts[0].strip() == sink_no:
+            return parts[1].strip()
+    return ""
+
+
+def monitor_source() -> str:
+    """Resolve to a `.monitor` name. Falls back down a chain rather than
+    failing, because 'no source' means the whole feature silently does
+    nothing and the owner is never told why."""
+    if opt_source() == "player":
+        s = player_sink()
+        if s:
+            return s + ".monitor"
+    s = default_sink()
+    if s:
+        return s + ".monitor"
+    for line in run(["pactl", "list", "short", "sources"]).splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 2 and parts[1].endswith(".monitor"):
+            return parts[1]
+    return ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  identity — the triple, NEVER the trackid
+# ═══════════════════════════════════════════════════════════════════════════
+
+SEP = "\x1f"     # a unit separator: cannot occur in a title, unlike "|"
+FOLLOW_FMT = ("{{status}}" + SEP + "{{xesam:artist}}" + SEP +
+              "{{xesam:title}}" + SEP + "{{xesam:album}}" + SEP +
+              "{{mpris:length}}" + SEP + "{{mpris:artUrl}}")
+
+
+class Now:
+    """One MPRIS observation."""
+
+    __slots__ = ("status", "artist", "title", "album", "length", "art")
+
+    def __init__(self, line: str = "") -> None:
+        f = line.split(SEP)
+        f += [""] * (6 - len(f))
+        self.status = f[0].strip()
+        self.artist = f[1].strip()
+        self.title = f[2].strip()
+        self.album = f[3].strip()
+        try:
+            self.length = int(f[4] or 0) / 1_000_000.0   # µs → s
+        except Exception:
+            self.length = 0.0
+        self.art = f[5].strip()
+
+    @property
+    def ident(self) -> str:
+        """The drift-proof half of identity: artist + title.
+
+        ⚠ NOT `mpris:trackid` — it is one constant for the whole Chromium tab
+        (see the module docstring), and the 01:44 ad break re-confirmed it:
+        two adverts and two songs all carried Track5279E7E6D748D91A0EC5A4AF0…
+
+        ⚠ AND NO LONGER `mpris:length` EITHER. MEASURED on the owner's
+        machine 2026-09-07, mid-track and unprompted, nothing touched:
+
+            01:45:41  Playing | Imperium Music Group | Pretty Problems | 131000000
+            01:46:29  Playing | Imperium Music Group | Pretty Problems | 130901000
+
+        **The player re-publishes `mpris:length` with a DIFFERENT value while
+        the same track keeps playing** — 99 ms apart here. This used to key on
+        `round(length)`, and 131.000 and 130.901 both round to 131, so that
+        song survived on one millisecond of margin. Had the drift crossed a
+        rounding boundary, `now.ident != t.ident` would have been true with
+        `now.eligible()` also true — which `Deck.on` reads as A SKIP, and the
+        response to a skip is to DELETE the tape. **A drifting field would
+        have silently discarded finished songs, occasionally, with nothing
+        logged and nothing to see.** Length is still a discriminator; it goes
+        through `same_track()` with slack instead of through string equality.
+        """
+        return "%s%s%s" % (self.artist, SEP, self.title)
+
+    def same_track(self, ident: str, length: float) -> bool:
+        """Is this the same track a tape was opened on?
+
+        Length still separates a radio edit from an album cut, but with
+        LENGTH_TOL_SEC of slack because the player is not precise about it.
+        """
+        return (self.ident == ident
+                and abs(self.length - length) <= LENGTH_TOL_SEC)
+
+    @property
+    def playing(self) -> bool:
+        return self.status == "Playing"
+
+    def eligible(self, floor: int) -> bool:
+        """Is this something we are willing to OPEN A TAPE on?
+
+        Not "is it a song" — nothing published here can answer that. This is
+        the advert floor plus the requirement that it is actually named.
+        """
+        return (self.playing and bool(self.artist) and bool(self.title)
+                and floor <= self.length <= MAX_TRACK_SEC
+                # audit 2026-09-08: the floor alone kept 90-170 s trailers
+                # and pharma spots as songs. Word list, owner-editable.
+                and not looks_like_advert(self.artist, self.title))
+
+
+_ADWORDS = HOME / ".config" / "nyxus" / "tape-adwords.txt"
+_adwords_cache: tuple[float, list] = (0.0, [])
+
+
+
+# ── audit 2026-09-08: no duplicates ───────────────────────────────────────
+# `unique()` still guards the filesystem, but the owner's rule is that a song
+# already in the library is not kept again. Same song = same lead artist +
+# same title with the YouTube suffixes stripped + length within 4 % / 6 s.
+_KEY_JUNK = re.compile(r"\s*[\(\[][^\)\]]*[\)\]]|\s+(?:feat|ft)\.?\s.*$|"
+                       r"\s+-\s+(?:extended|remix|live|remaster(?:ed)?).*$", re.I)
+_KEY_SPLIT = re.compile(r"\s*(?:&|,|;|/|\bx\b|\bfeat\.?\b|\bft\.?\b|\bfeaturing\b|\bwith\b|\band\b)\s+", re.I)
+_kept_cache: tuple[float, dict] = (0.0, {})
+
+
+def _norm_key(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
+
+
+def song_key(artist: str, title: str) -> str:
+    lead = _KEY_SPLIT.split(artist or "", maxsplit=1)[0]
+    t = _KEY_JUNK.sub("", title or "")
+    if lead and t.lower().startswith(lead.lower()):
+        t = re.sub(r"^\s*[-–—:|]\s*", "", t[len(lead):])
+    return "%s|%s" % (_norm_key(lead), _norm_key(t.strip('"\'“”‘’ ')))
+
+
+def kept_songs() -> dict:
+    """{song_key: [durations]} from the keeps index, re-read when it changes."""
+    global _kept_cache
+    try:
+        m = INDEX.stat().st_mtime
+    except OSError:
+        return {}
+    if m != _kept_cache[0]:
+        table: dict = {}
+        try:
+            for t in (read_json(INDEX) or {}).get("tracks", []):
+                if not Path(t.get("path", "")).exists():
+                    continue
+                table.setdefault(song_key(t.get("artist", ""), t.get("title", "")), []) \
+                     .append(float(t.get("duration") or 0))
+        except Exception:
+            table = {}
+        _kept_cache = (m, table)
+    return _kept_cache[1]
+
+
+def already_kept(now) -> bool:
+    durs = kept_songs().get(song_key(now.artist, now.title))
+    if not durs:
+        return False
+    L = float(now.length or 0)
+    return any(abs(d - L) <= max(6.0, 0.04 * L) for d in durs) if L else True
+
+
+def looks_like_advert(artist: str, title: str) -> bool:
+    """True if artist or title matches a line of ~/.config/nyxus/tape-adwords.txt.
+    Re-read when the file changes, so a word the owner adds counts for the
+    very next track. Never raises: a bad regex line is skipped."""
+    global _adwords_cache
+    try:
+        m = _ADWORDS.stat().st_mtime
+    except OSError:
+        return False
+    if m != _adwords_cache[0]:
+        pats = []
+        try:
+            for line in _ADWORDS.read_text().splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                try:
+                    pats.append(re.compile(line, re.I))
+                except re.error:
+                    continue
+        except OSError:
+            pass
+        _adwords_cache = (m, pats)
+    hay = "%s\n%s" % (artist or "", title or "")
+    return any(p.search(hay) for p in _adwords_cache[1])
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  naming
+# ═══════════════════════════════════════════════════════════════════════════
+
+_BAD = re.compile(r'[/\\\x00-\x1f]')
+
+
+def safe(part: str, fallback: str) -> str:
+    """A filename component. Slashes and control characters only; everything
+    else a person typed into a song title is allowed to survive, because a
+    library that mangles titles is a library you stop trusting."""
+    s = unicodedata.normalize("NFC", (part or "").strip())
+    s = _BAD.sub("-", s).strip(" .")
+    return s[:120] or fallback
+
+
+def track_paths(now: Now, fmt: str) -> tuple[Path, Path]:
+    """<keeps>/<Artist>/<Album>/<Title>.<ext>
+
+    ⚠ 'Unknown artist' / 'Unknown album' are DELIBERATE, and they are the
+    honest answer. MPRIS genuinely does not always publish an album — a track
+    played from a YouTube video has none — and filing it under a plausible
+    guess would put it somewhere the owner cannot find it and cannot correct.
+    The Media app already sorts empties last for exactly this reason.
+    """
+    artist = safe(now.artist, "Unknown artist")
+    album = safe(now.album, "Unknown album")
+    title = safe(now.title, "Untitled")
+    folder = KEEPS_DIR / artist / album
+    ext = "flac" if fmt == "flac" else "mp3"
+    return folder / ("%s.%s" % (title, ext)), folder / ("%s.lrc" % title)
+
+
+def unique(path: Path) -> Path:
+    """Never overwrite. A second capture of the same song is a second file,
+    not a silent replacement of one the owner may already have curated."""
+    if not path.exists():
+        return path
+    stem, suf = path.stem, path.suffix
+    for n in range(2, 100):
+        cand = path.with_name("%s (%d)%s" % (stem, n, suf))
+        if not cand.exists():
+            return cand
+    return path.with_name("%s (%d)%s" % (stem, int(time.time()), suf))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  lyrics — REUSE the fetcher this build already ships
+# ═══════════════════════════════════════════════════════════════════════════
+
+def lrc_from_cache(now: Now, dest: Path) -> bool:
+    """Write a STANDARD `[mm:ss.xx]` .lrc beside the audio.
+
+    ⚠ The words are NOT fetched a second way. `/usr/local/bin/nyxus-lyrics`
+    already does the lookup, already caches it, and already carries the
+    owner's `lyrics_online` consent — it checks that key itself before it
+    opens a socket, so calling it when consent is off is a no-op, not a leak.
+    We ask it for the path and read the file it names.
+
+    ⚠ Lines are rebuilt from the `anchor` flag, which is the fifth field and
+    means "this word's start is a LITERAL timestamp off the source LRC — the
+    first word of a line". Grouping on it reconstructs the original lines
+    exactly. A schema-1 document has only four fields and no anchor, so no
+    .lrc is written rather than one line per word, which no player wants.
+    """
+    try:
+        out = subprocess.run(
+            ["nyxus-lyrics", "--artist", now.artist, "--title", now.title,
+             "--duration", str(int(round(now.length)))],
+            capture_output=True, text=True, timeout=30).stdout.strip()
+        if not out.startswith("/"):
+            return False
+        doc = read_json(Path(out))
+        words = doc.get("words") or []
+        if doc.get("miss") or not words or len(words[0]) < 5:
+            return False
+        lines: list[tuple[float, list[str]]] = []
+        for w in words:
+            start, text, anchor = float(w[0]), str(w[2]), bool(w[4])
+            if anchor or not lines:
+                lines.append((start, [text]))
+            else:
+                lines[-1][1].append(text)
+        body = ["[re:nyxus-tape]", "[ti:%s]" % now.title,
+                "[ar:%s]" % now.artist]
+        if now.album:
+            body.append("[al:%s]" % now.album)
+        for start, ws in lines:
+            m, s = divmod(max(0.0, start), 60)
+            body.append("[%02d:%05.2f]%s" % (int(m), s, " ".join(ws)))
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text("\n".join(body) + "\n", encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  the cover ledger                                                 TRK-3859
+# ═══════════════════════════════════════════════════════════════════════════
+
+def album_key(artist: str, album: str) -> str:
+    """Which ALBUM an image was seen under. Normalised the same way
+    `safe()` is not -- this is an identity, not a filename.
+
+    ── ⚠ THE ARTIST IS NOT PART OF THIS KEY, AND IT USED TO BE ───────────
+    TRK-3960, and it convicted four real album covers on his own machine.
+
+    The rule this ledger enforces is "an image that turns up under more than
+    one ALBUM is not a cover". The key it actually compared was
+    `artist \\x1f album`, so ANY of these made one album look like two:
+
+      * a featured credit -- `xesam:artist` is "Nicki Minaj" on one track of
+        Beam Me Up Scotty and "Nicki Minaj & Drake" on the next;
+      * a compilation credit -- "Cardi B" vs
+        "Cardi B, Bad Bunny, & J Balvin" across Invasion of Privacy;
+      * an edition suffix -- "The Pinkprint (Deluxe)" and "The Pinkprint
+        (Deluxe Edition)" are one record with two spellings.
+
+    MEASURED in `~/.local/share/nyxus/media/cover-ledger.json` at
+    2026-09-08 04:20, against the file mtimes in ~/Music/NYXUS Keeps. Each
+    conviction's `seen` stamp equals the mtime of the song being kept at
+    that moment TO THE MINUTE, which is what makes this causal rather than
+    circumstantial -- the cover was refused as the file was written:
+
+      09-07 19:42  0e7f..→121a3e7575  Pink Friday: Roman Reloaded The Re-Up
+      09-07 20:10  44624c2447          Beam Me Up Scotty
+      09-07 21:22  0e7fe53206          The Pinkprint (Deluxe)
+      09-07 22:51  66dd686374          Invasion of Privacy
+
+    FOUR of the ten art-less songs in his library are these. The other six
+    are correct: four are the Chromium logo being properly refused, and two
+    (Planet Rock (Bonus Beats), Put You In A Room) were published with no
+    picture at all.
+
+    ⚠ SO: album only, with bracketed qualifiers stripped. Two records that
+    genuinely share a title now share a key, which can only ever make the
+    guard MORE cautious -- it merges albums, so it convicts less. That is
+    the safe direction for a rule whose failure mode is destroying a real
+    cover, and `COVER_ICON_ALBUMS` below is the other half of the answer.
+    """
+    s = unicodedata.normalize("NFKD", (album or "").strip())
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    s = s.casefold()
+    # "(Deluxe)", "(Deluxe Edition)", "[Explicit]", "(Remastered 2011)" --
+    # editions of one record, not different records.
+    s = re.sub(r"\s*[\(\[][^\)\]]*[\)\]]\s*", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def image_digest(path: Path) -> str:
+    """sha1 of the image's own bytes, or "" if it cannot be read."""
+    try:
+        h = hashlib.sha1()
+        with open(path, "rb") as fh:
+            for block in iter(lambda: fh.read(65536), b""):
+                h.update(block)
+        return h.hexdigest()
+    except Exception:
+        return ""
+
+
+def cover_albums(row: dict) -> list[str] | None:
+    """The album keys a ledger row has seen, or None for a row this build
+    cannot read.
+
+    ⚠ A PRE-TRK-3960 ROW IS "NO OPINION", NEVER A VERDICT. Those rows were
+    written under the artist-bearing key and their `icon` flag was computed
+    by the rule that convicted four of his real covers. Honouring that flag
+    would carry the defect forward for ever, so a `v1` row is ignored and
+    `--covers-scan` rebuilds the ledger from the files, which are and always
+    were the authority.
+    """
+    if not isinstance(row, dict):
+        return None
+    albums = row.get("albums")
+    return albums if isinstance(albums, list) else None
+
+
+def cover_verdict(digest: str, key: str) -> bool:
+    """True if this image may be embedded as THIS track's cover.
+
+    ⚠ THE LEDGER IS ADVISORY AND MUST NEVER COST THE SONG. Every failure
+    path here returns True: an unreadable, corrupt, absent or older-schema
+    ledger means the tape behaves exactly as it did before this existed.
+
+    ⚠ THE VERDICT IS DERIVED, NOT STORED.               TRK-3960
+    It used to be read out of a sticky `icon` flag -- "already convicted;
+    stays convicted" -- which meant a conviction made under a rule that was
+    later found wrong could never be undone, and four of them were wrong.
+    The flag is still WRITTEN, for `--covers-scan`'s report and for anything
+    that reads the file, but it is recomputed from `albums` every time it is
+    written and nothing reads it back as authority. This repo's standing
+    ruling: derive it, do not enumerate it.
+
+    Convictions are still monotonic in practice -- `albums` only grows -- so
+    the guarantee the sticky flag was protecting is unchanged.
+    """
+    if not digest:
+        return True
+    doc = read_json(COVERS)
+    row = (doc.get("images") or {}).get(digest)
+    albums = cover_albums(row)
+    if albums is None:
+        return True
+    seen = set(albums)
+    seen.add(key)
+    return len(seen) < COVER_ICON_ALBUMS
+
+
+def cover_record(digest: str, key: str, embedded: bool) -> None:
+    """Remember what this image was seen under, and convict it once it has
+    turned up under `COVER_ICON_ALBUMS` genuinely different albums."""
+    if not digest:
+        return
+    try:
+        doc = read_json(COVERS)
+        images = doc.get("images")
+        if not isinstance(images, dict):
+            images = {}
+        row = images.get(digest)
+        if not isinstance(row, dict):
+            row = {}
+        # A pre-TRK-3960 row starts its history empty rather than carrying
+        # its old artist-bearing key forward: that string is in a different
+        # key space and would sit in the set for ever, one permanent phantom
+        # album pushing every image one step closer to conviction.
+        albums = cover_albums(row) or []
+        if key not in albums:
+            albums.append(key)
+        row["albums"] = albums[-COVER_ALBUMS_KEPT:]
+        row["album"] = key
+        row["n"] = int(row.get("n") or 0) + 1
+        row["seen"] = int(time.time())
+        row["embedded"] = bool(embedded)
+        row["icon"] = len(set(row["albums"])) >= COVER_ICON_ALBUMS
+        images[digest] = row
+        if len(images) > COVER_LEDGER_MAX:
+            oldest = sorted(images.items(),
+                            key=lambda kv: kv[1].get("seen", 0))
+            for d, _r in oldest[:len(images) - COVER_LEDGER_MAX]:
+                images.pop(d, None)
+        write_json(COVERS, {"v": 1, "images": images})
+    except Exception:
+        pass
+
+
+def covers_scan() -> int:
+    """Seed the ledger from the songs already kept.  `nyxus-tape --covers-scan`
+
+    ⚠ THIS RETROFITS NOTHING. It opens no file for writing, re-tags nothing
+    and deletes nothing; it reads the embedded picture out of each kept
+    track, hashes it, and records which album it was found under. The 92
+    songs already saved keep exactly the art they have. What changes is that
+    the NEXT capture can be judged against real history instead of against
+    an empty ledger.
+
+    ⚠ AND IT IS ONLY AS GOOD AS THE BYTES MATCHING. The tape hashes the file
+    `artUrl` pointed at; this hashes what ffmpeg copied into the container.
+    `-c:v copy` is a byte copy in both directions, so they agree -- but if a
+    future encoder ever transcodes the picture the digests diverge and this
+    seeding simply stops helping. It cannot make anything worse: a digest
+    that matches nothing is a first sighting, which is already the
+    unjudgeable case.
+    """
+    if not KEEPS_DIR.is_dir():
+        print("no keeps directory at %s" % KEEPS_DIR)
+        return 0
+    seen = 0
+    files = sorted(f for f in KEEPS_DIR.rglob("*")
+                   if f.suffix.lower() in (".flac", ".mp3"))
+    # ⚠ REBUILT, NOT ACCUMULATED ONTO.                        TRK-3960
+    # This used to call `cover_record` per file, which merges into whatever
+    # the ledger already held. That is wrong for a scan whose whole premise
+    # is that THE FILES ARE THE AUTHORITY, and it is doubly wrong across the
+    # key change: a pre-TRK-3960 ledger holds `artist \x1f album` strings
+    # that no longer resolve to anything, and merging would leave every
+    # image carrying one dead album key for ever. A fresh dict built from
+    # 315 real files on disk needs no migration rules at all.
+    images: dict[str, dict] = {}
+    now = int(time.time())
+    for f in files:
+        try:
+            pic = subprocess.run(
+                ["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(f),
+                 "-an", "-c:v", "copy", "-f", "image2pipe", "-"],
+                capture_output=True, timeout=60)
+            if pic.returncode != 0 or not pic.stdout:
+                continue
+            digest = hashlib.sha1(pic.stdout).hexdigest()
+        except Exception:
+            continue
+        # <keeps>/<Artist>/<Album>/<Title>.<ext>
+        key = album_key(f.parent.parent.name, f.parent.name)
+        row = images.setdefault(digest, {"albums": [], "n": 0,
+                                         "seen": now, "embedded": True})
+        if key not in row["albums"]:
+            row["albums"].append(key)
+        row["n"] += 1
+    for row in images.values():
+        row["albums"] = row["albums"][:COVER_ALBUMS_KEPT]
+        row["album"] = row["albums"][-1] if row["albums"] else ""
+        row["icon"] = len(set(row["albums"])) >= COVER_ICON_ALBUMS
+    seen = sum(r["n"] for r in images.values())
+    write_json(COVERS, {"v": 1, "images": images})
+    icons = sum(1 for r in images.values() if r.get("icon"))
+    print("scanned %d of %d kept files; %d distinct images; "
+          "%d convicted as source icons (>= %d albums)"
+          % (seen, len(files), len(images), icons, COVER_ICON_ALBUMS))
+    return 0
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  the tape
+# ═══════════════════════════════════════════════════════════════════════════
+
+class Tape:
+    """One track's scratch recording, gated on its own identity."""
+
+    def __init__(self, now: Now, scratch: Path) -> None:
+        self.ident = now.ident
+        self.now = now
+        self.path = scratch / ("tape-%d.pcm" % int(time.time() * 1000))
+        self.fh = open(self.path, "wb")
+        self.written = 0
+        self.open_gate = True
+        self.held_since = 0.0
+        self.seams = 0
+        self.art: Path | None = None
+        self.art_url = ""
+        self.opened = time.time()
+        # ⚠ COPY THE COVER NOW. `mpris:artUrl` points at a Chromium temp file
+        # (/tmp/.org.chromium.Chromium.XXXXXX) that is replaced or unlinked
+        # at the next track change. Reading it at finalise time reads either
+        # the WRONG song's cover or nothing at all.
+        self.grab_art(now)
+
+    def grab_art(self, now: Now) -> None:
+        """Copy the bytes `artUrl` currently names, if they are new."""
+        url = (now.art or "").strip()
+        if not url.startswith("file://") or url == self.art_url:
+            return
+        src = Path(url[7:])
+        try:
+            if not src.is_file():
+                return
+            dst = self.path.with_suffix(".art")
+            shutil.copyfile(src, dst)
+            self.art = dst
+            self.art_url = url
+        except Exception:
+            pass
+
+    def settle_art(self, now: Now) -> None:
+        """Take a LATER artUrl for the same track, for a little while.
+
+        ⚠ THIS IS THE FIX, AND IT IS ABOUT TIMING, NOT ABOUT WHERE THE ART
+        COMES FROM.                                              TRK-3859
+        A tape opens at the moment the metadata changed, which is the
+        earliest and therefore worst moment to read `artUrl`: the player
+        publishes a track's fields in stages and the picture is routinely
+        the LAST thing to resolve. Every line `playerctl --follow` emits for
+        a track this deck is already recording is another, later look at the
+        same question, and the last answer inside the settle window is the
+        one that gets embedded.
+
+        ⚠ THE WINDOW IS BOUNDED ON PURPOSE. Past ART_SETTLE_SEC an artUrl
+        change is far more likely to be the NEXT track arriving early than
+        this one resolving late, and taking it would reintroduce exactly the
+        wrong-cover defect from the other end.
+        """
+        if time.time() - self.opened <= ART_SETTLE_SEC:
+            self.grab_art(now)
+
+    @property
+    def seconds(self) -> float:
+        return self.written / float(BYTES_PER_SEC)
+
+    def feed(self, data: bytes) -> None:
+        if self.open_gate:
+            try:
+                self.fh.write(data)
+                self.written += len(data)
+            except Exception:
+                pass
+
+    def gate(self, opened: bool) -> None:
+        if opened == self.open_gate:
+            return
+        self.open_gate = opened
+        if opened:
+            self.seams += 1
+            self.held_since = 0.0
+        else:
+            self.held_since = time.time()
+
+    def complete(self) -> bool:
+        return self.seconds >= COMPLETE_FRACTION * self.now.length
+
+    def close(self) -> None:
+        try:
+            self.fh.close()
+        except Exception:
+            pass
+
+    def discard(self) -> None:
+        self.close()
+        for p in (self.path, self.art):
+            try:
+                if p:
+                    p.unlink()
+            except Exception:
+                pass
+
+
+def encode(tape: Tape, fmt: str, source: str = "") -> Path | None:
+    """Trim, encode, tag and embed the cover in ONE ffmpeg invocation.
+
+    ⚠ Trimmed FROM THE FRONT: the end boundary is the reliable one, so we
+    keep the last `length` seconds. That discards the pre-roll and any tail
+    of the previous track without having to know the sink's latency.
+    """
+    dest, lrc = track_paths(tape.now, fmt)
+    dest = unique(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    skip = max(0.0, tape.seconds - tape.now.length)
+    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+           "-f", "s16le", "-ar", str(RATE), "-ac", str(CHANNELS)]
+    if skip > 0.001:
+        cmd += ["-ss", "%.3f" % skip]
+    cmd += ["-i", str(tape.path)]
+    # ⚠ IS THIS ACTUALLY A COVER? See the COVER LEDGER block above: an
+    # image that has already been seen under a different album is a player
+    # icon or a channel avatar, and embedding it is worse than embedding
+    # nothing. The digest is recorded either way, so the SECOND sighting of
+    # a source icon convicts it even though the first could not be judged.
+    have_art = tape.art is not None and tape.art.exists()
+    art_digest = image_digest(tape.art) if have_art else ""
+    art_key = album_key(tape.now.artist, tape.now.album)
+    if have_art and not cover_verdict(art_digest, art_key):
+        have_art = False
+    cover_record(art_digest, art_key, have_art)
+    if have_art:
+        cmd += ["-i", str(tape.art)]
+
+    if fmt == "mp3":
+        cmd += ["-c:a", "libmp3lame", "-b:a", "320k", "-id3v2_version", "3"]
+    else:
+        cmd += ["-c:a", "flac", "-compression_level", "5"]
+
+    cmd += ["-map", "0:a"]
+    if have_art:
+        cmd += ["-map", "1:v", "-c:v", "copy", "-disposition:v",
+                "attached_pic", "-metadata:s:v", "title=Album cover"]
+    for k, v in (("title", tape.now.title), ("artist", tape.now.artist),
+                 ("album", tape.now.album or "Unknown album"),
+                 ("comment", "Kept by NYXUS from this machine's own audio "
+                             "output, in real time.")):
+        if v:
+            cmd += ["-metadata", "%s=%s" % (k, v)]
+    cmd += [str(dest)]
+
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if p.returncode != 0 or not dest.exists() or dest.stat().st_size < 4096:
+            try:
+                dest.unlink()
+            except Exception:
+                pass
+            return None
+    except Exception:
+        return None
+
+    words = lrc.with_name(dest.stem + ".lrc")
+    got_words = lrc_from_cache(tape.now, words)
+    index_add(dest, words if got_words else None, tape.now, fmt, source,
+              have_art)
+    # audit 2026-09-08: Chromium's MPRIS art is 120x120. Upgrade the cover
+    # (and an "Unknown album" tag) from the iTunes Search API, detached, so
+    # the keep itself never waits on the network. Best effort.
+    try:
+        upgrader = shutil.which("nyxus-keeps-art")
+        if upgrader:
+            subprocess.Popen([upgrader, "--file", str(dest)],
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
+    except Exception:
+        pass
+    return dest
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  the daemon
+# ═══════════════════════════════════════════════════════════════════════════
+
+class Deck:
+    def __init__(self) -> None:
+        self.scratch = runtime_dir()
+        self.scratch.mkdir(parents=True, exist_ok=True)
+        self.fmt = opt_format()
+        self.floor = opt_min_track()
+        self.lock = threading.Lock()
+        # ⚠ Serialises the follow thread's `on()` against the shutdown
+        # path's `close_tape()`. Without it a SIGTERM landing mid-boundary
+        # could encode and discard the same tape from two threads. TRK-3829
+        self.deck = threading.RLock()
+        self.tape: Tape | None = None
+        self.preroll = bytearray()
+        self.preroll_cap = int(PREROLL_SEC * BYTES_PER_SEC)
+        self.kept = 0
+        self.last = ""
+        self.stop = threading.Event()
+        self.source = monitor_source()
+        self.parec: subprocess.Popen | None = None
+        self.follow: subprocess.Popen | None = None
+        # ⚠ ARMING MID-SONG MUST NOT TAPE THAT SONG. `playerctl --follow`
+        # emits the CURRENT track immediately on connect, so without this the
+        # very first line looks exactly like a track boundary and opens a tape
+        # on a song that is already half over. Caught on the owner's machine
+        # 2026-09-07: armed 115 s into a 209 s track and the deck reported
+        # "taping" it. The completion floor would have thrown the fragment
+        # away, so nothing wrong would have been SAVED -- but the state file
+        # said "taping <title>", which is the surface lying to him about what
+        # he is going to get. The first observation is a BASELINE, never a
+        # boundary.
+        self.primed = False
+
+    # ── state file, the one thing both surfaces read ──────────────────────
+    def publish(self, taping: str = None) -> None:
+        with self.lock:
+            t = self.tape
+            label = taping if taping is not None else (
+                ("%s — %s" % (t.now.artist, t.now.title)) if t else "")
+        write_json(STATE, {
+            "v": 1, "armed": True, "pid": os.getpid(),
+            # ⚠ THE HEARTBEAT.                                    TRK-3829
+            # The bar reads this FILE, not `--status`, so it has no pid to
+            # check: a SIGKILLed daemon would leave `armed: true` lit on his
+            # bar for ever, which is the same lie in a prettier place. The
+            # daemon re-stamps `beat` every BEAT_SEC while it lives, and
+            # TapeState.qml treats a heartbeat older than STALE_BEAT_SEC as
+            # OFF. So the indicator decays to off by itself when the thing
+            # it describes stops existing, with nothing to poll and no
+            # process spawned on the bar.
+            "beat": int(time.time()),
+            "taping": label, "kept": self.kept, "last": self.last,
+            "source": self.source, "format": self.fmt,
+            "dir": str(KEEPS_DIR),
+        })
+
+    def heartbeat(self) -> None:
+        """Re-stamp `beat` while nothing else is writing. A tape that plays
+        one 4-minute song publishes twice; the surfaces need to know it is
+        alive in between."""
+        while not self.stop.wait(BEAT_SEC):
+            try:
+                self.publish()
+            except Exception:
+                pass
+
+    # ── the audio thread: read forever, write only through the gate ───────
+    def pump(self) -> None:
+        assert self.parec and self.parec.stdout
+        while not self.stop.is_set():
+            data = self.parec.stdout.read(CHUNK)
+            if not data:
+                break
+            with self.lock:
+                t = self.tape
+                if t is None:
+                    # keep a short pre-roll so a track opened on the MPRIS
+                    # boundary cannot lose its own first samples
+                    self.preroll += data
+                    if len(self.preroll) > self.preroll_cap:
+                        del self.preroll[:-self.preroll_cap]
+                else:
+                    t.feed(data)
+
+    # ── tape lifecycle ────────────────────────────────────────────────────
+    def open_tape(self, now: Now) -> None:
+        with self.lock:
+            t = Tape(now, self.scratch)
+            t.feed(bytes(self.preroll))
+            self.preroll.clear()
+            self.tape = t
+        self.publish()
+
+    def close_tape(self, save: bool) -> None:
+        with self.lock:
+            t, self.tape = self.tape, None
+        if t is None:
+            return
+        t.close()
+        if not save or not t.complete():
+            t.discard()
+            self.publish("")
+            return
+        dest = encode(t, self.fmt, self.source)
+        t.discard()
+        if dest:
+            self.kept += 1
+            self.last = "%s — %s" % (t.now.artist, t.now.title)
+        self.publish("")
+
+    def on(self, now: Now) -> None:
+        if not self.primed:
+            # baseline only: whatever is playing at the moment of arming is
+            # already past its start and can never be a whole track
+            self.primed = True
+            self.base = now.ident
+            self.publish("")
+            return
+        if now.ident == getattr(self, "base", None) and self.tape is None:
+            # still the song he armed during -- not a boundary, still skipped
+            return
+        t = self.tape
+        if t is not None:
+            if now.same_track(t.ident, t.now.length) and now.playing:
+                t.gate(True)
+                t.settle_art(now)            # TRK-3859 — a later, better look
+                return
+            # ⚠ deviation: an advert, a boundary, a blank, or a skip.
+            t.gate(False)
+            if t.complete():
+                self.close_tape(True)               # natural end
+            elif now.eligible(self.floor) and not now.same_track(t.ident,
+                                                                t.now.length):
+                # a different real track began: he skipped. Drop the fragment
+                # — this is exactly what the button exists to prevent — and
+                # start a clean tape on the new one.
+                self.close_tape(False)
+            elif t.held_since and time.time() - t.held_since > HOLD_SEC:
+                self.close_tape(False)              # it never came back
+            else:
+                return                              # hold: advert in progress
+            t = None
+        if now.eligible(self.floor) and not already_kept(now):
+            self.base = None
+            self.open_tape(now)
+        else:
+            self.publish("")
+
+    # ── the metadata thread: every track boundary arrives here ───────────
+    def follow_loop(self, env: dict) -> None:
+        """`playerctl --follow`, read on a thread of its own.    TRK-3829
+
+        ⚠ It is a DAEMON thread on purpose: it can be blocked in a read that
+        will never return (a paused player publishes nothing at all), and
+        the process must still be able to exit the moment it is told to.
+        `self.deck` serialises it against the shutdown path so a tape cannot
+        be closed twice or half-encoded on the way out.
+        """
+        while not self.stop.is_set():
+            f = self.follow
+            if f is None or f.stdout is None:
+                return
+            line = f.stdout.readline()
+            if self.stop.is_set():
+                return
+            if not line:
+                # ⚠ the player vanished. That is 'not my track', not an
+                # error: close the gate and wait for it to come back.
+                with self.deck:
+                    self.on(Now(""))
+                if self.stop.wait(1.0):
+                    return
+                try:
+                    self.follow = subprocess.Popen(
+                        ["playerctl", "metadata", "--follow", "--format",
+                         FOLLOW_FMT], stdout=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL, text=True, env=env)
+                except Exception:
+                    return
+                continue
+            with self.deck:
+                self.on(Now(line.rstrip("\n")))
+
+    # ── run ───────────────────────────────────────────────────────────────
+    def run(self) -> int:
+        if not self.source:
+            return 3
+        # ⚠ Belt and braces with arm(): a daemon started by hand, or one
+        # whose predecessor was SIGKILLed, must not inherit orphan PCM in
+        # his RAM. No-ops if any other daemon is alive. TRK-3829
+        clean_scratch()
+        env = dict(os.environ)
+        self.parec = subprocess.Popen(
+            ["parec", "--device=" + self.source, "--format=s16le",
+             "--rate=%d" % RATE, "--channels=%d" % CHANNELS,
+             "--latency-msec=50"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env)
+        self.follow = subprocess.Popen(
+            ["playerctl", "metadata", "--follow", "--format", FOLLOW_FMT],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+            env=env)
+
+        def bye(*_a):
+            # ⚠ SETTING A FLAG THE MAIN LOOP CANNOT SEE IS THE WHOLE BUG.
+            # TRK-3829. The follow reader blocks in `stdout.readline()`, and
+            # PEP 475 makes Python RESUME that read once the handler returns
+            # -- so the old daemon set its flag and went straight back to
+            # sleep until the player published another line. On a PAUSED
+            # player that never came: `--disarm` gave up, wrote
+            # `armed: false`, and left the daemon recording; the next press
+            # started a SECOND one. Two fixes, because either alone can be
+            # defeated. (a) the read now lives in a DAEMON THREAD and the
+            # main thread waits on the event, so nothing blocking can hold
+            # the shutdown up; (b) the children are torn down here, so the
+            # reader unblocks too instead of sitting on a dead pipe.
+            self.stop.set()
+            for p in (self.follow, self.parec):
+                try:
+                    if p:
+                        p.terminate()
+                except Exception:
+                    pass
+        signal.signal(signal.SIGTERM, bye)
+        signal.signal(signal.SIGINT, bye)
+
+        threading.Thread(target=self.pump, daemon=True).start()
+        threading.Thread(target=self.heartbeat, daemon=True).start()
+        threading.Thread(target=self.follow_loop, args=(env,),
+                         daemon=True).start()
+        self.publish("")
+
+        try:
+            # ⚠ THE MAIN THREAD OWNS SHUTDOWN AND NOTHING ELSE. It holds no
+            # pipe, no socket and no lock, so a SIGTERM is answered in one
+            # wait interval no matter what the player, the sink or the
+            # encoder is doing. Measured: 5.13 s (SIGKILL escalation) before
+            # this change, 0.11 s after, against a silent player.
+            while not self.stop.wait(0.1):
+                pass
+        finally:
+            # ⚠ Disarming mid-track DELETES the tape. It never leaves a stub.
+            with self.deck:
+                self.close_tape(False)
+            for p in (self.parec, self.follow):
+                try:
+                    if p:
+                        p.terminate()
+                        p.wait(timeout=2)
+                except Exception:
+                    try:
+                        if p:
+                            p.kill()
+                    except Exception:
+                        pass
+            s = state()
+            # ⚠ ONLY IF THE FILE IS STILL OURS. A daemon that lost a race
+            # and is exiting after its replacement published must not
+            # overwrite the live one's `armed: true` with its own `false` --
+            # that is the two-daemon defect turned into a stuck OFF.
+            if int(s.get("pid") or 0) in (0, os.getpid()):
+                write_json(STATE, {"v": 1, "armed": False, "pid": 0,
+                                   "beat": 0, "taping": "",
+                                   "kept": self.kept, "last": self.last,
+                                   "dir": str(KEEPS_DIR),
+                                   "format": s.get("format", self.fmt)})
+            clean_scratch()
+        return 0
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  arm / disarm
+# ═══════════════════════════════════════════════════════════════════════════
+
+def missing_tools() -> list[str]:
+    return [t for t in ("parec", "playerctl", "ffmpeg")
+            if shutil.which(t) is None]
+
+
+def resume() -> int:
+    """Put the tape back the way he left it, once, at session start.
+
+    ── ⚠ THIS IS THE BUG THAT ATE HIS NIGHT, AND IT WAS WRITTEN DOWN ──────
+                                                             TRK-3959
+    `arm()`'s own docstring said it in as many words -- "NO SYSTEMD UNIT ...
+    nothing survives a reboot" -- and nothing ever acted on it. MEASURED on
+    his machine at 2026-09-08 04:05:
+
+        ~/.config/nyxus/tape.json   armed: true, beat 1788838833
+        beat 1788838833           = 2026-09-07 23:40:33
+        newest file in NYXUS Keeps  2026-09-07 23:40
+        `nyxus-tape --status`       "stale": true, "daemons": 0
+        `who -b`                    system boot 2026-09-08 03:09
+
+    So: he armed the tape, it kept songs until the session ended at 23:40,
+    the machine rebooted at 03:09, AND THE TAPE NEVER CAME BACK. His report
+    was "i had a song on before this one playing now so it didnt record it",
+    and the answer is not that the song failed the 95 % gate or the advert
+    floor -- THERE WAS NO DAEMON. Zero songs were kept between 23:40 and
+    04:05 because nothing was listening.
+
+    ⚠ AND THE FILE WAS LEFT SAYING `armed: true`, which is why this is a
+    resume and not an autostart. The daemon is SIGKILLed by the session
+    teardown and never gets to write `armed: false`, so the state on disk is
+    his last INSTRUCTION, still standing. Honouring it is restoring what he
+    asked for; ignoring it is silently countermanding him every boot.
+
+    ⚠ IT READS THE RAW FILE, NOT `live_state()`. `live_state()` corrects
+    `armed` against /proc, and at this moment the correction is exactly the
+    thing being repaired -- the recorded pid is dead BY DEFINITION here, so
+    the corrected view says "off" and a resume built on it could never fire.
+    The raw flag is the instruction; /proc is only consulted to make sure we
+    are not starting a second daemon.
+
+    ⚠ IT NEVER ARMS A TAPE HE DID NOT ARM. `armed: false`, a missing file, a
+    corrupt file -- all return 0 having started nothing. A fresh machine has
+    no file and stays off, which is the shipped state.
+    """
+    raw = state()
+    if raw.get("armed") is not True:
+        return 0                      # he turned it off. Leave it off.
+    if missing_tools():
+        return 4
+    if daemon_pids():
+        # Something is already running -- a session that did not fully tear
+        # down, or two logins. arm() is the one place allowed to reconcile
+        # that, and it does; do not open a race with it here.
+        return 0
+    return arm()
+
+
+def arm() -> int:
+    """⚠ NO SYSTEMD UNIT, AND STILL NONE — the daemon is a plain detached
+    child of the press that started it. What DID change on 2026-09-08 is
+    that `--resume` (above) re-honours a standing `armed: true` once per
+    session, so a reboot no longer silently countermands him. A boot with
+    `armed: false` still begins, correctly, disarmed.
+
+    ⚠ EXACTLY ONE DAEMON IS AN INVARIANT ENFORCED HERE, NOT AN ASSUMPTION.
+    TRK-3829. This used to read the state file and return early if it said
+    armed -- which is fine when the file is right, and is the second half of
+    the two-daemon bug when it is not: a survived disarm leaves a running
+    daemon with `armed: false` on disk, and this function then cheerfully
+    started another. It now works from `daemon_pids()`, the /proc truth:
+      • the recorded daemon is the only one running -> nothing to do;
+      • anything else at all (an extra, an orphan the file forgot, a live
+        daemon under a stale disarmed file) -> stop EVERY one of them and
+        start a single clean daemon.
+    """
+    if missing_tools():
+        return 4
+    pids = daemon_pids()
+    recorded = int(state().get("pid") or 0)
+    if pids == [recorded] and live_state().get("armed"):
+        return 0                                   # already armed, and true
+    if pids:
+        # An orphan, an extra, or a daemon the file has forgotten. Whichever
+        # it is, the owner pressed ARM and must end up with one tape running
+        # against the CURRENT settings -- not with somebody's leftover.
+        stop_daemons(pids)
+    clean_scratch()
+    exe = os.path.realpath(__file__)
+    subprocess.Popen([sys.executable, exe, "--daemon"],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     stdin=subprocess.DEVNULL, start_new_session=True)
+    for _ in range(40):
+        time.sleep(0.05)
+        if live_state().get("armed"):
+            return 0
+    return 5
+
+
+def disarm() -> int:
+    """Stop EVERY daemon, confirm it, then write the disarmed state.
+
+    ⚠ THE ORDER IS THE FIX.                                    TRK-3829
+    The old version SIGTERMed one pid, waited three seconds, and wrote
+    `armed: false` unconditionally -- so a daemon that had not died left the
+    file claiming a state that was not true, and every surface bound to that
+    file was then lying. Now the file is written only after `stop_daemons()`
+    has come back 0, and a survivor is reported as exit 6 with the state
+    left ARMED, because a control that cannot stop the tape must not draw
+    itself as off.
+
+    ⚠ Works from `daemon_pids()`, never from the recorded pid alone: the pid
+    in the file is exactly the thing that is wrong in the case that matters.
+    """
+    s = state()
+    left = stop_daemons()
+    if left:
+        return 6
+    write_json(STATE, {"v": 1, "armed": False, "pid": 0, "beat": 0,
+                       "taping": "",
+                       "kept": s.get("kept", 0), "last": s.get("last", ""),
+                       "format": s.get("format", opt_format()),
+                       "dir": str(KEEPS_DIR)})
+    clean_scratch()
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(add_help=True, description=__doc__)
+    g = ap.add_mutually_exclusive_group(required=True)
+    for flag in ("arm", "disarm", "toggle", "status", "probe", "daemon",
+                 "covers-scan", "resume"):
+        g.add_argument("--" + flag, action="store_true")
+    a = ap.parse_args()
+
+    if getattr(a, "covers_scan", False):
+        return covers_scan()
+    if a.resume:
+        return resume()
+    if a.probe:
+        miss = missing_tools()
+        print(json.dumps({"v": 1, "ok": not miss, "missing": miss,
+                          "dir": str(KEEPS_DIR)}))
+        return 0
+    if a.status:
+        s = live_state()
+        s.setdefault("armed", False)
+        s["dir"] = str(KEEPS_DIR)
+        s["format"] = opt_format()
+        s["ok"] = not missing_tools()
+        print(json.dumps(s))
+        return 0
+    if a.daemon:
+        return Deck().run()
+    if a.arm:
+        return arm()
+    if a.disarm:
+        return disarm()
+    if a.toggle:
+        return disarm() if live_state().get("armed") else arm()
+    return 2
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        sys.exit(130)
+    except Exception:
+        # ⚠ FAILS INVISIBLY. Nothing here ever raises into the owner's
+        # session; a broken tape is a tape that quietly did not happen.
+        sys.exit(1)

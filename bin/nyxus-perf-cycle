@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# ============================================================================
+#  NYXUS Suxyn — cycle the firmware performance profile, and say so on screen.
+#
+#  TRK-3702. Bound to the speed-gauge key (Fn+F6 on the Alienware, keycode 701).
+#
+#  WHY THIS EXISTS RATHER THAN A ONE-LINER IN hyprland.conf. Writing the profile
+#  needs root, the set of profiles is MACHINE-SPECIFIC, and a key that changes
+#  the machine's power behaviour with no feedback is worse than one that does
+#  nothing - you cannot tell whether it worked, and the effect is invisible.
+#
+#  IT READS THE CHOICES FROM THE MACHINE, never a hardcoded list. Measured on
+#  the Alienware 15 DA15265: low-power / balanced / performance. The owner's MSI
+#  has no platform_profile at all and this exits saying so rather than failing
+#  obscurely. Same principle the hardware Settings page runs on - ask the
+#  machine, do not assume the vendor.
+#
+#  PRIVILEGE. The node ships root-owned, and this used to write it through an
+#  UNCONDITIONAL `pkexec tee` - so the key asked for a password on every single
+#  press, which is what the owner reported on 2026-09-08. It now writes the node
+#  directly when it can and elevates only when it cannot, which is the same rule
+#  nyxus-hwcaps already followed. /etc/tmpfiles.d/nyxus-perf-key.conf makes the
+#  node group-writable to wheel at boot, so on this machine it never elevates.
+#
+#  The fallback elevates `nyxus-hwcaps set platform-profile`, NOT `tee`.
+#  Authenticating to tee as root authorises writing any file at all; the helper
+#  validates the value against the firmware's own choices and can write nothing
+#  else. No suid binary and no new helper either way.
+#
+#  Usage:  nyxus-perf-cycle           cycle to the next profile
+#          nyxus-perf-cycle status    print the current one and exit
+#          nyxus-perf-cycle <name>    set one directly
+# ============================================================================
+set -uo pipefail
+
+PROFILE=/sys/firmware/acpi/platform_profile
+CHOICES=/sys/firmware/acpi/platform_profile_choices
+
+notify() {
+  # ON SCREEN, like the volume keys. Owner 2026-09-08: pressing a key should
+  # show what it did on the same plate volume uses, not raise a corner
+  # notification. U+F625 (gauge) was checked against the installed Font
+  # Awesome 7 Free Solid file, not a cheat sheet - brand glyphs are not in
+  # that family and drawing tofu is a defect this build already shipped once.
+  # glyph below is U+F625 (gauge), a literal character rather than an
+  # escape: printf %b does not decode \\u and shipped tofu once.
+  nyxus-osd "" "$1" preferences-system-power
+}
+
+if [[ ! -r "${PROFILE}" ]]; then
+  notify "This machine exposes no firmware performance profile."
+  exit 1
+fi
+
+cur="$(cat "${PROFILE}" 2>/dev/null)"
+read -r -a modes <<< "$(cat "${CHOICES}" 2>/dev/null)"
+if [[ "${#modes[@]}" -eq 0 ]]; then
+  notify "No performance profiles are available."
+  exit 1
+fi
+
+case "${1:-cycle}" in
+  status) printf '%s\n' "${cur}"; exit 0 ;;
+  cycle)
+    # Next in the machine's own order, wrapping. If the current value is not in
+    # the list (it can be, on a driver mid-transition), start from the first.
+    next="${modes[0]}"
+    for i in "${!modes[@]}"; do
+      if [[ "${modes[$i]}" == "${cur}" ]]; then
+        next="${modes[$(( (i + 1) % ${#modes[@]} ))]}"
+        break
+      fi
+    done
+    ;;
+  *)
+    next="$1"
+    printf '%s\n' "${modes[@]}" | grep -qx -- "${next}" || {
+      notify "Unknown profile '${next}'. This machine offers: ${modes[*]}"
+      exit 1
+    }
+    ;;
+esac
+
+# Say it the way the OSD wants to be read: name the subject, then the state.
+pretty() {
+  case "$1" in
+    low-power)   printf 'Performance - Low power' ;;
+    balanced)    printf 'Performance - Balanced' ;;
+    performance) printf 'Performance - Performance' ;;
+    quiet)       printf 'Performance - Quiet' ;;
+    cool)        printf 'Performance - Cool' ;;
+    *)           printf 'Performance - %s' "$1" ;;
+  esac
+}
+
+# DIRECT FIRST, ELEVATE ONLY IF THE NODE REFUSES. /etc/tmpfiles.d/nyxus-perf-key.conf
+# makes platform_profile group-writable to wheel at boot, and once it is there
+# is nothing to authenticate for. The old code ran `pkexec tee` every time, so
+# the key prompted on every press - which is what the owner reported.
+wrote=0
+if [[ -w "${PROFILE}" ]] && printf '%s' "${next}" > "${PROFILE}" 2>/dev/null; then
+  wrote=1
+else
+  # The node is root-only on this machine (no tmpfiles rule, or an older
+  # kernel path). Elevate the HELPER, not `tee`: authenticating to tee as root
+  # authorises writing any file at all, while nyxus-hwcaps validates the value
+  # against the firmware's own choices list and can write nothing else.
+  if command -v nyxus-hwcaps >/dev/null 2>&1; then
+    nyxus-hwcaps set platform-profile "${next}" >/dev/null 2>&1 && wrote=1
+  fi
+fi
+
+now="$(cat "${PROFILE}" 2>/dev/null)"
+if [[ "${wrote}" -eq 1 && "${now}" == "${next}" ]]; then
+  notify "$(pretty "${now}")"
+else
+  if [[ -n "${now}" && "${now}" != "${next}" ]]; then
+    notify "Refused - still $(pretty "${now}")"
+  else
+    notify "Performance profile not changed"
+  fi
+  exit 1
+fi

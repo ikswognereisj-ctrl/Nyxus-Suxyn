@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# ============================================================================
+#  nyxus-deleak-home
+#
+#  Rewrite the builder's hardcoded /home/nyx (and /home/cosmic) paths in the
+#  three shipped skel configs whose parsers do not expand $HOME or ~ —
+#  qt5ct.conf / qt6ct.conf (color_scheme_path) and dunstrc (icon_path) — to
+#  each real user's own home. On the live stick the user IS nyx, so the paths
+#  resolve and the leak is invisible; on an installed system the user is
+#  whatever was typed into Calamares, /home/nyx does not exist, and every Qt
+#  app silently falls back to the stock Fusion palette while dunst loses its
+#  icons. nyxus_install.sh carries the same rewrite for the TUI path.
+#
+#  WHY THIS IS A SCRIPT AND NOT INLINE IN shellprocess.conf (2026-08-13):
+#  it started inline, and it took down the ENTIRE post-install step. The
+#  Calamares shellprocess module expands $word variables inside every command
+#  and defines only $ROOT and $USER; this loop's $h/$u/$c made expansion fail
+#  with "Missing variables: h,u,h,c,h,h,c" — and expansion is validated for
+#  the whole command LIST up front, so not one shellprocess command ran: no
+#  live-sudoers scrub, no autologin strip, no archiso-initcpio removal, no
+#  mkinitcpio, no snapper. Seen live on the 2026-08-13 UEFI install. A script
+#  called by bare path contains no $ for Calamares to chew on.
+#
+#  Runs inside the target chroot, after the users module. Idempotent: the
+#  pattern only matches the builder homes.
+#
+#  © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+# ============================================================================
+set -u
+
+for h in /home/*/; do
+  u=$(basename "$h")
+  [ "$u" = "nyx" ] && continue
+  for c in .config/qt5ct/qt5ct.conf .config/qt6ct/qt6ct.conf .config/dunst/dunstrc; do
+    [ -f "$h$c" ] || continue
+    sed -i -E "s#/home/(nyx|cosmic)/#$h#g" "$h$c"
+  done
+done
+exit 0

@@ -1,0 +1,342 @@
+#!/usr/bin/env bash
+# ════════════════════════════════════════════════════════════════════
+# nyxus-lock-weather · the lock screen's live sky
+#
+# Maps real weather onto the pre-rendered scenes in
+# /usr/share/nyxus/lock-scenes (rendered by scripts/render-lock-scenes.py)
+# and serves the text widgets beside them.
+#
+#   scene   print the CURRENT frame path — called by hyprlock's background
+#           reload_cmd once per second. HOT PATH: reads two small cache
+#           files and does arithmetic; it NEVER touches the network. The
+#           2026-08-02 lockout came from subprocess storms inside hyprlock,
+#           so this stays cheap enough to be invisible at 1 Hz.
+#   big     "<glyph> 12°"        (Nerd Font weather glyph + temperature)
+#   line    "Light rain · 12°C"  (condition text)
+#   sub     "feels 10° · ↑14° ↓8° · <area>"
+#   update  fetch wttr.in j1 (IP-geolocated, keyless), rewrite the cache.
+#           Serve-stale: every reader prints the old cache instantly and
+#           kicks `update` into the background when it is older than 30 min.
+#
+# Day/night: from the cached sunrise/sunset; with no cache it falls back to
+# 07:00–19:00. With no cache at all `scene` prints the pinned hero wallpaper
+# so hyprlock shows exactly what it always showed.
+#
+# Overrides (optional): ~/.config/nyxus/weather.conf may set
+#   NYX_WEATHER_LOC="Berlin"   (anything wttr.in accepts; default: IP locate)
+#   NYX_WEATHER_UNITS=F        (default C)
+# © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+# ════════════════════════════════════════════════════════════════════
+set -u
+CACHE_DIR="${HOME}/.cache/nyxus/lockweather"
+SCENES="/usr/share/nyxus/lock-scenes"
+HERO="/usr/share/backgrounds/nyxus/suxyn-concrete-rose.png"
+CONF="${HOME}/.config/nyxus/weather.conf"
+mkdir -p "${CACHE_DIR}"
+# shellcheck disable=SC1090
+[[ -r "${CONF}" ]] && source "${CONF}"
+LOC="${NYX_WEATHER_LOC:-}"
+UNITS="${NYX_WEATHER_UNITS:-C}"
+
+# phase counts per condition — MUST match render-lock-scenes.py SCENES table
+# (gate 13q3 counts the shipped frames against these numbers)
+phases() {
+  case "$1" in
+    clear) echo 4 ;;
+    partly|clouds|fog) echo 8 ;;
+    rain|snow|storm) echo 10 ;;
+    *) echo 8 ;;
+  esac
+}
+
+# WorldWeatherOnline code (wttr.in j1) → scene condition
+cond_of() {
+  case "$1" in
+    113) echo clear ;;
+    116) echo partly ;;
+    119|122) echo clouds ;;
+    143|248|260) echo fog ;;
+    200|386|389|392|395) echo storm ;;
+    179|182|185|227|230|323|326|329|332|335|338|350|368|371|374|377) echo snow ;;
+    176|263|266|281|284|293|296|299|302|305|308|311|314|317|320|353|356|359|362|365) echo rain ;;
+    *) echo clouds ;;
+  esac
+}
+
+glyph_of() {  # $1 condition · $2 daypart — Nerd Font "Weather Icons" range
+  case "$1-$2" in
+    clear-day)    printf '' ;;
+    clear-night)  printf '' ;;
+    partly-day)   printf '' ;;
+    partly-night) printf '' ;;
+    clouds-*)     printf '' ;;
+    fog-*)        printf '' ;;
+    rain-*)       printf '' ;;
+    snow-*)       printf '' ;;
+    storm-*)      printf '' ;;
+    *)            printf '' ;;
+  esac
+}
+
+# "06:45 AM" → minutes since midnight (empty-safe)
+mins() {
+  local t="${1:-}" h m ap
+  [[ "$t" =~ ^([0-9]{1,2}):([0-9]{2})[[:space:]]*([AP]M)$ ]] || { echo ""; return; }
+  h=$((10#${BASH_REMATCH[1]})); m=$((10#${BASH_REMATCH[2]})); ap="${BASH_REMATCH[3]}"
+  [[ "$ap" == "PM" && $h -ne 12 ]] && h=$((h + 12))
+  [[ "$ap" == "AM" && $h -eq 12 ]] && h=0
+  echo $((h * 60 + m))
+}
+
+daypart() {
+  local now sr ss
+  now=$((10#$(date +%H) * 60 + 10#$(date +%M)))
+  sr="$(cat "${CACHE_DIR}/sunrise" 2>/dev/null)"
+  ss="$(cat "${CACHE_DIR}/sunset" 2>/dev/null)"
+  if [[ -n "$sr" && -n "$ss" ]]; then
+    (( now >= sr && now < ss )) && echo day || echo night
+  else
+    (( now >= 420 && now < 1140 )) && echo day || echo night
+  fi
+}
+
+update() {
+  local url json code cond temp feels hi lo area sr ss dp deg
+  url="https://wttr.in/${LOC}?format=j1"
+  json="$(curl -fsL -m 8 "${url}" 2>/dev/null)" || return 1
+  [[ "${json}" == \{* ]] || return 1
+  read -r code temp tempf feels feelsf desc < <(jq -r '
+    .current_condition[0] |
+    "\(.weatherCode) \(.temp_C) \(.temp_F) \(.FeelsLikeC) \(.FeelsLikeF) \(.weatherDesc[0].value)"' \
+    <<<"${json}" 2>/dev/null) || return 1
+  [[ -n "${code:-}" && "${code}" != null ]] || return 1
+  read -r hi lo hif lof < <(jq -r '
+    .weather[0] | "\(.maxtempC) \(.mintempC) \(.maxtempF) \(.mintempF)"' <<<"${json}")
+  area="$(jq -r '.nearest_area[0].areaName[0].value // empty' <<<"${json}")"
+  # The coordinates were always in this response and were always thrown away.
+  # `LockEarth.qml` turns the globe to them, so they are cached here rather
+  # than fetched again — one request answers "what is the weather" and "where
+  # am I", and the two can never disagree about the location.
+  lat="$(jq -r '.nearest_area[0].latitude  // empty' <<<"${json}")"
+  lon="$(jq -r '.nearest_area[0].longitude // empty' <<<"${json}")"
+  [[ -n "$lat" ]] && printf '%s' "$lat" > "${CACHE_DIR}/lat"
+  [[ -n "$lon" ]] && printf '%s' "$lon" > "${CACHE_DIR}/lon"
+  sr="$(mins "$(jq -r '.weather[0].astronomy[0].sunrise // empty' <<<"${json}")")"
+  ss="$(mins "$(jq -r '.weather[0].astronomy[0].sunset // empty' <<<"${json}")")"
+  [[ -n "$sr" ]] && printf '%s' "$sr" > "${CACHE_DIR}/sunrise"
+  [[ -n "$ss" ]] && printf '%s' "$ss" > "${CACHE_DIR}/sunset"
+  if [[ "${UNITS}" == "F" ]]; then temp="$tempf"; feels="$feelsf"; hi="$hif"; lo="$lof"; fi
+  cond="$(cond_of "${code}")"
+  dp="$(daypart)"
+  deg=$'°'
+  printf '%s' "${cond}" > "${CACHE_DIR}/cond"
+  printf '%s %s%s' "$(glyph_of "${cond}" "${dp}")" "${temp}" "${deg}" \
+    > "${CACHE_DIR}/big"
+  printf '%s · %s%s%s' "${desc}" "${temp}" "${deg}" "${UNITS}" > "${CACHE_DIR}/line"
+  printf 'feels %s%s · ↑%s%s ↓%s%s%s' "${feels}" "${deg}" "${hi}" "${deg}" \
+    "${lo}" "${deg}" "${area:+ · ${area}}" > "${CACHE_DIR}/sub"
+  touch "${CACHE_DIR}/stamp"
+}
+
+freshen() {  # kick a background update when the cache has gone stale
+  local age=9999999
+  [[ -f "${CACHE_DIR}/stamp" ]] \
+    && age=$(( $(date +%s) - $(stat -c %Y "${CACHE_DIR}/stamp") ))
+  (( age > 1800 )) && ( update & ) >/dev/null 2>&1
+}
+
+# The header — one cool line for the lock's sky, weather- and hour-aware.
+# Rotates hourly (not per read, so it does not flicker between labels).
+header() {
+  local cond dp key lines idx
+  cond="$(cat "${CACHE_DIR}/cond" 2>/dev/null)"
+  dp="$(daypart)"
+  key="${cond:-none}-${dp}"
+  case "${key}" in
+    rain-*)   lines=("LET IT POUR · THE GLASS HOLDS" "RAIN ON GLASS, BASS IN THE WALLS" "THE CITY SOUNDS BETTER WET") ;;
+    storm-*)  lines=("THE STORM KNOCKS · NOBODY ANSWERS" "LIGHTNING WISHES IT WERE THIS FAST" "WEATHER WARNING: STILL BOOTING ANYWAY") ;;
+    snow-*)   lines=("COLD OUTSIDE · WARM CORES" "SNOW FALLS · UPTIME STANDS" "EVERY FLAKE HAND-RENDERED") ;;
+    fog-*)    lines=("LOW VISIBILITY · FULL CLARITY" "THE FOG ROLLS · THE HORIZON HOLDS") ;;
+    clear-day)   lines=("SUN'S OUT · NEON STAYS ON" "DAYLIGHT IS JUST ANOTHER ACCENT" "BUILT BY HAND, LIT BY A STAR") ;;
+    clear-night) lines=("THE MACHINE DREAMS IN NEON" "CLEAR SKIES OVER THE HORIZON LINE" "THE MOON CHECKS IN · ALL QUIET") ;;
+    partly-*|clouds-*) lines=("SOFT SKIES · SHARP EDGES" "CLOUD COVER FOR THE OVERCLOCKED" "THE SKY BUFFERS · WE DON'T") ;;
+    *-day)    lines=("ONE OF ONE" "EVERYTHING HERE IS HAND-BUILT") ;;
+    *)        lines=("NIGHT SHIFT NEVER ENDS" "ONE OF ONE") ;;
+  esac
+  idx=$(( ( 10#$(date +%j) * 24 + 10#$(date +%H) ) % ${#lines[@]} ))
+  printf '%s' "${lines[$idx]}"
+}
+
+# ── THE EARTH'S WEATHER FRAMES ───────────────────────────────────────────
+# Two images, and `LockEarth.qml` reads whichever of them exist. Both are
+# fetched into a TEMPORARY file and moved into place only on success, so the
+# lock can never sample a half-written JPEG — and a failed fetch silently
+# leaves yesterday's frame, which is the correct behaviour for a serve-stale
+# cache on a screen that must never wait.
+#
+#   geo.jpg  GOES-East GeoColor over the Americas. The only source that
+#            reliably sees LOW cloud: on 2026-08-23 it was the one that agreed
+#            with the owner that it was raining on him while the station report
+#            said 0.0 mm.
+#   ir.jpg   Clean infrared, band 13, from GOES-East, GOES-West and Himawari
+#            composited by NASA. Works at 3am as well as at noon, and its
+#            brightness IS cloud-top temperature, which is cloud-top HEIGHT —
+#            the thing that casts the shadows on the globe.
+#
+# ⛔ Never call this from the lock's hot path. It is minutes of network in the
+# worst case. `LockEarth.qml` runs it detached, every ten minutes, and never
+# reads its output.
+EARTH_DIR="${HOME}/.cache/nyxus/lockearth"
+GIBS_WMS="https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi"
+GIBS_SNAP="https://wvs.earthdata.nasa.gov/api/v1/snapshot"
+
+# ── A BLANK FRAME ARRIVES AS HTTP 200 WITH VALID JPEG MAGIC ───────────────
+# GIBS answers a request for a slot it has no data for with a fully black
+# image, not an error. `-f` passes, the ffd8 check passes, and without a size
+# floor that black frame atomically replaces a good one — the lock screen then
+# shows a planet with no weather on it and nothing anywhere says why.
+#
+# The floor here is MEASURED, not guessed, and the first attempt at it was
+# wrong in a way worth recording. 20000 was picked by eye from a 512px probe
+# where blanks were 1.7 KB. At the resolution this actually fetches, a fully
+# black 2048x1911 JPEG compresses to 22.8 KB and sailed straight over that
+# floor: the test went green while the frame was black in every pixel.
+#
+# Measured at the shipped sizes on 2026-09-01
+# (docs/proof/audit-0901/probe-geo-fullsize.py):
+#
+#     GeoColor 2048x1911   real 852-891 KB   blank 22.8 KB
+#     Band13   4096x2048   real 1063 KB      blank small
+#
+# So the floor is per-call and sits an order of magnitude clear of both.
+# If a layer or a size ever changes, re-run the probe and move it with them —
+# do not nudge it until a test passes.
+# THE TIMEOUT IS PER-CALL, AND THE INFRARED FRAME GETS MORE, because it was
+# silently losing the race. Measured on the installed machine: geo ~810 KB at
+# 2048x1911, ir ~1382 KB at 4096x2048 - 1.7x the bytes over four times the
+# pixels. When the sub-daily ladder was added this timeout was cut from 90s to
+# 60s for every call: fine for geo, tight for ir on wifi.
+#
+# The symptom is the worst kind. geo lands, ir does not, `haveIr` goes to zero,
+# and the shader draws FLAT CLOUD - no cloud-top height, so no parallax, no
+# shadows on the surface, no puff shading and no lightning, all four of which
+# read the infrared frame. A missing optional frame is a SUPPORTED state by
+# design, so it degrades silently to a worse-looking but correct globe and
+# nothing anywhere reports it.
+#
+# Only the call that needs headroom gets it: the ladder can try six rungs, and
+# six long timeouts on a dead network would run fifteen minutes on a job that
+# fires every ten.
+earth_fetch() {  # $1 = dest name, $2 = url, $3 = minimum bytes, $4 = timeout
+  local tmp min tmo; min="${3:-200000}"; tmo="${4:-90}"
+  # Clear stale temps for THIS target first. A fetch killed mid-flight - the
+  # session ending, the machine sleeping - leaves its mktemp behind and nothing
+  # prunes this directory. Observed: an orphaned 1.3 MB .ir.jpg.XXXXXX with no
+  # ir.jpg beside it.
+  rm -f "${EARTH_DIR}/.${1}."?????? 2>/dev/null
+  tmp="$(mktemp "${EARTH_DIR}/.${1}.XXXXXX")" || return 1
+  if curl -fsL -m "${tmo}" -o "${tmp}" "$2" 2>/dev/null \
+     && [[ -s "${tmp}" ]] \
+     && [[ "$(stat -c%s "${tmp}" 2>/dev/null || echo 0)" -ge "${min}" ]] \
+     && [[ "$(head -c 2 "${tmp}" | od -An -tx1 | tr -d ' ')" == "ffd8" ]]; then
+    mv -f "${tmp}" "${EARTH_DIR}/${1}"          # atomic: never a torn read
+  else
+    rm -f "${tmp}"; return 1                    # keep whatever is already there
+  fi
+}
+
+# The 10-minute slot GOES publishes on, N minutes before now, in UTC.
+earth_slot() {  # $1 = minutes back
+  date -u -d "-${1} minutes" +%Y-%m-%dT%H:%M:00Z 2>/dev/null \
+    | sed -E 's/:([0-9])[0-9]:00Z/:\10:00Z/'
+}
+
+# ── WHY THIS ASKS FOR A TIME OF DAY AND NOT JUST A DATE ────────────────────
+# It used to send TIME=YYYY-MM-DD. That pins the frame for the whole day, so
+# the ten-minute refresh re-downloaded the same picture until midnight and the
+# weather on the globe never changed. Owner, 2026-09-01: "its suppose to move
+# and show like real life clouds ... if a storm rolls i its suppose to show
+# that exact look of things". Right, and a date-only request cannot do that.
+#
+# Measured on the live endpoint: each 10-minute slot is a genuinely different
+# image (distinct hashes, 71-74 KB each at probe resolution), so sub-daily is
+# real and worth asking for.
+#
+# The ladder walks BACKWARDS IN TIME and takes the first rung that yields real
+# imagery. It has several rungs because the blank slots are not simply "too
+# recent": measured across one afternoon, 16:40 was blank, 16:30 and 16:20 were
+# real, 16:10 was blank again, 15:40 was real. Publication is uneven, so a
+# single retry would leave the globe cloudless whenever it happened to land on
+# a gap. Six rungs at a 60-second timeout bound the worst case at six minutes,
+# on a job that is detached and runs every ten.
+#
+# The date-only form stays as the last resort. It is not broken — it returns a
+# real frame, just a fixed one for the whole day — so a bad network degrades to
+# yesterday's kind of behaviour rather than to a bare planet.
+EARTH_GEO_MIN=200000     # real 852-891 KB, blank 22.8 KB
+EARTH_IR_MIN=200000      # real ~1063 KB
+
+earth_update() {
+  mkdir -p "${EARTH_DIR}"
+  local day; day="$(date -u +%Y-%m-%d)"
+  local t got
+
+  local geo_url="${GIBS_WMS}?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=GOES-East_ABI_GeoColor&CRS=EPSG:4326&BBOX=-65,-155,75,-5&WIDTH=2048&HEIGHT=1911&FORMAT=image/jpeg&TIME="
+  local ir_pre="${GIBS_SNAP}?REQUEST=GetSnapshot&TIME="
+  local ir_post="&BBOX=-90,-180,90,180&CRS=EPSG:4326&LAYERS=Himawari_AHI_Band13_Clean_Infrared,GOES-West_ABI_Band13_Clean_Infrared,GOES-East_ABI_Band13_Clean_Infrared&WRAP=day,day,day&FORMAT=image/jpeg&WIDTH=4096&HEIGHT=2048"
+
+  # The bounding box and the 4096x2048 grid are mirrored in LockEarth.qml's
+  # geoLon/geoLat properties. If one moves, both move.
+  got=0
+  for back in 40 50 60 80 110 170; do
+    t="$(earth_slot "${back}")" || continue
+    if earth_fetch geo.jpg "${geo_url}${t}" "${EARTH_GEO_MIN}" 90; then
+      got=1; printf '%s\n' "${t}" > "${EARTH_DIR}/geo.time" 2>/dev/null || true
+      break
+    fi
+  done
+  if [[ "${got}" -eq 0 ]]; then
+    earth_fetch geo.jpg "${geo_url}${day}" "${EARTH_GEO_MIN}" 90 \
+      && printf '%s\n' "${day}" > "${EARTH_DIR}/geo.time" 2>/dev/null || true
+  fi
+
+  got=0
+  for back in 40 50 60 80 110 170; do
+    t="$(earth_slot "${back}")" || continue
+    if earth_fetch ir.jpg "${ir_pre}${t}${ir_post}" "${EARTH_IR_MIN}" 150; then
+      got=1; printf '%s\n' "${t}" > "${EARTH_DIR}/ir.time" 2>/dev/null || true
+      break
+    fi
+  done
+  if [[ "${got}" -eq 0 ]]; then
+    earth_fetch ir.jpg "${ir_pre}${day}${ir_post}" "${EARTH_IR_MIN}" 150 \
+      && printf '%s\n' "${day}" > "${EARTH_DIR}/ir.time" 2>/dev/null || true
+  fi
+
+  touch "${EARTH_DIR}/stamp" 2>/dev/null || true
+}
+
+case "${1:-scene}" in
+  update) update ;;
+  earth)  update; earth_update ;;
+  scene)
+    # HOT PATH — no network, no jq, two tiny reads and arithmetic.
+    freshen
+    cond="$(cat "${CACHE_DIR}/cond" 2>/dev/null)"
+    if [[ -z "${cond}" ]]; then echo "${HERO}"; exit 0; fi
+    dp="$(daypart)"
+    n="$(phases "${cond}")"
+    k=$(( $(date +%s) % n ))
+    f="${SCENES}/${cond}-${dp}/f${k}.png"
+    [[ -r "${f}" ]] && echo "${f}" || echo "${HERO}"
+    ;;
+  big|line|sub)
+    freshen
+    cat "${CACHE_DIR}/${1}" 2>/dev/null
+    ;;
+  header)
+    freshen
+    header
+    ;;
+  *) echo "usage: nyxus-lock-weather [scene|big|line|sub|header|update|earth]" >&2; exit 2 ;;
+esac

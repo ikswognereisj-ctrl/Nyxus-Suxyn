@@ -1,0 +1,266 @@
+#!/usr/bin/env bash
+# nyxus-lock-guard — refuse to lock a session that cannot be unlocked,
+#                    and choose which lock screen draws it.
+#
+# ── 1 · the refusal (WIP-114, unchanged and load-bearing) ────────────────
+# The owner skipped the password step in the welcome wizard, and then met the
+# lock screen with no way past it. A lock authenticates through PAM, and
+# pam_unix rejects an empty password unless it is configured `nullok` — so an
+# account with no password set can be locked and then never unlocked. The only
+# way out is a hard reset.
+#
+# He photographed it and described it as being locked out. He was right, and it
+# is not the same thing as the lore line fixed in WIP-105 — that one only READ
+# like a lockout. This one is a real one.
+#
+# A lock screen exists to keep other people out. Locking a passwordless account
+# keeps the OWNER out and nobody else, because anyone can simply reboot. It is
+# all of the cost and none of the benefit.
+#
+# So: check first, and if there is no password, say so instead of locking.
+# This check runs before ANY engine is chosen. Nothing below can skip it.
+#
+# ── 2 · the engine (2026-08-10) ─────────────────────────────────────────
+# There are now two lock screens, and this script is the only thing that picks
+# between them:
+#
+#   shell    — the Quickshell WlSessionLock surface (`shell/Lock.qml`): the
+#              animated sky, live weather, glass. Preferred.
+#   hyprlock — what this build has always shipped. Still installed, still
+#              configured, still correct. The fallback, and the floor.
+#
+# The choice is made by PRE-FLIGHT, not by hope: `qs ipc call lock ready` has to
+# answer with the literal word "ready". If the shell is not running, or
+# `Lock.qml` failed to load, or the IPC handler is not there, it does not, and
+# hyprlock runs instead. A broken redesign costs the eye candy, never the
+# session. (It has to be the OUTPUT, not the exit code — see the ⚠ below.)
+#
+# Override with NYXUS_LOCK_ENGINE=hyprlock (or =shell). `hyprlock` is honoured
+# absolutely; `shell` still falls back if the pre-flight fails, because the
+# alternative to falling back is not locking at all.
+#
+# ── 3 · getting back in when something is wrong ─────────────────────────
+# `--release` is the documented TTY recovery, and it matters more for the shell
+# engine than it did for hyprlock. Under ext-session-lock, a lock client that
+# DIES leaves the compositor locked with no surface at all — by protocol
+# design, so that killing the locker can never expose the desktop. So `pkill`
+# is the wrong instinct for the shell engine; ask it to unlock instead:
+#
+#     Ctrl+Alt+F2  →  log in  →  nyxus-lock-guard --release  →  Ctrl+Alt+F1
+#
+#   nyxus-lock-guard           -> lock if it is safe to, otherwise explain
+#   nyxus-lock-guard --check   -> exit 0 if lockable, 1 if not (no side effects)
+#   nyxus-lock-guard --engine  -> print which engine would be used, and stop
+#   nyxus-lock-guard --release -> unlock BOTH engines (the TTY escape hatch)
+set -uo pipefail
+
+# From a TTY the session's own environment is not inherited, but the IPC socket
+# lives under the user's runtime dir, which is the same across TTYs for the
+# same user. Without this, --release works in the session and silently fails
+# from the console — which is the one place it has to work.
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+
+# ── the shell engine, asked politely ────────────────────────────────────
+# Every call is time-boxed. A hung shell must not hang the lock: hypridle calls
+# this on a timer and before sleep, and a guard that blocks there would delay
+# suspend rather than protect anything.
+#
+# ⚠ The exit status of `qs ipc call` IS NOT A RESULT. Measured 2026-08-10: with
+# no shell running it prints "Target not found." on STDOUT and exits 0. A
+# pre-flight built on `if qs ipc call ...` would therefore have reported the
+# animated lock as ready on a machine where the shell was not running at all,
+# and the fallback to hyprlock — the whole safety story — would never have
+# fired. So every check below matches the OUTPUT of a handler that returns a
+# distinctive string, and never the exit code.
+#
+# ⚠ And the INSTANCE has to be named. `qs ipc call` with no selector picks an
+# arbitrary running instance: on 2026-08-10 this machine had two (the session's
+# shell and a probe), and the unselected call answered from the wrong one —
+# "Target not found." for a target that was registered and running. Selecting
+# the shell by its config path makes the answer deterministic. The unselected
+# call is still tried second, so a shell started from a non-standard path is
+# found rather than silently demoted to hyprlock.
+QS_CONFIG="${NYXUS_LOCK_QS_CONFIG:-${HOME}/.config/quickshell/shell.qml}"
+
+# TRK-3726 · A BUSY SHELL IS NOT AN ABSENT SHELL.
+#
+# The owner, 2026-09-02: "last time it went idle i came back and it was that
+# other login screen ... all of sudden for whatever reasson". Both lock screens
+# exist and are correct; the guard simply chose the wrong one.
+#
+# The choice is `shell_ready`, and it was a SINGLE probe with a 2s ceiling. Two
+# seconds is generous when the shell is idle and far too tight when it is not:
+# this happened while 142 GB was being pushed through that machine over rsync.
+# The shell was alive and would have answered — it just did not answer inside
+# the window — so the guard concluded there was no shell lock and fell back to
+# hyprlock. The screen the owner sees therefore depends on how loaded the box
+# was at the instant it went idle, which is why it looked random to him.
+#
+# Fixed by separating "no shell" from "slow shell": three attempts, 5s each,
+# with a pause between. An absent shell still fails all three in the time one
+# probe used to take at worst, so a genuinely missing shell lock still falls
+# back promptly and the screen still locks — the property TRK-3624 exists to
+# protect. What no longer happens is a lock screen changing identity because
+# the machine was busy for two seconds.
+NYX_IPC_TRIES="${NYXUS_LOCK_IPC_TRIES:-3}"
+NYX_IPC_TMO="${NYXUS_LOCK_IPC_TIMEOUT:-5}"
+
+shell_ipc() {
+  command -v qs >/dev/null 2>&1 || return 1
+  local out i
+  for (( i = 1; i <= NYX_IPC_TRIES; i++ )); do
+    if [[ -f "${QS_CONFIG}" ]]; then
+      out="$(timeout "${NYX_IPC_TMO}" qs -p "${QS_CONFIG}" ipc call lock "$1" 2>/dev/null)"
+      [[ -n "${out}" && "${out}" != *"not found"* && "${out}" != *"No running"* ]] \
+        && { printf '%s' "${out}"; return 0; }
+    fi
+    out="$(timeout "${NYX_IPC_TMO}" qs ipc call lock "$1" 2>/dev/null)"
+    [[ -n "${out}" && "${out}" != *"not found"* && "${out}" != *"No running"* ]] \
+      && { printf '%s' "${out}"; return 0; }
+    (( i < NYX_IPC_TRIES )) && sleep 0.4
+  done
+  return 1
+}
+
+shell_ready()   { [[ "$(shell_ipc ready)"  == "ready"    ]]; }
+shell_locked()  { [[ "$(shell_ipc state)"  == "locked"   ]]; }
+shell_engage()  { [[ "$(shell_ipc engage)" == "engaged"  ]]; }
+shell_release() { [[ "$(shell_ipc release)" == "released" ]]; }
+
+# ── --release: the escape hatch, before any password check ──────────────
+# Deliberately the FIRST thing handled. Someone running this is already stuck,
+# and making the way out depend on the same `passwd -S` that might be
+# misbehaving would be a poor joke.
+if [[ "${1:-}" == "--release" ]]; then
+  rc=1
+  if shell_release; then
+    printf 'nyxus-lock-guard: the shell lock released\n' >&2
+    rc=0
+  fi
+  if pgrep -x hyprlock >/dev/null 2>&1; then
+    pkill -x hyprlock && printf 'nyxus-lock-guard: stopped hyprlock\n' >&2
+    rc=0
+  fi
+
+  # Asking is not the same as being unlocked. Check the COMPOSITOR, and if it
+  # is still holding the session, say exactly what to do next instead of
+  # reporting a success the screen disagrees with.
+  #
+  # This state is reachable, and it was reached here on 2026-08-10: a lock
+  # client that dies while the session is locked strands it — ext-session-lock
+  # keeps the session locked precisely so that killing the locker can never
+  # expose the desktop. Recovery needs a lock client to bind and then unlock
+  # cleanly, and in the observed case a fresh client could not bind until
+  # hyprlock had come and gone first. Hence the order below.
+  if command -v hyprctl >/dev/null 2>&1 && [[ "$(timeout 3 hyprctl locked 2>/dev/null)" == "true" ]]; then
+    printf 'nyxus-lock-guard: the compositor is STILL locked (a lock client died holding it).\n' >&2
+    printf '  Recover with, in this order:\n' >&2
+    printf '    hyprctl keyword misc:allow_session_lock_restore 1\n' >&2
+    printf '    hyprctl dispatch exec hyprlock  &&  pkill -x hyprlock\n' >&2
+    printf '    nyxus-lock-guard --release\n' >&2
+    exit 1
+  fi
+
+  (( rc == 0 )) || printf 'nyxus-lock-guard: nothing was holding a lock\n' >&2
+  exit "${rc}"
+fi
+
+# ── which engine ────────────────────────────────────────────────────────
+pick_engine() {
+  case "${NYXUS_LOCK_ENGINE:-}" in
+    hyprlock) echo hyprlock; return ;;
+    shell)    shell_ready && { echo shell; return; }
+              printf 'nyxus-lock-guard: NYXUS_LOCK_ENGINE=shell but the shell lock did not answer — falling back\n' >&2
+              echo hyprlock; return ;;
+  esac
+  if shell_ready; then echo shell; else echo hyprlock; fi
+}
+
+if [[ "${1:-}" == "--engine" ]]; then
+  pick_engine
+  exit 0
+fi
+
+# `passwd -S` prints: <user> <status> <date> ... where status is
+#   P  = usable password set
+#   NP = no password at all
+#   L  = account locked (a `!` prefix on the hash)
+# Read via getent/passwd -S rather than by parsing /etc/shadow, which needs
+# root and is not readable in a normal session.
+lock_state() {
+  local out
+  out="$(passwd -S "$(id -un)" 2>/dev/null)" || { echo "UNKNOWN"; return; }
+  awk '{print $2}' <<<"${out}"
+}
+
+state="$(lock_state)"
+
+case "${state}" in
+  P)
+    # Normal case: a password exists, locking is safe.
+    ;;
+  NP|L)
+    msg="This account has no password, so the lock screen could not let you \
+back in. Set one in Settings → Account first."
+    # notify-send is best-effort: the point is not to lock, and a missing
+    # notifier must not turn a refusal-to-lock into a lock.
+    command -v notify-send >/dev/null 2>&1 \
+      && notify-send -u critical "Screen lock unavailable" "${msg}"
+    printf 'nyxus-lock-guard: refusing to lock — %s\n' "${msg}" >&2
+    [[ "${1:-}" == "--check" ]] && exit 1
+    exit 0
+    ;;
+  *)
+    # Could not determine the state. Locking a machine we cannot vouch for is
+    # the dangerous direction, so decline and say why -- an unlocked desktop is
+    # recoverable, an unopenable one is not.
+    printf 'nyxus-lock-guard: cannot determine password state (%s) — not locking\n' \
+      "${state}" >&2
+    [[ "${1:-}" == "--check" ]] && exit 1
+    exit 0
+    ;;
+esac
+
+[[ "${1:-}" == "--check" ]] && exit 0
+
+# ── idempotence ─────────────────────────────────────────────────────────
+# Every route into this script can fire while a lock is already up: hypridle's
+# lock_cmd guards with `pidof hyprlock ||`, which cannot see the shell engine.
+# So the guard checks for itself, for both engines, rather than stacking a
+# second lock surface on top of the first.
+if pgrep -x hyprlock >/dev/null 2>&1 || shell_locked; then
+  exit 0
+fi
+
+case "$(pick_engine)" in
+  shell)
+    # ⚠ engage() ACKNOWLEDGING IS NOT THE SCREEN BEING LOCKED.
+    #
+    # Measured 2026-08-10: `engage` returned "engaged" while the compositor
+    # refused the lock and the desktop stayed wide open. Trusting the reply
+    # would mean the guard reporting a locked screen over an unlocked one —
+    # which is not a cosmetic bug, it is the lock silently not happening.
+    #
+    # So: engage, then VERIFY against the surface's own `secure` state, and
+    # fall back to hyprlock if it does not come up within a second. The
+    # compositor confirms asynchronously, hence the short poll rather than a
+    # single read.
+    if shell_engage; then
+      for _ in 1 2 3 4 5 6 7 8 9 10; do
+        shell_locked && exit 0
+        sleep 0.1
+      done
+      printf 'nyxus-lock-guard: the shell lock acknowledged but did not lock — using hyprlock\n' >&2
+    else
+      printf 'nyxus-lock-guard: the shell lock stopped answering — using hyprlock\n' >&2
+    fi
+    ;;
+esac
+
+if command -v hyprlock >/dev/null 2>&1; then
+  exec hyprlock
+elif command -v loginctl >/dev/null 2>&1; then
+  exec loginctl lock-session
+fi
+printf 'nyxus-lock-guard: no locker available\n' >&2
+exit 1

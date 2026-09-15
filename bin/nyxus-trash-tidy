@@ -1,0 +1,307 @@
+#!/usr/bin/env python3
+"""
+nyxus-trash-tidy — remove trashed items that are older than the retention
+window the person chose, and nothing else, ever.
+
+    nyxus-trash-tidy               # do it
+    nyxus-trash-tidy --dry-run     # say what it would do and touch nothing
+    nyxus-trash-tidy --days N      # override the preference (testing)
+    nyxus-trash-tidy --trash-dir D # operate on a specific trash (testing)
+
+Run by `nyxus-trash-tidy.timer`, a systemd --user timer, once a day.
+
+━━ THIS PROGRAM DELETES A PERSON'S FILES ON A SCHEDULE ━━━━━━━━━━━━━━━━━━━
+
+Which is why it is written the way it is. The owner asked for a Trash that
+"behaves restore empty on scedule". The restoring half is in the file
+manager (`WIP-711`); this is the scheduled half, and it gets the same care
+`nyxus-hemera`'s quarantine got, for the same reason: something that removes
+files while nobody is watching has to be provably narrow.
+
+THE ONE RULE, and every line below serves it:
+
+    AN ITEM IS REMOVED ONLY IF ITS OWN RECORDED DeletionDate IS OLDER THAN
+    THE WINDOW. Nothing else is ever removed, for any reason.
+
+The freedesktop trash specification puts a `<name>.trashinfo` next to every
+trashed file, carrying `Path=` (where it came from) and `DeletionDate=`
+(when, in local time, as `%Y-%m-%dT%H:%M:%S`). That date is a RECORD written
+at deletion time. It is the only clock this program reads:
+
+  · **not the file's mtime** — that is the age of the CONTENT, not of the
+    deletion. A photograph taken in 2019 and thrown away this morning has a
+    2019 mtime, and a tidy that trusted mtime would delete it today. That is
+    the single most likely way to get this feature catastrophically wrong;
+  · **not the trashinfo's own mtime** either — same objection, one step
+    removed, and it is rewritten by any tool that touches the file;
+  · an item whose DeletionDate is **missing, unparseable, or in the future**
+    is SKIPPED, not deleted. Silence is never consent here. A trash left
+    behind by a different desktop, or a half-written info file, must survive
+    this program untouched.
+
+Two more guards worth reading before editing anything:
+
+  · **the pair is verified before either half is removed.** `files/<name>`
+    and `info/<name>.trashinfo` are removed together, and only after the
+    resolved parent directory of the target is confirmed to be the trash's
+    own `files/` directory. A symlink in `files/` is unlinked as a link —
+    never followed — so a trashed symlink pointing at `~/Documents` cannot
+    turn a tidy into a recursive delete of the person's documents;
+  · **"Never" is a real answer.** If the preference says Never, or the
+    window resolves to zero or less, this program exits having read nothing
+    and removed nothing. The off switch is not a special case bolted on the
+    side; it is the first branch.
+
+WHERE THE WINDOW COMES FROM: `~/.config/nyxus/app-prefs.json`, key
+`files.trash_retention` — the SAME store and the SAME key the Files app
+reads to display the rule (`nyxus_files.FilesTab._trash_retention`). This
+program does not get a config file of its own. One preference, one store,
+two readers: the app says it, the timer does it.
+
+© 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+
+APP_NAME = "NYXUS Files"
+
+#: Must equal `nyxus_files.FilesTab.TRASH_RETENTION_DAYS` and the choices
+#: `nyxus_app_specs.py` declares for `files.trash_retention`. Gate 13q38
+#: compares all three and fails if any drifts — a label the timer cannot map
+#: is a setting that silently means "never".
+RETENTION_DAYS = {
+    "Never": 0,
+    "7 days": 7,
+    "30 days": 30,
+    "90 days": 90,
+    "1 year": 365,
+}
+#: Owner's ruling, 2026-08-16 (`WIP-718`): off unless asked for. Every read
+#: failure below falls back to THIS, so a corrupt preferences file now means
+#: "delete nothing" rather than "delete everything older than a month".
+RETENTION_DEFAULT = "Never"
+
+#: The spec's DeletionDate format. Local time, no zone suffix.
+DELETION_FMT = "%Y-%m-%dT%H:%M:%S"
+
+
+def prefs_path() -> Path:
+    base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    return Path(base) / "nyxus" / "app-prefs.json"
+
+
+def retention_choice() -> str:
+    """The label the person chose, or the default if they never chose.
+
+    Every failure to read is the DEFAULT, never "unlimited" and never
+    "delete everything": a corrupt preferences file must not be able to
+    change what this program does to somebody's files.
+    """
+    try:
+        data = json.loads(prefs_path().read_text(encoding="utf-8"))
+        val = str(data.get("files", {}).get("trash_retention",
+                                            RETENTION_DEFAULT))
+    except Exception:
+        return RETENTION_DEFAULT
+    return val if val in RETENTION_DAYS else RETENTION_DEFAULT
+
+
+def trash_dir() -> Path:
+    base = (os.environ.get("XDG_DATA_HOME")
+            or os.path.expanduser("~/.local/share"))
+    return Path(base) / "Trash"
+
+
+def parse_deletion_date(infofile: Path):
+    """The DeletionDate out of one .trashinfo, or None.
+
+    Parsed by hand rather than with `configparser` because a trashinfo is a
+    desktop-entry file, not a Python INI: `%` has no interpolation meaning
+    in it, and a filename containing one is ordinary. ConfigParser's default
+    dialect raises on exactly those, which would turn a normal file into a
+    parse failure — harmless here only because a parse failure means SKIP,
+    but a skip that happens for the wrong reason is a bug waiting to be
+    'fixed' in the dangerous direction.
+    """
+    try:
+        text = infofile.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    in_group = False
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("[") and line.endswith("]"):
+            in_group = (line == "[Trash Info]")
+            continue
+        if not in_group or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        if key.strip() != "DeletionDate":
+            continue
+        try:
+            return datetime.strptime(value.strip(), DELETION_FMT)
+        except ValueError:
+            return None
+    return None
+
+
+def aged_entries(root: Path, days: int, now: datetime) -> list:
+    """(name, deleted_at) for every entry that is genuinely older than the
+    window. Everything else is simply not in the list.
+
+    Nothing is removed in here. Deciding and deleting are separate functions
+    so the decision can be proved on its own, against a real trash, without
+    anything being destroyed to prove it.
+    """
+    info_dir = root / "info"
+    files_dir = root / "files"
+    out = []
+    try:
+        entries = sorted(info_dir.iterdir())
+    except OSError:
+        return out
+    cutoff_seconds = days * 86400
+    for infofile in entries:
+        if not infofile.name.endswith(".trashinfo"):
+            continue
+        name = infofile.name[: -len(".trashinfo")]
+        if not name or "/" in name or name in (".", ".."):
+            continue
+        target = files_dir / name
+        # A trashinfo with no file beside it is a leftover, not an item. It
+        # is left alone: this program's mandate is aged ITEMS, and tidying
+        # somebody else's orphan is scope it was not given.
+        if not os.path.lexists(target):
+            continue
+        deleted_at = parse_deletion_date(infofile)
+        if deleted_at is None:
+            continue
+        age = (now - deleted_at).total_seconds()
+        # Strictly older. An item deleted exactly `days` ago to the second
+        # survives one more run, which is the right way round for a rounding
+        # error on a program that cannot be undone.
+        if age <= cutoff_seconds:
+            continue
+        out.append((name, deleted_at))
+    return out
+
+
+def remove_entry(root: Path, name: str) -> bool:
+    """Remove one aged item and its trashinfo. Returns True if it went.
+
+    THE CONTAINMENT CHECK IS THE POINT. Before anything is unlinked, the
+    resolved parent of the target must BE the trash's own `files/`
+    directory. `os.path.realpath` is applied to the PARENT, not to the
+    target, precisely so that a trashed symlink is judged by where it lives
+    rather than by where it points — resolving the target would let a
+    symlink to `~/Documents` present itself as the thing to delete.
+    """
+    files_dir = root / "files"
+    target = files_dir / name
+    try:
+        real_parent = os.path.realpath(str(target.parent))
+        real_files = os.path.realpath(str(files_dir))
+    except OSError:
+        return False
+    if real_parent != real_files:
+        return False
+    try:
+        if os.path.islink(str(target)) or not os.path.isdir(str(target)):
+            os.unlink(str(target))
+        else:
+            shutil.rmtree(str(target))
+    except OSError:
+        return False
+    # The file is gone, so the record must go too — a trashinfo left behind
+    # is an entry the Trash still lists and nothing can restore.
+    try:
+        (root / "info" / (name + ".trashinfo")).unlink()
+    except OSError:
+        pass
+    return True
+
+
+def notify(body: str) -> None:
+    """Say what was done. A scheduled deletion that announces nothing is
+    indistinguishable from files going missing."""
+    exe = shutil.which("notify-send")
+    if not exe:
+        return
+    try:
+        subprocess.run([exe, "--app-name", APP_NAME, "--urgency", "low",
+                        "--icon", "user-trash", "Trash tidied", body],
+                       check=False, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(
+        description="Remove trashed items older than the retention window")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="list what would be removed and touch nothing")
+    ap.add_argument("--days", type=int, default=None,
+                    help="override the retention window, in days")
+    ap.add_argument("--trash-dir", default=None,
+                    help="operate on this trash directory instead of the "
+                         "user's own")
+    ap.add_argument("--quiet", action="store_true",
+                    help="do not send a desktop notification")
+    args = ap.parse_args()
+
+    if args.days is None:
+        choice = retention_choice()
+        days = RETENTION_DAYS.get(choice, RETENTION_DAYS[RETENTION_DEFAULT])
+    else:
+        choice = "%d days" % args.days
+        days = args.days
+
+    # "Never" first, and before anything is even read. The off switch is the
+    # first branch in the program, not a filter applied later.
+    if days <= 0:
+        print("retention is %r — nothing to do" % choice)
+        return 0
+
+    root = Path(args.trash_dir) if args.trash_dir else trash_dir()
+    if not (root / "info").is_dir():
+        print("no trash at %s" % root)
+        return 0
+
+    now = datetime.now()
+    aged = aged_entries(root, days, now)
+    if not aged:
+        print("nothing in %s is older than %d day(s)" % (root, days))
+        return 0
+
+    if args.dry_run:
+        for name, when in aged:
+            print("would remove: %s (deleted %s)"
+                  % (name, when.strftime(DELETION_FMT)))
+        print("%d item(s) would be removed" % len(aged))
+        return 0
+
+    gone = 0
+    for name, when in aged:
+        if remove_entry(root, name):
+            gone += 1
+            print("removed: %s (deleted %s)"
+                  % (name, when.strftime(DELETION_FMT)))
+    print("%d item(s) removed from %s" % (gone, root))
+    if gone and not args.quiet:
+        notify("%d item%s that had been in the Trash for more than %d days "
+               "%s permanently removed."
+               % (gone, "" if gone == 1 else "s", days,
+                  "was" if gone == 1 else "were"))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

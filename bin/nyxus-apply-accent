@@ -1,0 +1,388 @@
+#!/usr/bin/env bash
+# ════════════════════════════════════════════════════════════════════
+# nyxus-apply-accent [preset-name]   ·   rev 2026-07-07 r2 (source-of-truth)
+#
+# THE single entry point for re-skinning the whole NYXUS desktop.
+# Reads ~/.config/nyxus/accent.json, picks the active preset (or the
+# one passed on the CLI), then:
+#   1. Rewrites ~/.config/eww/accent.scss with $nyxus-accent-* vars
+#   2. Rewrites the GTK3/GTK4 @define-color accent block
+#   3. Rewrites ~/.config/hypr/hyprlock-accent.conf
+#   4. Substitutes OLD accent colors → NEW accent colors in every
+#      registered consumer file (hex, hyprland-hex, and decimal
+#      rgb-triplet forms), so rofi/dunst/swaync/wlogout/alacritty/
+#      kitty/cava/btop/qt/eww/hyprland borders all stay in lockstep.
+#   5. Persists the chosen preset and live-reloads eww, Hyprland,
+#      dunst, swaync and cava.
+#
+# Shadows /usr/local/bin/nyxus-apply-accent (~/.local/bin wins in PATH).
+# © 2026 Joseph A. Sierengowski · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+# ════════════════════════════════════════════════════════════════════
+set -u
+
+CONF="${HOME}/.config/nyxus/accent.json"
+[[ -r "${CONF}" ]] || CONF="/etc/skel/.config/nyxus/accent.json"
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "jq is required to apply accent" >&2
+  exit 1
+fi
+
+# The `// "…"` fallback fires only when accent.json has no `active` key.
+# It named "prism", a preset that does not exist, so that path resolved
+# every colour to empty. galaxy is the shipped active preset.
+NAME="${1:-$(jq -r '.active // "galaxy"' "${CONF}")}"
+OLD_NAME="$(jq -r '.active // "galaxy"' "${CONF}")"
+
+get() { jq -r --arg n "$1" --arg k "$2" '.presets[$n][$k] // empty' "${CONF}"; }
+
+NEW_P=$(get "${NAME}" primary);   NEW_S=$(get "${NAME}" secondary)
+
+# ── the ink ON the accent has to be DERIVED, not fixed ──────────────────
+# This block used to emit `accent_fg_color #07091a` as a constant. That was
+# correct for exactly one accent and silently wrong for the next.
+#
+# Measured, WCAG 2.1 contrast of label text sitting on the accent fill:
+#     teal #0aa2d6 + near-black  6.73:1  PASS      + white  2.94:1  FAIL
+#     plum #ae206c + near-black  3.03:1  large-only + white  6.52:1  PASS
+#
+# So the hardcoded near-black was right while the accent was teal and became a
+# contrast failure the moment the accent moved to the rose -- on every GTK
+# switch label, .primary button and progress readout in the build. Nobody would
+# have connected "the accent changed" to "the text got hard to read".
+#
+# Now chosen by measurement for whatever the preset is. Note the common YIQ
+# shortcut ((299R+587G+114B)/1000 > 150) gets teal WRONG here -- it returns 122
+# and picks white, which measures 2.94:1 -- so this does the real sRGB
+# linearisation in awk rather than the folk formula.
+_pick_ink() {
+    awk -v hex="${1#\#}" 'function chan(v){v/=255; return (v<=0.03928)? v/12.92 : ((v+0.055)/1.055)^2.4}
+      function lum(h){ return 0.2126*chan(strtonum("0x" substr(h,1,2))) \
+                            + 0.7152*chan(strtonum("0x" substr(h,3,2))) \
+                            + 0.0722*chan(strtonum("0x" substr(h,5,2))) }
+      function ratio(a,b){ hi=(a>b)?a:b; lo=(a>b)?b:a; return (hi+0.05)/(lo+0.05) }
+      BEGIN{ L=lum(hex);
+             dark  = ratio(L, lum("07091a"));
+             light = ratio(L, lum("ffffff"));
+             print (light > dark) ? "#ffffff" : "#07091a" }'
+}
+NEW_FG="$(_pick_ink "${NEW_P}")"
+
+# ── the STANDALONE accent needs a different rung than the accent FILL ────
+# libadwaita has two accent roles and this script used to emit the same hex for
+# both:
+#   accent_bg_color  the FILL behind a button/switch  -> ink sits ON it
+#   accent_color     standalone text, icons and links -> sits ON the dark ground
+#
+# Measured against the window ground #040b0e:
+#   teal #0aa2d6  6.75:1  PASS      plum #ae206c  3.04:1  FAIL
+#
+# So one hex for both roles happened to work while the accent was teal and
+# fails the moment it is the rose -- every accent link and icon in the app layer
+# drops under AA. This is the same trap as accent_fg_color, in the other
+# direction, which is why it is fixed the same way: by measurement.
+#
+# Theme.qml already models this -- accentSolid is the mark, accentSolidHalo is
+# "light coming off it" -- so the standalone role gets a LIGHTENED rung. Blend
+# toward white in 5% steps until it clears 4.5:1, so any future preset is safe
+# without anyone having to remember this comment.
+_lift_accent() {
+    awk -v hex="${1#\#}" -v bg="040b0e" '
+      function chan(v){v/=255; return (v<=0.03928)? v/12.92 : ((v+0.055)/1.055)^2.4}
+      function lum(r,g,b){ return 0.2126*chan(r)+0.7152*chan(g)+0.0722*chan(b) }
+      function ratio(a,b){ hi=(a>b)?a:b; lo=(a>b)?b:a; return (hi+0.05)/(lo+0.05) }
+      BEGIN{
+        r=strtonum("0x" substr(hex,1,2)); g=strtonum("0x" substr(hex,3,2)); b=strtonum("0x" substr(hex,5,2))
+        br=strtonum("0x" substr(bg,1,2)); bg2=strtonum("0x" substr(bg,3,2)); bb=strtonum("0x" substr(bg,5,2))
+        Lb=lum(br,bg2,bb)
+        for(t=0; t<=100; t+=5){
+          nr=r+(255-r)*t/100; ng=g+(255-g)*t/100; nb=b+(255-b)*t/100
+          if(ratio(lum(nr,ng,nb),Lb) >= 4.5) break
+        }
+        printf "#%02x%02x%02x", int(nr+0.5), int(ng+0.5), int(nb+0.5)
+      }'
+}
+NEW_A="$(_lift_accent "${NEW_P}")"
+NEW_W=$(get "${NAME}" warn);      NEW_O=$(get "${NAME}" ok)
+OLD_P=$(get "${OLD_NAME}" primary); OLD_S=$(get "${OLD_NAME}" secondary)
+OLD_W=$(get "${OLD_NAME}" warn);    OLD_O=$(get "${OLD_NAME}" ok)
+
+if [[ -z "${NEW_P}" ]]; then
+  echo "no preset named '${NAME}' in ${CONF}" >&2
+  exit 1
+fi
+
+mkdir -p "${HOME}/.config/gtk-3.0" \
+         "${HOME}/.config/gtk-4.0" "${HOME}/.config/nyxus" \
+         "${HOME}/.config/hypr"
+
+# TRK-2993: do not mkdir ~/.config/eww or write _nyxus_accent.scss.
+# Quickshell is the shell; writing those files only revives a daemon
+# that is not packaged.
+
+# ── 2. GTK 3 / 4 accent block ────────────────────────────────────────
+for V in 3.0 4.0; do
+  GTK="${HOME}/.config/gtk-${V}/gtk.css"
+  if [[ -f "${GTK}" ]]; then
+    sed -i '/\/\* nyxus-accent-begin \*\//,/\/\* nyxus-accent-end \*\//d' "${GTK}"
+  fi
+  {
+    printf '\n/* nyxus-accent-begin */\n'
+    printf '@define-color accent_color %s;\n'    "${NEW_A}"
+    printf '@define-color accent_bg_color %s;\n' "${NEW_P}"
+    printf '@define-color accent_fg_color %s;\n' "${NEW_FG}"
+    if [[ "${V}" == "4.0" ]]; then
+      # GTK >= 4.16 prefers the :root custom properties over
+      # @define-color (the WIP-420 trap): the skel sheet sets
+      # --accent-* in :root mid-file, so a block that only rewrites
+      # the @define-color half wins the old engine and silently
+      # loses the shipped one. Both forms, always, GTK4 only —
+      # GTK3 logs a parse warning on :root and drops the rule.
+      printf ':root {\n'
+      printf '  --accent-color: %s;\n'    "${NEW_A}"
+      printf '  --accent-bg-color: %s;\n' "${NEW_P}"
+      printf '  --accent-fg-color: %s;\n' "${NEW_FG}"
+      printf '}\n'
+    fi
+    printf '/* nyxus-accent-end */\n'
+  } >> "${GTK}"
+done
+
+# ── 3. hyprlock accent shard ─────────────────────────────────────────
+# Emits primary + secondary accent tokens (full / glow / dim alphas) so
+# hyprlock.conf can ride the live accent without hardcoding. Keep the
+# legacy $nyxus_accent_r/g/b names — older configs source them.
+R=$((16#${NEW_P:1:2}));  G=$((16#${NEW_P:3:2}));  B=$((16#${NEW_P:5:2}))
+R2=$((16#${NEW_S:1:2})); G2=$((16#${NEW_S:3:2})); B2=$((16#${NEW_S:5:2}))
+cat > "${HOME}/.config/hypr/hyprlock-accent.conf" <<EOF
+# generated for ${NAME^^} accent — sourced by hyprlock.conf
+\$nyxus_accent_r = ${R}
+\$nyxus_accent_g = ${G}
+\$nyxus_accent_b = ${B}
+\$nyxus_accent_rgba = rgba(${R}, ${G}, ${B}, 1.0)
+\$nyxus_accent_glow = rgba(${R}, ${G}, ${B}, 0.45)
+\$nyxus_accent_dim  = rgba(${R}, ${G}, ${B}, 0.75)
+\$nyxus_accent_faint = rgba(${R}, ${G}, ${B}, 0.20)
+\$nyxus_accent2_rgba = rgba(${R2}, ${G2}, ${B2}, 1.0)
+\$nyxus_accent2_glow = rgba(${R2}, ${G2}, ${B2}, 0.45)
+\$nyxus_accent2_dim  = rgba(${R2}, ${G2}, ${B2}, 0.75)
+EOF
+
+# ── 4. baseline-driven re-skin of every registered consumer ─────────
+# Every consumer file has a pristine CANON-form snapshot under
+# ~/.config/nyxus/accent-baseline/. Applying a preset always renders
+# live files FROM the baseline (canon → preset substitution), so any
+# preset → any preset is exact and reversible — no cascade collisions
+# (e.g. slot collisions vs fixed palette constants).
+# The baseline auto-refreshes whenever files are edited while the
+# active preset is the canon (the form we hand-edit in) — galaxy today.
+# Written as "canon" rather than by name so the next rename cannot leave
+# this comment describing a preset the build no longer has, which is
+# how the prism naming outlived its own palette here.
+# Handles three encodings per accent slot:
+#   #rrggbb / rrggbb   (CSS, rasi, toml, hyprland rgba(rrggbbaa), qt #aarrggbb)
+#   "R, G, B" and "R,G,B" decimal triplets (rgba() in CSS/SCSS)
+EWW_SCSS="${HOME}/.config/eww/eww.scss"
+[[ -f "${EWW_SCSS}" ]] || EWW_SCSS="${HOME}/.config/eww/eww.scss.source"
+CONSUMERS=(
+  "${EWW_SCSS}"
+  "${HOME}/.config/hypr/hyprland.conf"
+  "${HOME}/.config/hypr/conf.d/nyxus-hyprland-general.conf"
+  "${HOME}/.config/hypr/conf.d/nyxus-hyprland-opacity.conf"
+  "${HOME}/.config/hypr/conf.d/nyxus-hyprland-blur.conf"
+  "${HOME}/.config/hypr/conf.d/nyxus-hyprland-fog.conf"
+  "${HOME}/.config/hypr/conf.d/nyxus-hyprland-layerblur.conf"
+  "${HOME}/.config/hypr/conf.d/nyxus-hyprland-mission.conf"
+  "${HOME}/.config/hypr/conf.d/nyxus-hyprland-flair.conf"
+  "${HOME}/.config/hypr/hyprlock.conf"
+  "${HOME}/.config/rofi/config.rasi"
+  "${HOME}/.config/rofi/launcher.rasi"
+  "${HOME}/.config/rofi/nyxus.rasi"
+  "${HOME}/.config/rofi/power.rasi"
+  "${HOME}/.config/rofi/startmenu.rasi"
+  "${HOME}/.config/dunst/dunstrc"
+  "${HOME}/.config/swaync/style.css"
+  "${HOME}/.config/wlogout/style.css"
+  "${HOME}/.config/alacritty/alacritty.toml"
+  "${HOME}/.config/kitty/kitty.conf"
+  "${HOME}/.config/cava/config"
+  # Renamed 2026-08-10 to follow the files. The prism→galaxy rename landed on
+  # GitHub as PR #11 and moved the three files on disk, but not these three
+  # paths — so every accent switch was rewriting names that no longer exist.
+  # sed on a missing file is not an error here, so it stayed silent and the
+  # switch appeared to succeed while the Qt palette and btop theme never moved.
+  "${HOME}/.config/btop/themes/nyxus-galaxy.theme"
+  "${HOME}/.config/qt5ct/colors/nyxus-galaxy.conf"
+  "${HOME}/.config/qt6ct/colors/nyxus-galaxy.conf"
+  "${HOME}/.nyxus/nyxus-home/style.py"
+  "${HOME}/.nyxus/nyxus-home/widgets.py"
+  "${HOME}/.nyxus/nyxus_settings.py"
+)
+
+# CANON is a PRESET NAME, looked up below with `get "${CANON}" …`, and it was
+# "prism" — a preset accent.json does not define. `get` ends in `// empty`, so
+# all four CAN_* came back as EMPTY STRINGS and the baseline substitution ran
+# with nothing to substitute FROM. This is older than the file rename above
+# and independent of it: the presets have been `galaxy` and `urban-neon` since
+# the rose landed, and nothing failed loudly because empty is not an error.
+#
+# `galaxy` is the right value on the comment's own terms — "the canonical form
+# we hand-edit in" is the form the shipped files are written in, and that is
+# galaxy. With this correct, galaxy→galaxy is a genuine no-op and
+# galaxy→urban-neon substitutes real colours in place of real colours.
+CANON="galaxy"
+CAN_P=$(get "${CANON}" primary); CAN_S=$(get "${CANON}" secondary)
+CAN_W=$(get "${CANON}" warn);    CAN_O=$(get "${CANON}" ok)
+
+OLD_NAME="${OLD_NAME}" NAME="${NAME}" CANON="${CANON}" \
+CAN_P="${CAN_P}" CAN_S="${CAN_S}" CAN_W="${CAN_W}" CAN_O="${CAN_O}" \
+NEW_P="${NEW_P}" NEW_S="${NEW_S}" NEW_W="${NEW_W}" NEW_O="${NEW_O}" \
+OLD_P="${OLD_P}" OLD_S="${OLD_S}" OLD_W="${OLD_W}" OLD_O="${OLD_O}" \
+BASE="${HOME}/.config/nyxus/accent-baseline" \
+python3 - "${CONSUMERS[@]}" <<'PYEOF'
+import os, re, sys
+
+def forms(hexcol):
+    """hex body + decimal triplet variants for a #rrggbb color"""
+    h = hexcol.lstrip('#').lower()
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return h, f"{r}, {g}, {b}", f"{r},{g},{b}"
+
+def substitute(text, pairs):
+    """two-phase placeholder swap: [(from_forms, to_forms), ...]"""
+    for i, (src, _) in enumerate(pairs):
+        text = re.sub(re.escape(src[0]), f"\x00H{i}\x00", text, flags=re.I)
+        text = text.replace(src[1], f"\x00D{i}\x00").replace(src[2], f"\x00E{i}\x00")
+    for i, (_, dst) in enumerate(pairs):
+        text = (text.replace(f"\x00H{i}\x00", dst[0])
+                    .replace(f"\x00D{i}\x00", dst[1])
+                    .replace(f"\x00E{i}\x00", dst[2]))
+    return text
+
+env = os.environ
+base_root = env["BASE"]
+canonical = [forms(env[k]) for k in ("CAN_P", "CAN_S", "CAN_W", "CAN_O")]
+target    = [forms(env[k]) for k in ("NEW_P", "NEW_S", "NEW_W", "NEW_O")]
+old_name, new_name, canon = env["OLD_NAME"], env["NAME"], env["CANON"]
+
+# fixed LOCKED palette constants — a slot whose *current* color equals one
+# of these is ambiguous when deriving a baseline, so it is skipped there
+RESERVED = {"ff2d55", "03040c", "07091a", "11151f", "edf1ff", "edf1ff",
+            "ffffff", "000000", "c8ccd6", "a9b3d9", "6a6e78", "7a8298"}
+
+canon_pairs = [(c, t) for c, t in zip(canonical, target) if c[0] != t[0]]
+changed = 0
+
+for path in sys.argv[1:]:
+    if not os.path.isfile(path):
+        continue
+    rel = path.lstrip("/")
+    if rel.endswith("eww.scss.source"):
+        rel = rel[: -len(".source")]
+    bpath = os.path.join(base_root, rel)
+    live = open(path, encoding="utf-8", errors="surrogateescape").read()
+
+    # current-preset ("old") color forms — used both to derive a fresh
+    # baseline (old → canonical) and to detect whether an existing baseline
+    # has gone stale relative to the live file.
+    cur = [forms(v) for v in (env.get("OLD_P") or env["CAN_P"],
+                              env.get("OLD_S") or env["CAN_S"],
+                              env.get("OLD_W") or env["CAN_W"],
+                              env.get("OLD_O") or env["CAN_O"])]
+    # derive baseline: current-preset → canonical, skipping slots whose
+    # current color collides with a reserved fixed-palette constant
+    derive_pairs = [(c, k) for c, k in zip(cur, canonical)
+                    if c[0] != k[0] and c[0] not in RESERVED]
+
+    # ── keep the canonical baseline fresh ────────────────────────────
+    if old_name == canon:
+        # live files ARE canonical — snapshot them
+        os.makedirs(os.path.dirname(bpath), exist_ok=True)
+        open(bpath, "w", encoding="utf-8", errors="surrogateescape").write(live)
+        baseline = live
+    elif os.path.isfile(bpath):
+        baseline = open(bpath, encoding="utf-8", errors="surrogateescape").read()
+        # STALE-BASELINE SELF-HEAL (2026-07-14): the baseline is meant to be
+        # the CURRENT file structure in canonical colors — it must differ
+        # from the live file ONLY by accent color. If recoloring the baseline
+        # back into the current ("old") accent does NOT reproduce the live
+        # file, the live file carries edits made since the baseline was
+        # snapshotted (new autostart lines, window rules, the dunst→eww popup
+        # bridge, PATH fixes, …). Rendering from that stale baseline would
+        # silently REVERT those edits on EVERY login, because follow_wallpaper
+        # re-applies the accent at each wallpaper set. Re-derive the baseline
+        # from the live file so only the color swap is applied and structural
+        # edits survive. When in doubt we trust the live file — this branch
+        # can never revert a genuine user edit.
+        recolor_back = [(c, o) for c, o in zip(canonical, cur) if c[0] != o[0]]
+        if substitute(baseline, recolor_back) != live:
+            baseline = substitute(live, derive_pairs)
+            os.makedirs(os.path.dirname(bpath), exist_ok=True)
+            open(bpath, "w", encoding="utf-8", errors="surrogateescape").write(baseline)
+    else:
+        baseline = substitute(live, derive_pairs)
+        os.makedirs(os.path.dirname(bpath), exist_ok=True)
+        open(bpath, "w", encoding="utf-8", errors="surrogateescape").write(baseline)
+
+    # ── render live file from baseline ───────────────────────────────
+    out = substitute(baseline, canon_pairs) if canon_pairs else baseline
+    if out != live:
+        open(path, "w", encoding="utf-8", errors="surrogateescape").write(out)
+        changed += 1
+
+print(f"accent: re-skinned {changed} consumer file(s) from canonical baseline")
+
+PYEOF
+
+# TRK-2993: skip compile-eww-css.sh — eww is not the shell.
+
+# ── 5. persist + live reload ─────────────────────────────────────────
+TMP="$(mktemp)"
+jq --arg n "${NAME}" '.active = $n' "${CONF}" > "${TMP}" && \
+  mv "${TMP}" "${HOME}/.config/nyxus/accent.json"
+
+# every reload is timeout-guarded: a client tool that blocks waiting for
+# a daemon that isn't running (e.g. swaync-client with dunst active) must
+# never wedge the accent switch
+command -v hyprctl  >/dev/null && timeout 5 hyprctl reload   >/dev/null 2>&1 || true
+pgrep -x dunst  >/dev/null && command -v dunstctl >/dev/null && \
+  timeout 5 dunstctl reload 2>/dev/null || true
+pgrep -x swaync >/dev/null && command -v swaync-client >/dev/null && \
+  timeout 5 swaync-client -rs 2>/dev/null || true
+pkill -USR1 -x cava 2>/dev/null || true
+
+# ── 5a. propagate the accent to the LIVE compositor border (Phase 3.2a) ──
+# `hyprctl reload` re-reads nyxus-hyprland-general.conf, but the border
+# daemons (nyxus-tintd / nyxus-beatd / nyxus-pulsed) snapshot the border
+# ONCE at startup and then rewrite `general:col.active_border` on every
+# tick/focus change — so a reload alone never sticks while they run, and
+# stopping tintd restores its STALE captured base. To keep borders in
+# lockstep with the accent engine: stop whichever daemons are live, push
+# the freshly-rendered border explicitly, then restart only those that
+# were running so they re-capture the new accent as their base.
+GENERAL_CONF="${HOME}/.config/hypr/conf.d/nyxus-hyprland-general.conf"
+if command -v hyprctl >/dev/null 2>&1 && [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] \
+   && [[ -r "${GENERAL_CONF}" ]]; then
+  ACTIVE_BORDER="$(sed -n 's/^[[:space:]]*col\.active_border[[:space:]]*=[[:space:]]*//p'   "${GENERAL_CONF}" | head -1)"
+  INACTIVE_BORDER="$(sed -n 's/^[[:space:]]*col\.inactive_border[[:space:]]*=[[:space:]]*//p' "${GENERAL_CONF}" | head -1)"
+
+  TINT_WAS_ON=off; BEAT_WAS_ON=off
+  command -v nyxus-tint >/dev/null 2>&1 && [[ "$(nyxus-tint status 2>/dev/null)" == on ]] && TINT_WAS_ON=on
+  command -v nyxus-beat >/dev/null 2>&1 && [[ "$(nyxus-beat status 2>/dev/null)" == on ]] && BEAT_WAS_ON=on
+
+  [[ "${BEAT_WAS_ON}" == on ]] && nyxus-beat off >/dev/null 2>&1 || true
+  [[ "${TINT_WAS_ON}" == on ]] && nyxus-tint off >/dev/null 2>&1 || true
+
+  # let the daemons' exit-restore land before we overwrite the border
+  [[ "${TINT_WAS_ON}" == on || "${BEAT_WAS_ON}" == on ]] && sleep 0.3
+
+  [[ -n "${ACTIVE_BORDER}"   ]] && timeout 5 hyprctl keyword general:col.active_border   "${ACTIVE_BORDER}"   >/dev/null 2>&1 || true
+  [[ -n "${INACTIVE_BORDER}" ]] && timeout 5 hyprctl keyword general:col.inactive_border "${INACTIVE_BORDER}" >/dev/null 2>&1 || true
+
+  # nyxus-pulsed re-reads the border each cycle, so it self-heals to the
+  # new accent once the keyword above lands; only tint/beat need a restart.
+  [[ "${TINT_WAS_ON}" == on ]] && nyxus-tint on >/dev/null 2>&1 || true
+  [[ "${BEAT_WAS_ON}" == on ]] && nyxus-beat on >/dev/null 2>&1 || true
+fi
+
+echo "accent: applied '${NAME}' (primary=${NEW_P}, secondary=${NEW_S})"

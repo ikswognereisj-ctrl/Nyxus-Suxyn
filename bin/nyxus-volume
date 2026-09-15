@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# nyxus-volume — raise / lower / mute the sink that actually makes sound.
+#
+# Easy Effects (and similar filters) register as the default sink. wpctl on
+# @DEFAULT_AUDIO_SINK@ then moves a virtual fader the DAC never reads, so the
+# OSD changes and the speakers do not. When default is a filter, this aims at
+# Speakers / Headphones / Bluetooth instead.
+set -euo pipefail
+
+real_sink() {
+  local def
+  def=$(pactl get-default-sink 2>/dev/null || true)
+  case "$def" in
+    *easyeffects*|*jamesdsp*) ;;
+    "") ;;
+    *) printf '%s\n' "$def"; return ;;
+  esac
+  local name state pick=""
+  while read -r _ name _ state _; do
+    case "$name" in
+      *easyeffects*|*jamesdsp*) continue ;;
+      *hdmi*|*HDMI*|*DisplayPort*|*pro-output*) continue ;;
+    esac
+    case "$name" in
+      *Speaker*|*Headphones*|*analog*|*bluez_output*)
+        pick=$name
+        [[ "$state" == RUNNING ]] && { printf '%s\n' "$name"; return; }
+        ;;
+    esac
+  done < <(pactl list short sinks)
+  printf '%s\n' "${pick:-$def}"
+}
+
+s=$(real_sink)
+[[ -n "$s" ]] || exit 1
+
+case "${1:-}" in
+  up)   pactl set-sink-mute "$s" 0
+        pactl set-sink-volume "$s" +5%
+        ;;
+  down) pactl set-sink-volume "$s" -5% ;;
+  mute) pactl set-sink-mute "$s" toggle ;;
+  *) echo "nyxus-volume: usage: nyxus-volume up|down|mute" >&2; exit 2 ;;
+esac

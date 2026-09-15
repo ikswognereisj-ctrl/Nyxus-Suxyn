@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# ============================================================
+#  NYXUS GLOW — scatter random neon color across text
+#  ~/.local/bin/nyxus-glow  (also /usr/local/bin)
+#
+#  Terminals can't outline or drop-shadow individual glyphs (a TTY cell
+#  only has fg/bg + bold/italic/underline — no per-letter glow exists in
+#  ANY terminal). The closest real effect is bold + bright neon truecolor
+#  on random letters/words over the transparent background, which reads as
+#  "glowing text here and there." That's what this does.
+#
+#  usage:
+#    nyxus-glow "some text"          # colorize an argument
+#    echo hi | nyxus-glow            # colorize a pipe (filter)
+#    nyxus-glow -w "words mode"      # color whole words (default)
+#    nyxus-glow -c "char mode"       # color individual letters
+#    NYXUS_GLOW_DENSITY=0.5 ...      # fraction that glow (0..1, default 0.4)
+#    NYXUS_GLOW_ALL=1 ...            # glow every token (no scatter)
+#
+#  © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+# ============================================================
+set -u
+
+MODE="word"
+case "${1:-}" in
+  -w|--word) MODE="word"; shift ;;
+  -c|--char) MODE="char"; shift ;;
+  -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+esac
+
+DENSITY="${NYXUS_GLOW_DENSITY:-0.4}"
+GLOW_ALL="${NYXUS_GLOW_ALL:-0}"
+
+# Neon palette (r,g,b) — the GALAXY canonical hues (rev 2026-07-23).
+# Keep in lockstep with accent.json 'prism' + the fixed neon constants.
+PALETTE=(
+  "176 108 255"   # violet  #b06cff
+  "255 45 173"    # magenta #ae206c
+  "57 255 20"     # green   #2cf597
+  "255 138 30"    # orange  #9b621b
+  "43 210 255"    # cyan    #0aa2d6
+  "255 230 0"     # yellow  #9b621b
+  "255 45 85"     # red     #ff2d55
+  "210 145 250"   # orchid  #d291fa
+)
+# ⚠ WIP-746, RULED BY THE OWNER 2026-08-17. READ THIS BEFORE "FIXING" THE
+# VALUES ABOVE TO MATCH THEIR COMMENTS — that is the wrong direction.
+#
+# THIS FILE COLOURS TEXT. Not a surface, not an ambient effect: emit() sets a
+# 24-bit FOREGROUND on glyphs a person reads. So the governing rule is
+# NYXUS_GLASS §1.3's 4.5:1 contrast floor, and nyxus_palette.FORBIDDEN —
+# which exists to keep the pre-fork palette out of the CHROME — is scoped for
+# a different job.
+#
+# Measured, not argued. Against this terminal's background, three of the
+# replacements the ban list prescribes FAIL the text floor while the value
+# shipping today PASSES it: magenta 6.07:1 -> 3.14:1, orange 8.67:1 -> 4.05:1,
+# yellow 16.14:1 -> 4.05:1. And orange and yellow are prescribed the SAME
+# replacement, so an eight-colour scatter would collapse to seven. Green and
+# cyan convert cleanly; they are left as they are so the set stays one
+# decision rather than a mixture.
+#
+# VIOLET WAS THE REAL DEFECT AND IS FIXED. It read 3.88:1, failing the floor,
+# and its prescribed replacement was worse at 1.74:1. It now takes the violet
+# swirl layer's own BRIGHT stop at 6.27:1 — canonical in accent.json, same
+# role, brighter.
+#
+# ORCHID is also fixed: it stored 227/103/255 while its comment named a
+# different colour, so the file was documenting a colour it did not contain.
+# The value had drifted and the comment had not.
+#
+# `red` is the one entry that had already been migrated, and it is the
+# evidence for what happened here: the 2026-08-06 palette move was applied to
+# every comment and to a single value, then abandoned.
+#
+# WHY NO GATE CAUGHT ANY OF IT. 13q11 never opens this file — it matches an
+# extension whitelist and this file has none. 13pm is aimed squarely at this
+# file class, "runtime colour writer", but it scans HEX literals while this
+# file stores DECIMAL triples, so the values are invisible to it and the
+# canonical hexes in the comments read as clean. Teaching 13pm to read decimal
+# triples belongs with WIP-745.
+
+# gate: return 0 (glow this token) with probability DENSITY
+glow_gate() {
+  [ "$GLOW_ALL" = 1 ] && return 0
+  awk -v d="$DENSITY" 'BEGIN { srand(); exit !(rand() < d) }'
+}
+rand_color() { printf '%s' "${PALETTE[RANDOM % ${#PALETTE[@]}]}"; }
+
+emit() {  # $1 = token text
+  local tok="$1"
+  if glow_gate; then
+    read -r r g b <<<"$(rand_color)"
+    # 1m = bold (the glow pop), 38;2;r;g;bm = 24-bit fg; 0m resets
+    printf '\033[1;38;2;%s;%s;%sm%s\033[0m' "$r" "$g" "$b" "$tok"
+  else
+    printf '%s' "$tok"
+  fi
+}
+
+process_line() {
+  local line="$1" i ch word
+  if [ "$MODE" = "char" ]; then
+    for (( i=0; i<${#line}; i++ )); do
+      ch="${line:i:1}"
+      if [ "$ch" = " " ] || [ "$ch" = $'\t' ]; then printf '%s' "$ch"; else emit "$ch"; fi
+    done
+  else
+    # word mode: preserve runs of whitespace between words
+    local rest="$line"
+    while [ -n "$rest" ]; do
+      case "$rest" in
+        [[:space:]]*) printf '%s' "${rest%%[![:space:]]*}"; rest="${rest#"${rest%%[![:space:]]*}"}" ;;
+        *)            word="${rest%%[[:space:]]*}"; emit "$word"; rest="${rest#"$word"}" ;;
+      esac
+    done
+  fi
+  printf '\n'
+}
+
+if [ "$#" -gt 0 ]; then
+  printf '%s\n' "$*" | while IFS= read -r l; do process_line "$l"; done
+else
+  while IFS= read -r l; do process_line "$l"; done
+fi

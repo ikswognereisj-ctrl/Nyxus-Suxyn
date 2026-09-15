@@ -1,0 +1,985 @@
+#!/usr/bin/env python3
+"""
+nyxus-backup — a backup a person can take OFF this disk, and bring back.
+
+    nyxus-backup                         open the Backup window (unchanged: the GTK app)
+    nyxus-backup target add <name> --path DIR | --label LABEL
+    nyxus-backup target list [--json]
+    nyxus-backup target remove <name>
+    nyxus-backup run [--target NAME] [--set SET] [--dry-run] [--json] [--notify]
+    nyxus-backup list [--from NAME|DIR] [--json]
+    nyxus-backup restore <what> [--from NAME|DIR] [--snapshot ID] [--to DIR]
+                                [--dry-run] [--mirror] [--json]
+    nyxus-backup status [--json]
+    nyxus-backup schedule on|off|show [--json]
+    nyxus-backup sets [--json]
+    nyxus-backup offer --label LABEL | --path DIR     (the USB-arrival toast)
+
+Snapper keeps snapshots ON this disk; they die with the drive. This tool
+writes to a place that is not this disk — a mounted folder (a second drive,
+a network mount) or a USB stick named by its filesystem LABEL — and can read
+the same place back on any machine, including a fresh install.
+
+What goes off-disk is the person's own state, in SETS (`nyxus-backup sets`):
+
+    home       everything under $HOME except caches, trash, game libraries
+               and the other things listed in EXCLUDES_HOME — documents,
+               pictures, music, downloads, dotfiles, the lot
+    settings   the desktop itself: ~/.config/nyxus (every NYXUS preference,
+               rooms, accent, widgets), ~/.config/hypr, the user units,
+               ~/.local/share/nyxus*, ~/.nyxus (data files; the *.py links
+               are skipped — they are the build's, not the person's)
+    packages   a manifest, not files: `pacman -Qqe` (what was installed on
+               purpose) + the hostname, written as packages.txt / host.json
+               so a restore on a fresh machine knows what to put back
+
+Engine: rsync (ships in packages.x86_64; borg/restic are NOT used — a
+person must be able to open the stick in any file manager and see folders).
+On a target filesystem with hardlinks (ext4, btrfs, xfs, f2fs) each run is a
+new dated folder that shares unchanged files with the previous one via
+--link-dest, so ten runs cost little more than one. On FAT / exFAT / NTFS
+(what most sticks come formatted as) there are no hardlinks, owners or
+permissions, so the tool keeps ONE mirror folder per set, updated in place,
+and says so — `nyxus-backup target list` shows the mode per target.
+
+Layout on the target:
+
+    <target>/NyxusBackup/<host>-<user>/<set>/<YYYYmmdd-HHMMSS>/   (history mode)
+    <target>/NyxusBackup/<host>-<user>/<set>/mirror/              (mirror mode)
+    <target>/NyxusBackup/<host>-<user>/<set>/latest.txt           name of the newest
+    <target>/NyxusBackup/.nyxus-backup-target                     marker (json)
+
+Restore never deletes a live file unless `--mirror` is passed; by default it
+puts the backed-up files back over the top and leaves everything else.
+`--dry-run` prints what rsync WOULD do and touches nothing. `--to DIR`
+restores into a folder of your choosing instead of the original place.
+
+Config:  ~/.config/nyxus/backup.json      {targets, excludes_extra, sets}
+State:   ~/.local/state/nyxus/backup.json  {last_run, runs[]}  (About/Health read this)
+Log:     ~/.cache/nyxus/backup.log
+
+Nothing here needs root. Nothing here writes outside $HOME, the target, and
+(for `restore --to`) the folder named. `--json` on every verb prints one
+JSON object on stdout and nothing else, for the Settings face (TRK-1090).
+
+Exit: 0 ok · 1 something failed (the JSON says what) · 2 bad usage.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import socket
+import subprocess
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+
+VERSION = "2026.08.22"
+HOME = Path.home()
+XDG_CONFIG = Path(os.environ.get("XDG_CONFIG_HOME") or HOME / ".config")
+XDG_STATE = Path(os.environ.get("XDG_STATE_HOME") or HOME / ".local/state")
+XDG_CACHE = Path(os.environ.get("XDG_CACHE_HOME") or HOME / ".cache")
+CONFIG_FILE = XDG_CONFIG / "nyxus" / "backup.json"
+STATE_FILE = XDG_STATE / "nyxus" / "backup.json"
+LOG_FILE = XDG_CACHE / "nyxus" / "backup.log"
+TIMER_UNIT = "nyxus-backup.timer"
+ROOT_DIRNAME = "NyxusBackup"
+MARKER = ".nyxus-backup-target"
+GUI_APP = "nyxus_backup.py"
+
+# Filesystems where rsync can keep owners, modes, symlinks and hardlinks.
+HISTORY_FSTYPES = {"ext2", "ext3", "ext4", "btrfs", "xfs", "f2fs", "jfs",
+                   "zfs", "nfs", "nfs4", "cifs", "fuse.sshfs", "reiserfs"}
+# Filesystems with none of that: one mirror folder per set, updated in place.
+MIRROR_FSTYPES = {"vfat", "exfat", "msdos", "fat", "ntfs", "ntfs3",
+                  "fuseblk", "ntfs-3g", "hfsplus"}
+
+# What `home` leaves behind. Paths are relative to $HOME, rsync pattern
+# syntax. Caches and trash regenerate; game libraries and package caches
+# are re-downloadable and huge; sockets and lock files are not files.
+EXCLUDES_HOME = [
+    ".cache/", ".local/share/Trash/", ".local/share/Steam/", ".steam/",
+    ".local/share/lutris/runners/", ".local/share/bottles/",
+    ".var/app/*/cache/", ".var/app/*/.cache/",
+    ".npm/", ".cargo/registry/", ".cargo/git/", ".rustup/", ".gradle/",
+    ".m2/repository/", ".local/share/containers/", ".docker/",
+    ".local/share/flatpak/repo/", ".mozilla/firefox/*/cache2/",
+    ".config/chromium/*/Service Worker/CacheStorage/",
+    "node_modules/", "__pycache__/", "*.pyc", ".thumbnails/", ".gvfs/",
+    ".Xauthority", ".ICEauthority", "*.sock", "*.lock", ".dbus/",
+    "snap/*/common/.cache/", ".local/share/baloo/",
+    # the mirrors of the build's own Python that the skel links into ~/.nyxus
+    ".nyxus/*.py",
+]
+
+# The desktop itself, as rsync include rules under $HOME. Everything not
+# matched is excluded (the closing "- *" is added by the engine).
+SETTINGS_PATHS = [
+    ".config/nyxus/",
+    ".config/hypr/",
+    ".config/systemd/user/",
+    ".config/quickshell/",
+    ".config/gtk-3.0/", ".config/gtk-4.0/",
+    ".config/qt5ct/", ".config/qt6ct/",
+    ".config/kitty/", ".config/ghostty/", ".config/alacritty/",
+    ".config/nyxus-house/",
+    ".local/share/nyxus/",
+    ".local/share/applications/",
+    ".local/share/icons/",
+    ".local/share/backgrounds/",
+    ".nyxus/",
+    ".face", ".face.icon",
+]
+
+SETS = {
+    "home": "everything under $HOME except caches, trash, game and package stores",
+    "settings": "the desktop: ~/.config/nyxus, hypr, user units, nyxus data, ~/.nyxus",
+    "packages": "a manifest: pacman -Qqe + hostname (packages.txt, host.json)",
+}
+DEFAULT_SETS = ["home", "packages"]
+
+
+# ── small helpers ─────────────────────────────────────────────────────────
+def log(msg: str) -> None:
+    try:
+        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with LOG_FILE.open("a") as fh:
+            fh.write(f"{datetime.now().isoformat(timespec='seconds')} {msg}\n")
+    except OSError:
+        pass
+
+
+def sh(cmd, timeout=30, **kw):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True,
+                              timeout=timeout, **kw)
+    except FileNotFoundError:
+        return subprocess.CompletedProcess(cmd, 127, "", f"{cmd[0]}: not found")
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(cmd, 124, "", f"{cmd[0]}: timed out")
+
+
+def have(cmd: str) -> bool:
+    return shutil.which(cmd) is not None
+
+
+def emit(obj, as_json: bool, text: str = "") -> None:
+    if as_json:
+        print(json.dumps(obj, indent=2, sort_keys=True))
+    elif text:
+        print(text)
+
+
+def read_json(path: Path, default):
+    try:
+        with path.open() as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return default
+
+
+def write_json(path: Path, obj) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w") as fh:
+        json.dump(obj, fh, indent=2, sort_keys=True)
+        fh.write("\n")
+    os.replace(tmp, path)
+
+
+def load_config() -> dict:
+    cfg = read_json(CONFIG_FILE, {})
+    cfg.setdefault("targets", {})
+    cfg.setdefault("excludes_extra", [])
+    cfg.setdefault("sets", list(DEFAULT_SETS))
+    return cfg
+
+
+def load_state() -> dict:
+    st = read_json(STATE_FILE, {})
+    st.setdefault("runs", [])
+    st.setdefault("last_run", None)
+    return st
+
+
+def human(n) -> str:
+    if n is None:
+        return "?"
+    n = float(n)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if n < 1024 or unit == "TiB":
+            return f"{n:.1f} {unit}" if unit != "B" else f"{int(n)} B"
+        n /= 1024
+    return f"{n:.1f} TiB"
+
+
+def host_user() -> str:
+    return f"{socket.gethostname()}-{os.environ.get('USER') or Path.home().name}"
+
+
+# ── target resolution (path or labelled USB) ──────────────────────────────
+def findmnt(path_or_dev: str, field: str) -> str:
+    r = sh(["findmnt", "-no", field, "--", path_or_dev])
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def fs_of(path: Path) -> str:
+    # the filesystem that actually holds `path` (walk up to a mounted parent)
+    p = path
+    while True:
+        r = sh(["findmnt", "-no", "FSTYPE", "-T", str(p)])
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout.strip()
+        if p.parent == p:
+            return ""
+        p = p.parent
+
+
+def resolve_label(label: str, mount: bool) -> dict:
+    """A USB stick named by filesystem label. Mounted by udisks (no root:
+    udisks2 lets an active local session mount removable media), never
+    by this tool's own privilege."""
+    dev = Path("/dev/disk/by-label") / label
+    info = {"label": label, "present": dev.exists(), "mountpoint": "",
+            "device": os.path.realpath(dev) if dev.exists() else ""}
+    if not dev.exists():
+        return info
+    mp = findmnt(info["device"], "TARGET")
+    if not mp and mount and have("udisksctl"):
+        r = sh(["udisksctl", "mount", "-b", info["device"], "--no-user-interaction"], timeout=60)
+        if r.returncode == 0:
+            mp = findmnt(info["device"], "TARGET")
+            log(f"mounted {label} at {mp}")
+        else:
+            info["mount_error"] = (r.stderr or r.stdout).strip()[:200]
+    info["mountpoint"] = mp
+    return info
+
+
+def target_root(tname: str, tdef: dict, mount: bool = True) -> dict:
+    """Where this target is right now. mountpoint == '' means unreachable."""
+    out = {"name": tname, "kind": tdef.get("kind"), "mountpoint": "",
+           "reachable": False, "fstype": "", "mode": "", "free_bytes": None,
+           "why": ""}
+    if tdef.get("kind") == "label":
+        info = resolve_label(tdef["label"], mount)
+        out["label"] = tdef["label"]
+        out["device"] = info.get("device", "")
+        if not info["present"]:
+            out["why"] = f"no drive labelled {tdef['label']} is plugged in"
+            return out
+        if not info["mountpoint"]:
+            out["why"] = info.get("mount_error") or "drive present but not mounted"
+            return out
+        base = Path(info["mountpoint"])
+    else:
+        base = Path(tdef["path"])
+        out["path"] = str(base)
+        if not base.is_dir():
+            out["why"] = f"{base} is not a folder that exists right now"
+            return out
+        # A folder on the same filesystem as $HOME is ON this disk — the
+        # thing this tool exists to escape. A second partition or a network
+        # mount has its own st_dev and passes; a plain ~/backups does not,
+        # unless the target was added with --on-disk (testing).
+        if same_device(base, HOME) and not tdef.get("allow_on_disk"):
+            out["why"] = (f"{base} is on the same filesystem as your home — "
+                          "that is not off this disk (add with --on-disk to allow)")
+            return out
+    fstype = fs_of(base)
+    out["fstype"] = fstype
+    out["mode"] = "history" if fstype in HISTORY_FSTYPES else \
+        ("mirror" if fstype in MIRROR_FSTYPES else "history")
+    try:
+        stv = os.statvfs(base)
+        out["free_bytes"] = stv.f_bavail * stv.f_frsize
+    except OSError:
+        pass
+    out["mountpoint"] = str(base)
+    out["root"] = str(base / ROOT_DIRNAME / host_user())
+    out["reachable"] = True
+    return out
+
+
+def same_device(a: Path, b: Path) -> bool:
+    try:
+        return os.stat(a).st_dev == os.stat(b).st_dev
+    except OSError:
+        return False
+
+
+def write_marker(base: Path) -> None:
+    m = base / ROOT_DIRNAME / MARKER
+    if not m.exists():
+        m.parent.mkdir(parents=True, exist_ok=True)
+        write_json(m, {"created": datetime.now().isoformat(timespec="seconds"),
+                       "host": socket.gethostname(), "tool": "nyxus-backup",
+                       "version": VERSION})
+
+
+# ── rsync plumbing ────────────────────────────────────────────────────────
+def rsync_base(mode: str) -> list:
+    if mode == "mirror":
+        # FAT/exFAT/NTFS: no owners, modes, symlinks or hardlinks. -rtD keeps
+        # times (2 s window for FAT) and special files are skipped by rsync.
+        return ["rsync", "-rt", "--modify-window=2", "--no-perms", "--no-owner",
+                "--no-group", "--no-links", "--omit-dir-times", "--delete",
+                "--delete-excluded"]
+    return ["rsync", "-a", "--hard-links", "--delete", "--delete-excluded"]
+
+
+def set_rules(setname: str, cfg: dict) -> list:
+    if setname == "home":
+        rules = []
+        for ex in EXCLUDES_HOME + list(cfg.get("excludes_extra", [])):
+            rules += ["--exclude", ex]
+        return rules
+    if setname == "settings":
+        rules = []
+        for inc in SETTINGS_PATHS:
+            # include every parent dir so the leaf can be reached, then the leaf
+            parts = Path(inc.rstrip("/")).parts
+            for i in range(1, len(parts)):
+                rules += ["--include", "/" + "/".join(parts[:i]) + "/"]
+            if inc.endswith("/"):
+                rules += ["--include", "/" + inc.rstrip("/") + "/***"]
+            else:
+                rules += ["--include", "/" + inc]
+        rules += ["--exclude", ".nyxus/*.py", "--exclude", "*"]
+        return rules
+    return []
+
+
+def snapshots_in(setdir: Path) -> list:
+    if not setdir.is_dir():
+        return []
+    out = []
+    for p in sorted(setdir.iterdir()):
+        if p.is_dir() and p.name != "mirror" and len(p.name) == 15 and p.name[8] == "-":
+            out.append(p.name)
+    if (setdir / "mirror").is_dir():
+        out.append("mirror")
+    return out
+
+
+def latest_of(setdir: Path) -> str:
+    try:
+        return (setdir / "latest.txt").read_text().strip()
+    except OSError:
+        snaps = snapshots_in(setdir)
+        return snaps[-1] if snaps else ""
+
+
+def parse_stats(stdout: str) -> dict:
+    st = {}
+    for line in stdout.splitlines():
+        if line.startswith("Number of regular files transferred:"):
+            st["files_transferred"] = int(line.split(":")[1].strip().replace(",", ""))
+        elif line.startswith("Number of files:"):
+            st["files_total"] = int(line.split(":")[1].split("(")[0].strip().replace(",", ""))
+        elif line.startswith("Total transferred file size:"):
+            st["bytes_transferred"] = int(line.split(":")[1].split("bytes")[0].strip().replace(",", ""))
+        elif line.startswith("Total file size:"):
+            st["bytes_total"] = int(line.split(":")[1].split("bytes")[0].strip().replace(",", ""))
+    return st
+
+
+def run_set(setname: str, troot: dict, cfg: dict, dry: bool, quiet: bool) -> dict:
+    """One set → one target. Returns a result dict; never raises."""
+    res = {"set": setname, "target": troot["name"], "ok": False, "dry_run": dry,
+           "snapshot": "", "dest": "", "stats": {}, "error": ""}
+    base = Path(troot["root"]) / setname
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    if setname == "packages":
+        dest = base / ("mirror" if troot["mode"] == "mirror" else stamp)
+        res["dest"] = str(dest)
+        res["snapshot"] = dest.name
+        pk = sh(["pacman", "-Qqe"], timeout=60)
+        manifest = pk.stdout if pk.returncode == 0 else ""
+        hostj = {"hostname": socket.gethostname(), "user": os.environ.get("USER", ""),
+                 "taken": datetime.now().isoformat(timespec="seconds"),
+                 "os_release": read_os_release(), "packages": len(manifest.split())}
+        res["stats"] = {"files_transferred": 2, "packages": hostj["packages"]}
+        if dry:
+            res["ok"] = True
+            return res
+        try:
+            dest.mkdir(parents=True, exist_ok=True)
+            (dest / "packages.txt").write_text(manifest)
+            write_json(dest / "host.json", hostj)
+            (base / "latest.txt").write_text(dest.name + "\n")
+            res["ok"] = True
+        except OSError as e:
+            res["error"] = str(e)
+        return res
+
+    cmd = rsync_base(troot["mode"]) + set_rules(setname, cfg) + ["--stats"]
+    if troot["mode"] == "mirror":
+        dest = base / "mirror"
+    else:
+        dest = base / stamp
+        prev = latest_of(base)
+        if prev and (base / prev).is_dir():
+            cmd += ["--link-dest", str(base / prev)]
+    # never back the target into itself when it lives under $HOME
+    try:
+        rel = Path(troot["mountpoint"]).resolve().relative_to(HOME.resolve())
+        cmd += ["--exclude", "/" + str(rel) + "/"]
+    except ValueError:
+        pass
+    if dry:
+        cmd += ["--dry-run"]
+    cmd += [str(HOME) + "/", str(dest) + "/"]
+    res["dest"] = str(dest)
+    res["snapshot"] = dest.name
+    if not dry:
+        try:
+            dest.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            res["error"] = str(e)
+            return res
+    t0 = time.time()
+    r = sh(cmd, timeout=None)
+    res["seconds"] = round(time.time() - t0, 1)
+    res["stats"] = parse_stats(r.stdout)
+    # rsync 23/24 = some files vanished or could not be read (a browser cache
+    # mid-write, a socket) — the copy is still good; anything else is a fail.
+    if r.returncode in (0, 23, 24):
+        res["ok"] = True
+        if r.returncode:
+            res["warning"] = f"rsync exit {r.returncode}: some files were skipped (see log)"
+        if not dry:
+            try:
+                (base / "latest.txt").write_text(dest.name + "\n")
+            except OSError:
+                pass
+    else:
+        res["error"] = f"rsync exit {r.returncode}: {(r.stderr or r.stdout).strip()[:400]}"
+    log(f"run set={setname} target={troot['name']} dry={dry} ok={res['ok']} "
+        f"dest={dest} stats={res['stats']} {res['error']}")
+    if not quiet and not dry and r.stderr.strip():
+        log("rsync stderr: " + r.stderr.strip()[:2000])
+    return res
+
+
+def read_os_release() -> dict:
+    out = {}
+    try:
+        for line in Path("/etc/os-release").read_text().splitlines():
+            if "=" in line:
+                k, _, v = line.partition("=")
+                out[k] = v.strip().strip('"')
+    except OSError:
+        pass
+    return {k: out.get(k, "") for k in ("NAME", "VERSION_ID", "BUILD_ID", "ID")}
+
+
+def notify(summary: str, body: str, actions: dict | None = None, icon="drive-removable-media") -> str:
+    """notify-send is the shipped notifier (usb-watch and update-check use it
+    too). With actions it blocks until the toast closes and prints the key."""
+    if not have("notify-send"):
+        return ""
+    cmd = ["notify-send", "-a", "NYXUS", "-i", icon]
+    for key, label in (actions or {}).items():
+        cmd += ["-A", f"{key}={label}"]
+    cmd += [summary, body]
+    r = sh(cmd, timeout=None if actions else 5)
+    return (r.stdout or "").strip()
+
+
+# ── verbs ─────────────────────────────────────────────────────────────────
+def cmd_target(a) -> int:
+    cfg = load_config()
+    if a.action == "list":
+        rows = []
+        for name, tdef in sorted(cfg["targets"].items()):
+            rows.append(target_root(name, tdef, mount=False))
+        emit({"targets": rows, "config": str(CONFIG_FILE)}, a.json)
+        if not a.json:
+            if not rows:
+                print("No backup targets yet.  Add one:\n"
+                      "  nyxus-backup target add stick --label MYSTICK\n"
+                      "  nyxus-backup target add drive --path /run/media/$USER/Backup")
+            for t in rows:
+                where = t.get("label") and f"label {t['label']}" or t.get("path", "")
+                state = "reachable" if t["reachable"] else f"unreachable ({t['why']})"
+                extra = f" · {t['fstype']} · {t['mode']} mode · {human(t['free_bytes'])} free" if t["reachable"] else ""
+                print(f"  {t['name']:<14} {where:<36} {state}{extra}")
+        return 0
+    if a.action == "add":
+        if not a.name or not a.name.replace("-", "").replace("_", "").isalnum():
+            emit({"error": "name must be letters, digits, - or _"}, a.json,
+                 "target name must be letters, digits, - or _")
+            return 2
+        if bool(a.path) == bool(a.label):
+            emit({"error": "give exactly one of --path or --label"}, a.json,
+                 "give exactly one of --path DIR or --label LABEL")
+            return 2
+        if a.path:
+            p = Path(a.path).expanduser()
+            tdef = {"kind": "path", "path": str(p), "allow_on_disk": bool(a.on_disk)}
+        else:
+            tdef = {"kind": "label", "label": a.label}
+        tdef["added"] = datetime.now().isoformat(timespec="seconds")
+        cfg["targets"][a.name] = tdef
+        write_json(CONFIG_FILE, cfg)
+        probe = target_root(a.name, tdef, mount=False)
+        log(f"target add {a.name} {tdef}")
+        emit({"added": a.name, "target": probe}, a.json,
+             f"added {a.name}: " + ("reachable now (%s, %s mode)" % (probe["fstype"], probe["mode"])
+                                    if probe["reachable"] else f"not reachable right now — {probe['why']}"))
+        return 0
+    if a.action == "remove":
+        if a.name not in cfg["targets"]:
+            emit({"error": f"no target {a.name}"}, a.json, f"no target named {a.name}")
+            return 1
+        del cfg["targets"][a.name]
+        write_json(CONFIG_FILE, cfg)
+        log(f"target remove {a.name}")
+        emit({"removed": a.name}, a.json, f"removed {a.name} (the files on it are untouched)")
+        return 0
+    return 2
+
+
+def pick_targets(cfg: dict, name: str | None, mount=True) -> list:
+    if name:
+        if name not in cfg["targets"]:
+            return []
+        return [target_root(name, cfg["targets"][name], mount)]
+    return [target_root(n, t, mount) for n, t in sorted(cfg["targets"].items())]
+
+
+def cmd_run(a) -> int:
+    cfg = load_config()
+    if not cfg["targets"]:
+        # From the timer (--if-reachable) an unconfigured machine is an
+        # ordinary day, not a failed unit; by hand it is an error.
+        emit({"error": "no targets", "ran": [], "ok": bool(a.if_reachable)}, a.json,
+             "No backup target configured. nyxus-backup target add <name> --label LABEL | --path DIR")
+        return 0 if a.if_reachable else 1
+    targets = pick_targets(cfg, a.target)
+    if a.target and not targets:
+        emit({"error": f"no target {a.target}"}, a.json, f"no target named {a.target}")
+        return 1
+    sets = [a.set] if a.set else list(cfg["sets"])
+    for s in sets:
+        if s not in SETS:
+            emit({"error": f"unknown set {s}"}, a.json, f"unknown set {s} (see nyxus-backup sets)")
+            return 2
+    report = {"started": datetime.now().isoformat(timespec="seconds"), "dry_run": a.dry_run,
+              "ran": [], "skipped": [], "ok": True}
+    for t in targets:
+        if not t["reachable"]:
+            report["skipped"].append({"target": t["name"], "why": t["why"]})
+            continue
+        if not a.dry_run:
+            try:
+                write_marker(Path(t["mountpoint"]))
+            except OSError as e:
+                report["skipped"].append({"target": t["name"], "why": f"cannot write there: {e}"})
+                continue
+        for s in sets:
+            res = run_set(s, t, cfg, a.dry_run, a.quiet)
+            report["ran"].append(res)
+            if not res["ok"]:
+                report["ok"] = False
+    if not report["ran"]:
+        # Nothing reachable. From the timer that is an ordinary day (the
+        # stick lives in a drawer): --if-reachable keeps the unit green.
+        report["ok"] = bool(a.if_reachable)
+        report["nothing_reachable"] = True
+    report["finished"] = datetime.now().isoformat(timespec="seconds")
+    if not a.dry_run:
+        st = load_state()
+        summary = {"when": report["finished"], "ok": report["ok"],
+                   "targets": sorted({r["target"] for r in report["ran"]}),
+                   "sets": sorted({r["set"] for r in report["ran"]}),
+                   "files": sum(r["stats"].get("files_transferred", 0) for r in report["ran"]),
+                   "bytes": sum(r["stats"].get("bytes_transferred", 0) for r in report["ran"]),
+                   "skipped": report["skipped"]}
+        if report["ran"]:
+            st["last_run"] = summary
+            st["runs"] = (st["runs"] + [summary])[-30:]
+            write_json(STATE_FILE, st)
+    if a.notify:
+        if report["ran"] and report["ok"]:
+            n = sum(r["stats"].get("files_transferred", 0) for r in report["ran"])
+            notify("Backup finished", f"{n} files copied to " + ", ".join(sorted({r['target'] for r in report['ran']})))
+        elif report["ran"]:
+            notify("Backup had a problem", "; ".join(r["error"] for r in report["ran"] if r["error"])[:200] or "see ~/.cache/nyxus/backup.log", icon="dialog-warning")
+        else:
+            notify("Backup skipped", "; ".join(f"{s['target']}: {s['why']}" for s in report["skipped"])[:200], icon="dialog-information")
+    emit(report, a.json)
+    if not a.json:
+        for r in report["ran"]:
+            st_ = r["stats"]
+            what = f"{st_.get('files_transferred', '?')} files, {human(st_.get('bytes_transferred'))}"
+            print(f"  {'DRY ' if a.dry_run else ''}{r['set']:<9} → {r['target']:<12} "
+                  f"{'ok' if r['ok'] else 'FAILED'}  {what}  {r['dest']}  {r.get('warning', '')}{r['error']}")
+        for s in report["skipped"]:
+            print(f"  skipped {s['target']}: {s['why']}")
+        if not report["ran"]:
+            print("Nothing ran.")
+    return 0 if report["ok"] else 1
+
+
+def source_root(cfg: dict, frm: str | None, mount=True) -> dict:
+    """--from is a target name or a directory (a stick plugged into a fresh
+    machine has no target entry yet — the folder itself is enough)."""
+    if frm and frm in cfg["targets"]:
+        return target_root(frm, cfg["targets"][frm], mount)
+    if frm:
+        p = Path(frm).expanduser()
+        if (p / ROOT_DIRNAME).is_dir():
+            base = p / ROOT_DIRNAME
+        elif p.name == ROOT_DIRNAME:
+            base = p
+        elif p.is_dir() and (p / MARKER).exists():
+            base = p
+        else:
+            return {"reachable": False, "why": f"{p} is not a NyxusBackup folder", "name": frm}
+        # pick the newest <host>-<user> folder unless exactly one exists
+        cands = sorted([d for d in base.iterdir() if d.is_dir()], key=lambda d: d.stat().st_mtime)
+        if not cands:
+            return {"reachable": False, "why": f"{base} holds no backups", "name": frm}
+        mine = [d for d in cands if d.name == host_user()]
+        chosen = mine[0] if mine else cands[-1]
+        return {"reachable": True, "name": str(p), "root": str(chosen), "mountpoint": str(p),
+                "fstype": fs_of(p), "mode": "history" if fs_of(p) in HISTORY_FSTYPES else "mirror",
+                "why": "", "candidates": [d.name for d in cands]}
+    # no --from: the first reachable target
+    for n, t in sorted(cfg["targets"].items()):
+        tr = target_root(n, t, mount)
+        if tr["reachable"]:
+            return tr
+    return {"reachable": False, "why": "no reachable target (plug the drive in, or pass --from DIR)", "name": ""}
+
+
+def cmd_list(a) -> int:
+    cfg = load_config()
+    src = source_root(cfg, a.frm)
+    if not src["reachable"]:
+        emit({"error": src["why"]}, a.json, src["why"])
+        return 1
+    root = Path(src["root"])
+    out = {"source": src["name"], "root": str(root), "mode": src["mode"], "sets": {}}
+    for s in SETS:
+        sd = root / s
+        snaps = snapshots_in(sd)
+        out["sets"][s] = {"snapshots": snaps, "latest": latest_of(sd) if snaps else ""}
+    emit(out, a.json)
+    if not a.json:
+        print(f"{root}  ({src['mode']} mode)")
+        for s, v in out["sets"].items():
+            print(f"  {s:<9} {len(v['snapshots'])} snapshot(s)" + (f", latest {v['latest']}" if v["latest"] else ""))
+            for n in v["snapshots"][-5:]:
+                print(f"             {n}")
+    return 0
+
+
+def cmd_restore(a) -> int:
+    cfg = load_config()
+    src = source_root(cfg, a.frm)
+    if not src["reachable"]:
+        emit({"error": src["why"]}, a.json, src["why"])
+        return 1
+    root = Path(src["root"])
+    what = a.what
+    # <what> is a set name, or a path inside the home set (Documents/x)
+    setname = what if what in SETS else "home"
+    subpath = "" if what in SETS else what.strip("/")
+    sd = root / setname
+    snap = a.snapshot or latest_of(sd)
+    if not snap or not (sd / snap).is_dir():
+        emit({"error": f"no {setname} snapshot on {src['name']}" + (f" named {a.snapshot}" if a.snapshot else "")},
+             a.json, f"no {setname} snapshot found on {src['name']}")
+        return 1
+    srcdir = sd / snap
+    res = {"what": what, "set": setname, "snapshot": snap, "from": str(srcdir),
+           "dry_run": a.dry_run, "mirror": a.mirror, "ok": False, "stats": {}, "error": ""}
+    if setname == "packages":
+        pkgs = (srcdir / "packages.txt").read_text().split() if (srcdir / "packages.txt").exists() else []
+        hostj = read_json(srcdir / "host.json", {})
+        installed = set(sh(["pacman", "-Qq"], timeout=60).stdout.split()) if have("pacman") else set()
+        missing = [p for p in pkgs if p not in installed]
+        res.update({"ok": True, "packages": len(pkgs), "missing": missing, "host": hostj,
+                    "note": "packages are a manifest; install the missing ones with the Store or "
+                            "`sudo pacman -S --needed` — this tool never runs pacman as root"})
+        if a.to:
+            if not a.dry_run:
+                Path(a.to).mkdir(parents=True, exist_ok=True)
+                shutil.copy2(srcdir / "packages.txt", Path(a.to) / "packages.txt")
+            res["written"] = str(Path(a.to) / "packages.txt")
+        emit(res, a.json)
+        if not a.json:
+            print(f"{len(pkgs)} packages in the manifest, {len(missing)} not installed here")
+            for p in missing[:40]:
+                print("   " + p)
+        return 0
+    dest = Path(a.to).expanduser() if a.to else HOME
+    src_path = srcdir / subpath if subpath else srcdir
+    if not src_path.exists():
+        emit({"error": f"{subpath} is not in snapshot {snap}"}, a.json, f"{subpath} is not in snapshot {snap}")
+        return 1
+    if subpath:
+        dest_path = dest / subpath
+    else:
+        dest_path = dest
+    cmd = ["rsync", "-a", "--stats"]
+    if src["mode"] == "mirror":
+        cmd = ["rsync", "-rt", "--modify-window=2", "--stats"]
+    if a.mirror:
+        cmd += ["--delete"]
+    if a.dry_run:
+        cmd += ["--dry-run", "--itemize-changes"]
+    if src_path.is_dir():
+        cmd += [str(src_path) + "/", str(dest_path) + "/"]
+    else:
+        cmd += [str(src_path), str(dest_path)]
+    res["to"] = str(dest_path)
+    if not a.dry_run:
+        try:
+            (dest_path if src_path.is_dir() else dest_path.parent).mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            res["error"] = str(e)
+            emit(res, a.json, res["error"])
+            return 1
+    r = sh(cmd, timeout=None)
+    res["stats"] = parse_stats(r.stdout)
+    if a.dry_run:
+        res["would_change"] = [ln for ln in r.stdout.splitlines() if ln[:1] in ("<", ">", "c", "h", ".", "*") and " " in ln][:500]
+    if r.returncode in (0, 23, 24):
+        res["ok"] = True
+    else:
+        res["error"] = f"rsync exit {r.returncode}: {(r.stderr or r.stdout).strip()[:400]}"
+    log(f"restore what={what} snap={snap} to={dest_path} dry={a.dry_run} ok={res['ok']} {res['error']}")
+    emit(res, a.json)
+    if not a.json:
+        verb = "would restore" if a.dry_run else ("restored" if res["ok"] else "FAILED to restore")
+        print(f"{verb} {what} from {snap} → {dest_path}: {res['stats'].get('files_transferred', '?')} files, "
+              f"{human(res['stats'].get('bytes_transferred'))}{'  ' + res['error'] if res['error'] else ''}")
+        if a.dry_run:
+            for ln in res.get("would_change", [])[:25]:
+                print("   " + ln)
+        if setname in ("home", "settings") and not a.dry_run and res["ok"] and not a.to:
+            print("Log out and back in (or restart the shell) so the desktop reads its settings again.")
+    return 0 if res["ok"] else 1
+
+
+def schedule_state() -> dict:
+    out = {"unit": TIMER_UNIT, "enabled": False, "active": False, "next": ""}
+    r = sh(["systemctl", "--user", "is-enabled", TIMER_UNIT])
+    out["enabled"] = r.stdout.strip() == "enabled"
+    r = sh(["systemctl", "--user", "is-active", TIMER_UNIT])
+    out["active"] = r.stdout.strip() == "active"
+    r = sh(["systemctl", "--user", "show", TIMER_UNIT, "-p", "NextElapseUSecRealtime", "--value"])
+    out["next"] = r.stdout.strip() if r.returncode == 0 else ""
+    return out
+
+
+def cmd_schedule(a) -> int:
+    if a.action in ("on", "off"):
+        verb = "enable" if a.action == "on" else "disable"
+        r = sh(["systemctl", "--user", verb, "--now", TIMER_UNIT], timeout=30)
+        ok = r.returncode == 0
+        log(f"schedule {a.action} rc={r.returncode} {r.stderr.strip()[:200]}")
+        st = schedule_state()
+        st["ok"] = ok
+        st["error"] = "" if ok else (r.stderr or r.stdout).strip()[:300]
+        emit(st, a.json, (f"daily backup {'on' if a.action == 'on' else 'off'}" if ok
+                          else f"could not {verb} {TIMER_UNIT}: {st['error']}"))
+        return 0 if ok else 1
+    st = schedule_state()
+    emit(st, a.json, f"{TIMER_UNIT}: {'enabled' if st['enabled'] else 'disabled'}"
+         + (f", next {st['next']}" if st["next"] and st["next"] != "n/a" else ""))
+    return 0
+
+
+def cmd_status(a) -> int:
+    cfg = load_config()
+    st = load_state()
+    targets = [target_root(n, t, mount=False) for n, t in sorted(cfg["targets"].items())]
+    out = {"generated": datetime.now().isoformat(timespec="seconds"), "version": VERSION,
+           "rsync": have("rsync"), "targets": targets, "sets": cfg["sets"],
+           "last_run": st["last_run"], "runs": st["runs"][-10:], "schedule": schedule_state(),
+           "config": str(CONFIG_FILE), "state": str(STATE_FILE), "log": str(LOG_FILE),
+           "snapper_on_disk": Path("/.snapshots").is_dir()}
+    out["summary"] = summarize(out)
+    emit(out, a.json)
+    if not a.json:
+        print(out["summary"])
+        for t in targets:
+            where = t.get("label") and f"label {t['label']}" or t.get("path", "")
+            print(f"  target {t['name']:<12} {where:<34} " + ("reachable" if t["reachable"] else f"unreachable — {t['why']}"))
+        if st["last_run"]:
+            lr = st["last_run"]
+            print(f"  last run {lr['when']}  {'ok' if lr['ok'] else 'FAILED'}  {lr['files']} files, {human(lr['bytes'])}  → {', '.join(lr['targets'])}")
+        print(f"  schedule {'on' if out['schedule']['enabled'] else 'off'}  ({TIMER_UNIT})")
+    return 0
+
+
+def summarize(out: dict) -> str:
+    if not out["targets"]:
+        return "No backup destination yet — add a drive or a USB stick."
+    if not out["last_run"]:
+        return "A destination is set; no backup has run yet."
+    lr = out["last_run"]
+    try:
+        age_h = (datetime.now() - datetime.fromisoformat(lr["when"])).total_seconds() / 3600
+    except ValueError:
+        age_h = 0
+    when = "today" if age_h < 24 else f"{int(age_h // 24)} day(s) ago"
+    return (f"Last backup {when}: " + ("ok" if lr["ok"] else "had a problem")
+            + f" ({lr['files']} files to {', '.join(lr['targets'])})")
+
+
+def cmd_sets(a) -> int:
+    cfg = load_config()
+    out = {"sets": SETS, "default": cfg["sets"], "excludes_home": EXCLUDES_HOME,
+           "excludes_extra": cfg["excludes_extra"], "settings_paths": SETTINGS_PATHS}
+    emit(out, a.json)
+    if not a.json:
+        for k, v in SETS.items():
+            print(f"  {k:<9} {v}" + ("   (default)" if k in cfg["sets"] else ""))
+    return 0
+
+
+def cmd_offer(a) -> int:
+    """Called by nyxus_usb_watch.py on a block-device add. Matches the
+    arrival against the registered targets; toasts an offer; on click runs
+    the backup OUT of the watcher's sandbox through systemd-run so the unit's
+    ProtectHome=read-only never applies to the copy. Writes nothing but the
+    log (CacheDirectory is writable there)."""
+    cfg = load_config()
+    hits = []
+    for n, t in cfg["targets"].items():
+        if a.label and t.get("kind") == "label" and t["label"] == a.label:
+            hits.append(n)
+        if a.path and t.get("kind") == "path" and Path(t["path"]).resolve() == Path(a.path).resolve():
+            hits.append(n)
+    if not hits:
+        emit({"offered": False, "why": "not a registered backup target"}, a.json)
+        return 0
+    name = hits[0]
+    log(f"offer: {a.label or a.path} matches target {name}")
+    if a.no_toast:
+        emit({"offered": True, "target": name, "toast": False}, a.json)
+        return 0
+    choice = notify(f"Backup drive connected: {name}",
+                    "Back up this machine to it now?", actions={"backup": "Back up now"})
+    if choice == "backup":
+        unit = f"nyxus-backup-run-{int(time.time())}"
+        shipped = Path("/usr/local/bin/nyxus-backup")
+        runner = [str(shipped)] if shipped.exists() else [sys.executable, os.path.abspath(__file__)]
+        cmd = (["systemd-run", "--user", "--collect", "--unit", unit,
+                "--description", f"NYXUS backup to {name} (from the USB toast)"]
+               + runner + ["run", "--target", name, "--notify", "--quiet"])
+        r = sh(cmd, timeout=30)
+        log(f"offer: accepted → {unit} rc={r.returncode} {r.stderr.strip()[:200]}")
+        emit({"offered": True, "target": name, "accepted": True, "unit": unit, "rc": r.returncode}, a.json)
+        return 0 if r.returncode == 0 else 1
+    emit({"offered": True, "target": name, "accepted": False}, a.json)
+    return 0
+
+
+def launch_gui() -> int:
+    # The bare name opens the Backup window, as every caller of
+    # fire_and_forget("nyxus-backup") and the .desktop entry expect.
+    # NYXUS_APP_DIR lets the preview session run the copy in git instead of
+    # /opt/nyxus; on a real install it is unset.
+    app_dir = os.environ.get("NYXUS_APP_DIR") or "/opt/nyxus"
+    env = dict(os.environ)
+    env["PYTHONPATH"] = app_dir + (":" + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+    os.execvpe(sys.executable, [sys.executable, os.path.join(app_dir, GUI_APP)], env)
+    return 1
+
+
+VERBS = ("target", "run", "list", "restore", "status", "schedule", "sets", "offer", "gui")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="nyxus-backup", description=__doc__.split("\n\n")[0],
+                                formatter_class=argparse.RawDescriptionHelpFormatter,
+                                epilog="No verb opens the Backup window.")
+    p.add_argument("--version", action="version", version=f"nyxus-backup {VERSION}")
+    p.add_argument("--list-verbs", action="store_true", help=argparse.SUPPRESS)
+    sub = p.add_subparsers(dest="verb")
+
+    t = sub.add_parser("target", help="add / list / remove backup destinations")
+    t.add_argument("action", choices=["add", "list", "remove"])
+    t.add_argument("name", nargs="?")
+    t.add_argument("--path", help="a mounted folder (second drive, network mount)")
+    t.add_argument("--label", help="a USB drive by its filesystem label")
+    t.add_argument("--on-disk", action="store_true", help="allow a folder on the home filesystem (testing)")
+    t.add_argument("--json", action="store_true")
+
+    r = sub.add_parser("run", help="back up now")
+    r.add_argument("--target", help="one target (default: every reachable one)")
+    r.add_argument("--set", help="one set (default: the configured sets)")
+    r.add_argument("--dry-run", action="store_true", help="show what would copy; write nothing")
+    r.add_argument("--notify", action="store_true", help="toast when done")
+    r.add_argument("--if-reachable", action="store_true",
+                   help="exit 0 when no target is reachable (the timer's mode)")
+    r.add_argument("--quiet", action="store_true")
+    r.add_argument("--json", action="store_true")
+
+    ls = sub.add_parser("list", help="snapshots on a target")
+    ls.add_argument("--from", dest="frm", help="target name or a NyxusBackup folder")
+    ls.add_argument("--json", action="store_true")
+
+    rs = sub.add_parser("restore", help="bring files back")
+    rs.add_argument("what", help="home | settings | packages | a path inside home (Documents/x)")
+    rs.add_argument("--from", dest="frm", help="target name or a NyxusBackup folder (a stick on a fresh machine)")
+    rs.add_argument("--snapshot", help="snapshot name (default: latest)")
+    rs.add_argument("--to", help="restore into this folder instead of the original place")
+    rs.add_argument("--dry-run", action="store_true", help="show what would change; write nothing")
+    rs.add_argument("--mirror", action="store_true", help="also delete live files absent from the snapshot")
+    rs.add_argument("--json", action="store_true")
+
+    s = sub.add_parser("status", help="targets, last run, schedule")
+    s.add_argument("--json", action="store_true")
+
+    sc = sub.add_parser("schedule", help="the daily timer: on | off | show")
+    sc.add_argument("action", choices=["on", "off", "show"], nargs="?", default="show")
+    sc.add_argument("--json", action="store_true")
+
+    se = sub.add_parser("sets", help="what each set contains")
+    se.add_argument("--json", action="store_true")
+
+    of = sub.add_parser("offer", help="USB-arrival toast (called by nyxus-usb-watch)")
+    of.add_argument("--label")
+    of.add_argument("--path")
+    of.add_argument("--no-toast", action="store_true", help="only say whether it is a target")
+    of.add_argument("--json", action="store_true")
+
+    sub.add_parser("gui", help="open the Backup window")
+    return p
+
+
+def main(argv=None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if not argv:
+        return launch_gui()
+    p = build_parser()
+    a = p.parse_args(argv)
+    if a.list_verbs:
+        print("\n".join(VERBS))
+        return 0
+    if a.verb in (None, "gui"):
+        return launch_gui()
+    if a.verb not in ("status", "sets", "list", "schedule", "offer", "target") and not have("rsync"):
+        emit({"error": "rsync is not installed"}, getattr(a, "json", False), "rsync is not installed")
+        return 1
+    return {"target": cmd_target, "run": cmd_run, "list": cmd_list, "restore": cmd_restore,
+            "status": cmd_status, "schedule": cmd_schedule, "sets": cmd_sets,
+            "offer": cmd_offer}[a.verb](a)
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        sys.exit(130)

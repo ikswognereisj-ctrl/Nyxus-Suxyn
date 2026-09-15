@@ -1,0 +1,346 @@
+#!/usr/bin/env bash
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║  NYXUS — first-boot bootstrap                                        ║
+# ║  Lives at: /usr/local/bin/nyxus-bootstrap                            ║
+# ║  Triggered by: Hyprland exec-once on every login (idempotent)        ║
+# ║  © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED       ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+#
+# Behavior:
+#   - First successful run: runs nyxus_install.sh from the pre-staged offline
+#     cache at /opt/nyxus-cache (baked into the ISO from the repo), then writes
+#     the current BOOTSTRAP_VERSION into ~/.nyxus/.bootstrapped to no-op on
+#     subsequent boots. The desktop never phones home; a dev-only network path
+#     exists but is opt-in via NYXUS_ALLOW_NETWORK_INSTALL=1 + NYXUS_BASE_URL.
+#   - Subsequent boots: marker present AND version matches → exit 0.
+#     Marker present but version mismatch → stamp the new version and
+#     exit WITHOUT re-running nyxus_install.sh (that script cp -f's
+#     hyprland.conf over ~/.config). Owner 2026-08-21: do not silently
+#     overwrite user configs. Packages: nyxus-update. Chrome: next ISO.
+#   - To force re-bootstrap manually: rm ~/.nyxus/.bootstrapped && nyxus-bootstrap
+#
+# Bumping BOOTSTRAP_VERSION:
+#   When you ship a bake that needs to refresh installed systems
+#   (new hyprland.conf, new app, new package list, etc.), bump this number.
+#   Existing installs will detect the mismatch on next login and self-heal.
+#
+# Logs: /tmp/nyxus-bootstrap.log (Hyprland tee already wraps the call)
+set -uo pipefail
+
+# ── Version stamp: BUMP ON EVERY RELEASE THAT TOUCHES INSTALLED FILES ───────
+# r12 (2026-07-23): offline-first — Replit dependency cut, install no longer
+# aborts on `clear`/set -e, hyprexpo build is one-shot + offline-aware.
+# r18 (2026-08-14): re-run first-boot install so the WIP-323 desktop-entry
+# yield lands on existing installs instead of leaving stale ~/.local copies
+# shadowing the shipped /usr/share entries forever.
+BOOTSTRAP_VERSION="2026.08.21-r19-no-config-clobber"
+
+# FS-03: the live stick came out of first boot with a 66 MB ~/.cache/pip — a
+# quarter of the whole 256 MB copy-on-write overlay spent on a cache nothing
+# reads again. Every pip this bootstrap can reach (directly, or through
+# nyxus_install.sh and the venv setups it calls) inherits this and writes no
+# cache at all. It is scoped to the bootstrap's own process tree, so a user
+# running pip themselves later still gets normal caching.
+export PIP_NO_CACHE_DIR=1
+
+# Dev-only network install target. There is deliberately NO default host
+# (WIP-250, 2026-08-10): this used to default to https://nyxus-core.replit.app,
+# a hostname this project retired and no longer controls. An opt-in path that
+# silently aims at a domain someone else could register is not an opt-in path.
+# Set NYXUS_BASE_URL yourself, together with NYXUS_ALLOW_NETWORK_INSTALL=1.
+PROD_URL="${NYXUS_BASE_URL:+${NYXUS_BASE_URL}/api/download/nyxus/nyxus_install.sh}"
+OFFLINE_CACHE="${NYXUS_OFFLINE_DIR:-/opt/nyxus-cache}"
+NYXUS_DIR="${HOME}/.nyxus"
+MARK="${NYXUS_DIR}/.bootstrapped"
+
+log() { printf '[nyxus-bootstrap] %s %s\n' "$(date -Iseconds)" "$*"; }
+
+# ── First-boot splash via Hyprland's built-in notify (no daemon required) ───
+# Dunst is also exec-once and races us, so we can't depend on notify-send.
+# hyprctl notify is rendered directly by the compositor — always available
+# inside an `exec-once` because $HYPRLAND_INSTANCE_SIGNATURE is set by then.
+# Icons: 0 warn, 1 info, 2 hint, 3 error, 4 confused, 5 ok, -1 none
+# Color: GALAXY off-white rgb(edf1ff) for normal, rgb(ff8888) for error.
+notify() {
+  command -v hyprctl >/dev/null 2>&1 || return 0
+  local icon="${1:-2}" timeout="${2:-5000}" color="${3:-rgb(edf1ff)}" msg="${4:-}"
+  hyprctl notify "${icon}" "${timeout}" "${color}" "  Nyxus Suxyn · ${msg}" \
+    >/dev/null 2>&1 || true
+}
+
+log "starting (user=${USER:-?} home=${HOME:-?} version=${BOOTSTRAP_VERSION})"
+mkdir -p "${NYXUS_DIR}"
+
+# ── Hyprland plugin sync ─────────────────────────────────────────────────────
+# Runs on EVERY login (before the marker fast-path) so plugin-only changes
+# can ship without forcing a full re-install via version bump. The function
+# is fully idempotent: each `hyprpm` step is a no-op when already in the
+# desired state, and any failure is logged but never aborts bootstrap (the
+# desktop must still come up even if a plugin fails to compile against the
+# user's Hyprland headers).
+#
+# Currently managed plugins:
+#   hyprexpo  — Mission Control overview (P3.13). Triggered by SUPER+F3
+#               and the 4-finger touchpad swipe defined in the
+#               nyxus-hyprland-mission.conf shard.
+ensure_hyprland_plugins() {
+  command -v hyprpm >/dev/null 2>&1 || {
+    log "hyprpm not on PATH — skipping plugin sync (Hyprland too old?)"
+    return 0
+  }
+
+  # NEVER on live media (FS-04, 2026-07-31 VM audit). The header guard below
+  # was written for a live ISO that had no Hyprland headers, but the hyprland
+  # package ships them, so the guard never fired and the live stick did the
+  # full thing: `hyprpm update` ran `make installheaders`, then it compiled and
+  # installed borders-plus-plus.so, csgo-vulkan-fix.so, hyprbars.so and
+  # hyprfocus.so, all inside the user's first 90 seconds. Measured load average
+  # 8.72, and every byte of that build tree and every installed header landed
+  # in the 256 MB copy-on-write overlay — which is the most plausible single
+  # reason the live filesystem hit 100% full.
+  #
+  # Compiling out-of-tree compositor plugins is a reasonable thing to do on an
+  # installed system and an unreasonable thing to do on a USB stick whose
+  # writes are RAM and are discarded at shutdown anyway. Same live-media test
+  # the honeypot firstboot fragment uses.
+  if [[ -d /run/archiso ]] || grep -qa 'archisobasedir' /proc/cmdline 2>/dev/null; then
+    log "live media — skipping Hyprland plugin sync (installed systems only)"
+    return 0
+  fi
+
+  # Guard: hyprpm needs Hyprland API headers to compile any plugin.
+  # On the live ISO the headers package is not installed, so hyprpm prints
+  # "couldn't load header" and fails for every command. Skip entirely when
+  # the header directory is absent — no error spam, no login delay.
+  if [[ ! -d /usr/include/hyprland ]]; then
+    log "Hyprland headers not found (/usr/include/hyprland absent) — skipping plugin sync (live ISO or headers not installed)"
+    return 0
+  fi
+
+  # `hyprpm update`/`add` escalate privileges internally (sudo/doas/pkexec)
+  # to install Hyprland headers. On systems with pam_fprintd (or any
+  # interactive PAM stack) that pops a fingerprint/password prompt and
+  # parks bootstrap forever — on EVERY login, before the marker fast-path.
+  # Bootstrap runs unattended (exec-once), so it must NEVER be allowed to
+  # prompt. Two layers of defense:
+  #   1. Gate the install path on `sudo -n true`: only attempt the
+  #      privileged steps when escalation can succeed without any prompt
+  #      (NOPASSWD or a valid cached ticket). Otherwise skip and tell the
+  #      user how to do it manually from a real terminal.
+  #   2. Run every hyprpm step via `run_hyprpm` — detached from the
+  #      controlling terminal (setsid) with stdin closed and a hard
+  #      timeout — so even if hyprpm still tries an interactive auth
+  #      path (e.g. pkexec → fprintd), it fails fast instead of hanging.
+  #
+  # setsid → no controlling tty, so sudo/pkexec inside hyprpm cannot open
+  # /dev/tty to prompt; </dev/null → nothing to read; timeout → compile or
+  # network stalls can't wedge login either. `timeout` and `setsid` are
+  # both coreutils/util-linux — present on any Arch install.
+  run_hyprpm() {
+    local secs="$1"; shift
+    timeout "${secs}" setsid -w hyprpm "$@" </dev/null >/dev/null 2>&1
+  }
+
+  # `hyprpm list` prints "Plugin <name>" lines for every installed plugin
+  # regardless of enabled/disabled state. Match case-insensitively because
+  # hyprpm has shifted the casing across versions.
+  local installed
+  installed="$(hyprpm list 2>/dev/null || true)"
+
+  if ! grep -qi 'hyprexpo' <<<"${installed}"; then
+    # ONE-SHOT guard: building hyprexpo compiles from GitHub and can take
+    # minutes. Without this it re-attempted (and re-failed) on EVERY login —
+    # the 2026-07-22 boot burned ~15 min here before the desktop was usable.
+    # After one attempt we drop a marker and never auto-retry; `rm` it (or
+    # run `hyprpm update && hyprpm add ...` by hand) to try again.
+    local tried="${NYXUS_DIR}/.hyprexpo-tried"
+    if [[ -f "${tried}" ]]; then
+      log "hyprexpo not installed but build already attempted (${tried}) — skipping (rm to retry)"
+      return 0
+    fi
+    if ! sudo -n true 2>/dev/null; then
+      log "hyprexpo not installed and passwordless sudo unavailable — skipping plugin sync"
+      return 0
+    fi
+    # `hyprpm add` compiles the plugin FROM GITHUB — pointless (and slow: it
+    # can stall for the full timeout) with no network. Probe first, skip if
+    # offline; Mission Control then installs on a later online login.
+    if ! curl -fsS --connect-timeout 3 --max-time 5 -o /dev/null https://github.com 2>/dev/null; then
+      log "no network — skipping hyprexpo build (installs on a later online login)"
+      return 0
+    fi
+    log "installing hyprexpo plugin (first time)"
+    : > "${tried}" 2>/dev/null || true   # mark BEFORE building so a crash can't loop
+    # Tighter timeouts than before (was 300/600 = up to 15 min): worst case
+    # ~4.5 min, and only ever once thanks to the marker above.
+    run_hyprpm 90 update \
+      || log "hyprpm update failed (continuing — add may still work)"
+    run_hyprpm 180 add https://github.com/hyprwm/hyprland-plugins \
+      || { log "hyprpm add failed — Mission Control unavailable until you retry"; return 0; }
+    rm -f "${tried}" 2>/dev/null || true  # success → allow future re-syncs
+  fi
+
+  # `enable` is idempotent — re-running while enabled is a no-op.
+  run_hyprpm 60 enable hyprexpo \
+    || log "hyprpm enable hyprexpo failed (plugin may not have compiled)"
+
+  # Reload so the just-loaded plugin is picked up by the running compositor
+  # without requiring a logout. Safe even on cold boot — Hyprland will be
+  # alive by the time exec-once nyxus-bootstrap runs.
+  run_hyprpm 60 reload || true
+}
+ensure_hyprland_plugins || true
+
+# Already bootstrapped → version check fast path
+# If marker contains current version → no-op (steady state).
+# If marker contains an older version → do NOT re-run nyxus_install.sh.
+# That script copies hyprland.conf / hyprlock / shards over ~/.config
+# (dl uses cp -f). Owner 2026-08-21: do not silently overwrite user
+# configs on every boot. Package updates are nyxus-update (pacman -Syu).
+# Chrome and /opt/nyxus ride the next ISO until a package repo exists.
+if [[ -f "${MARK}" ]]; then
+  INSTALLED_VERSION="$(cat "${MARK}" 2>/dev/null | head -1 | tr -d '[:space:]')"
+  if [[ "${INSTALLED_VERSION}" == "${BOOTSTRAP_VERSION}" ]]; then
+    log "already bootstrapped at version ${BOOTSTRAP_VERSION} — nothing to do"
+    exit 0
+  fi
+  log "marker version (${INSTALLED_VERSION:-<empty>}) != current (${BOOTSTRAP_VERSION}) — NOT rewriting ~/.config"
+  notify 2 8000 "rgb(edf1ff)" "stamp ${BOOTSTRAP_VERSION} — your configs were left alone. Packages: nyxus-update"
+  echo "${BOOTSTRAP_VERSION}" > "${MARK}"
+  exit 0
+fi
+
+# First-boot splash — long timeout so it stays up through the install.
+# The user sees this immediately on first login, before the wallpaper and the
+# shell appear. Without it the screen looks frozen.
+#
+# WIP-42 (2026-08-05, Q): the copy no longer promises a number.
+#
+# It used to say "~60 seconds", and the owner's first hardware boot recorded it
+# still posting "still installing — 4x 30s elapsed" after four minutes. A
+# progress estimate that is wrong by 4x is worse than no estimate: it turns a
+# working install into a machine the user believes has hung. The honest fix is
+# to describe the WORK rather than guess the clock, because the duration
+# genuinely depends on disk and network and this script cannot know either.
+#
+# The heartbeat below counts real elapsed time, which is the only number here
+# that is not a guess.
+notify 2 120000 "rgb(edf1ff)" "first-boot setup — installing the desktop. This takes a few minutes on first login."
+
+# ── Heartbeat: re-notify every 30s while install runs ───────────────────────
+# Without this the splash dies at 120s and a slow install (older HDD, slow
+# Wi-Fi) leaves the user staring at a blank desktop wondering if it crashed.
+# We background a tiny loop and kill it on exit so it can never outlive us.
+heartbeat_loop() {
+  local n=0
+  while sleep 30; do
+    n=$((n+1))
+    notify 2 60000 "rgb(c8ccd6)" "still installing — ${n}× 30s elapsed. This is normal on first login; the desktop will appear on its own."
+  done
+}
+heartbeat_loop &
+HEARTBEAT_PID=$!
+
+cleanup() {
+  [[ -n "${HEARTBEAT_PID:-}" ]] && kill "${HEARTBEAT_PID}" 2>/dev/null || true
+  rm -f "${TMP_INSTALLER:-}"
+}
+# Set the trap ONCE, up front, so the heartbeat is always reaped no matter
+# which install path exits (previously the trap was only armed on the network
+# path, so an offline exit could orphan the heartbeat loop).
+trap cleanup EXIT
+
+# ── 1. Offline cache (PRIMARY — the only supported path) ─────────────────────
+# NYXUS is delivered entirely from the cache baked into the ISO (built from
+# this repo). The desktop NEVER phones home. The old production server
+# (nyxus-core.replit.app) is retired.
+if [[ -d "${OFFLINE_CACHE}" && -f "${OFFLINE_CACHE}/nyxus_install.sh" ]]; then
+  log "installing from offline cache: ${OFFLINE_CACHE}"
+  notify 2 10000 "rgb(c8ccd6)" "installing Nyxus Suxyn from local cache…"
+  if NYXUS_OFFLINE_DIR="${OFFLINE_CACHE}" bash "${OFFLINE_CACHE}/nyxus_install.sh"; then
+    echo "${BOOTSTRAP_VERSION}" > "${MARK}"
+    log "complete (offline) — marker written: ${MARK} (version ${BOOTSTRAP_VERSION})"
+    notify 5 8000 "rgb(edf1ff)" "ready · welcome, ${USER:-friend}"
+    exit 0
+  else
+    rc=$?
+    log "offline installer exited with code ${rc} — NOT marking bootstrapped (will retry next login)"
+    notify 3 15000 "rgb(ff8888)" "install failed (code ${rc}) — will retry on next login"
+    exit "${rc}"
+  fi
+fi
+
+# ── 2. Dev-only network install (OPT-IN, never taken by default) ─────────────
+# The production host is retired, so this path requires an explicit opt-in:
+# set BOTH NYXUS_ALLOW_NETWORK_INSTALL=1 and NYXUS_BASE_URL=https://your-host.
+if [[ "${NYXUS_ALLOW_NETWORK_INSTALL:-0}" == "1" && -z "${PROD_URL}" ]]; then
+  log "network install opted in but NYXUS_BASE_URL is unset — refusing to guess a host"
+fi
+if [[ "${NYXUS_ALLOW_NETWORK_INSTALL:-0}" == "1" && -n "${PROD_URL}" ]]; then
+  TMP_INSTALLER="$(mktemp /tmp/nyxus_install.XXXXXX.sh)"
+  if curl -fsSL --max-time 30 --retry 2 --retry-delay 3 \
+         "${PROD_URL}" -o "${TMP_INSTALLER}" 2>/dev/null; then
+    log "downloaded installer from ${PROD_URL}"
+    notify 2 10000 "rgb(c8ccd6)" "downloaded installer · running install…"
+    if bash "${TMP_INSTALLER}"; then
+      echo "${BOOTSTRAP_VERSION}" > "${MARK}"
+      log "complete (network) — marker written: ${MARK} (version ${BOOTSTRAP_VERSION})"
+      notify 5 8000 "rgb(edf1ff)" "ready · welcome, ${USER:-friend}"
+      exit 0
+    else
+      rc=$?
+      log "network installer exited with code ${rc} — NOT marking bootstrapped"
+      notify 3 15000 "rgb(ff8888)" "install failed (code ${rc}) — will retry on next login"
+      exit "${rc}"
+    fi
+  fi
+  log "network install requested but download failed from ${PROD_URL}"
+fi
+
+# ── 3. No offline cache (and no/failed opt-in network) → fail loud ──────────
+log "FAILED: no offline cache at ${OFFLINE_CACHE} (network install not enabled)"
+notify 3 30000 "rgb(ff8888)" "offline cache missing — see ~/Desktop note for next steps"
+FAIL_REASON="The offline cache at ${OFFLINE_CACHE} is missing or has no nyxus_install.sh. On a normal NYXUS ISO this is baked in automatically; if you're on a hand-assembled system, copy the repo's artifacts/api-server/nyxus-scripts into ${OFFLINE_CACHE} and re-run nyxus-bootstrap."
+log "Once resolved, re-run manually:  nyxus-bootstrap"
+
+# Drop a visible note on the desktop so a non-technical user knows what to do.
+NOTE="${HOME}/Desktop/NYXUS-FIRST-BOOT-FAILED.txt"
+mkdir -p "${HOME}/Desktop" 2>/dev/null
+cat > "${NOTE}" 2>/dev/null <<EONOTE
+NYXUS first-boot bootstrap failed.
+
+WHAT HAPPENED:
+${FAIL_REASON:-Bootstrap exited before completing.}
+
+HOW TO FIX:
+NYXUS · Suxyn installs entirely from a local cache (${OFFLINE_CACHE}) — it
+does NOT need the internet. This note means that cache is missing.
+
+TRY THIS FIRST — no typing required:
+   Log out and log back in.   (SUPER + SHIFT + E, then choose Log out.)
+   First-boot setup did not mark itself complete, so it runs again by itself
+   on the next login. A one-off failure clears here most of the time.
+
+IF IT STILL FAILS:
+   Re-install from the NYXUS · Suxyn USB stick. A cache missing from a
+   freshly-installed system means the image itself was assembled without it,
+   and reinstalling from a good stick is the supported repair.
+
+FOR TECHNICAL USERS ONLY:
+   The cache can be restored by hand from a checkout of this build's own
+   repository — the directory artifacts/api-server/nyxus-scripts — copied
+   into ${OFFLINE_CACHE}, followed by re-running nyxus-bootstrap.
+   Do not copy it out of any other NYXUS build; the trees are not
+   interchangeable and mixing them is what this note exists to prevent.
+
+OTHER USEFUL KEYS WHILE THE DESKTOP IS BARE:
+   SUPER + Q               close the focused window
+   SUPER + R               app launcher (rofi)
+   SUPER + SHIFT + E       logout menu
+
+LOG:  /tmp/nyxus-bootstrap.log
+
+— NYXUS · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+EONOTE
+
+exit 1

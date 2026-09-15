@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# NYXUS Terminal launcher — Copyright © 2026 Joseph A. Sierengowski
+# Owner 2026-08-20: Ghostty is the Terminal. Do not exec nyxus_terminal.py.
+exec ghostty "$@"

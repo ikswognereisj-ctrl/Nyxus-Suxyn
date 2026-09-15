@@ -204,6 +204,52 @@ if (( ${#missing_refs[@]} )); then
 fi
 log "referenced-binary guard: all /usr/local nyxus-* references are staged"
 
+# ══ THE TOOLING ════════════════════════════════════════════ TRK-4131 ══
+#
+# Same audit finding as tools/apply-shell.sh. This script used to copy
+# binaries out of the BAKER'S /usr/local/bin — and only three of them by
+# name. Everything else the shell calls was inherited from whatever
+# happened to be installed on the machine doing the bake. That is not a
+# build; that is a photograph of one laptop.
+#
+# repo/bin is now the source of truth and it is staged wholesale, so the
+# ISO carries the same tools the repo does, on any machine.
+if [[ -d "${REPO_ROOT}/bin" ]]; then
+    install -d "${STAGE}/airootfs/usr/local/bin"
+    install -m755 "${REPO_ROOT}/bin"/* "${STAGE}/airootfs/usr/local/bin/"
+    log "staged $(find "${REPO_ROOT}/bin" -maxdepth 1 -type f | wc -l) tools from repo/bin"
+else
+    die "repo/bin is missing — the shell's tooling would not ship"
+fi
+
+# ── THE SPAWNED-COMMAND GUARD ───────────────────────────────────────────
+# Every nyxus-* program the QML actually launches must exist in the
+# image. This is the check that would have caught the original problem:
+# on the baker's machine all of them resolve on PATH, so nothing looks
+# wrong until someone else installs the result.
+#
+# ⚠ TWO spawn styles, and the guard MUST cover both. A first version
+# scanned only `command: [...]` arrays and silently passed while
+# nyxus-beat-engine was deleted from the stage — the visualizer's engine
+# is launched from inside a shell string (`... exec nyxus-beat-engine
+# --tap "$1"`), not from a command array. A guard with a blind spot over
+# the exact binary that started this audit is worse than no guard,
+# because it reads as proof.
+missing_cmds=()
+while read -r cmd; do
+    [[ -z "${cmd}" ]] && continue
+    [[ -e "${STAGE}/airootfs/usr/local/bin/${cmd}" ]] && continue
+    missing_cmds+=("${cmd}")
+done < <( { grep -rhoE 'command:[[:space:]]*\[[^]]*' "${REPO_ROOT}/quickshell"/*.qml 2>/dev/null \
+                | grep -oE '"nyxus-[a-z0-9-]+"' | tr -d '"'
+            grep -rhoE '\bexec[[:space:]]+nyxus-[a-z0-9-]+' "${REPO_ROOT}/quickshell"/*.qml 2>/dev/null \
+                | grep -oE 'nyxus-[a-z0-9-]+'
+          } | sort -u )
+if (( ${#missing_cmds[@]} )); then
+    die "the shell spawns commands that are not in the image: ${missing_cmds[*]}"
+fi
+log "spawned-command guard: every nyxus-* command the shell launches is staged"
+
 # Desktop overlay from THIS REPO, never ~/.config (no gowski, no 165 Hz pin).
 install -d "${STAGE}/airootfs/etc/skel/.config"
 if [[ -d "${REPO_ROOT}/quickshell" ]]; then

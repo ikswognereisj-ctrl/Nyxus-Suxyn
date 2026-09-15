@@ -1,0 +1,328 @@
+#!/usr/bin/env bash
+# nyxus-update — THE updater for an installed Nyxus Suxyn box (TRK-1282,
+# CS-1073 offline path, CS-1074 single entry point). Every other surface calls
+# this: Settings ▸ Updates (shell/SetPageUpdates.qml), the update-check timer
+# (nyxus-update-check), the GTK nyxus_updater.py, and `nyxus update`.
+#
+# WHAT ONE RUN DOES, in order
+#   1. checkupdates            what is waiting (private sync db; NEVER a bare sync)
+#   2. snapshot                snapper pre-update snapshot (nyxus-backup-helper
+#                              via pkexec, or snapper directly as root) — skipped
+#                              with a printed reason when snapper has no config
+#   3. pacman -Syu             the upgrade, elevated through polkit (pkexec),
+#                              sudo as fallback, direct when already root
+#      --from <dir>            OFFLINE instead: pacman -U <dir>/*.pkg.tar.*
+#                              (a bundle written by scripts/build-packages.sh,
+#                              or a copy of the hosted [nyxus] directory)
+#   3b. snapshot (post)        snapper post-update snapshot, so the update is
+#                              BOUNDED: pre-update-<stamp>..post-update-<stamp>
+#                              is the exact pair a rollback reverts. Taken
+#                              even when pacman fails, so an aborted
+#                              transaction is bounded too (CS-1053, TRK-1312)
+#   4. nyxus-selfcheck         post-update self-check (CS-1053 / TRK-1310):
+#                              nyxus-verify-installed folded in, plus kernel
+#                              image + initramfs + bootloader entry + greetd
+#                              + shell supervisor + build stamp. The verdict
+#                              is RECORDED by the pacman hook (root); a
+#                              failed one is offered for rollback at the
+#                              next login. Falls back to nyxus-verify-installed
+#                              alone when nyxus-selfcheck is absent. Prints,
+#                              never fails the update.
+#
+# THE WAY BACK (CS-1053 / TRK-1312)
+#   --rollback     undo the last nyxus-update transaction: the pre/post pair
+#                  above, reverted through `nyxus-undo apply --pair` — the
+#                  build's ONE undochange engine (WIP-730) — via
+#                  /usr/local/libexec/nyxus-update-helper under polkit.
+#                  Undoes ONE transaction; work done since survives.
+#   --rollback --dry-run   show the plan, change nothing
+#   --rollback --full      snapper rollback to the pre-update snapshot —
+#                  offered only when the recorded self-check verdict is
+#                  boot-critical (the WIP-730 "sledgehammer" ruling); needs
+#                  a reboot. Clear refusals when no pair exists (exit 13/14).
+#   --selfcheck    run the self-check now, elevated, and record the verdict
+#
+# MACHINE MODES (for the page and the timer)
+#   --check     print pending packages as checkupdates lines ("name old -> new"),
+#               nothing else on stdout; exit 10 if any, 0 if none, 2 if
+#               checkupdates is missing
+#   --json      {"count":N,"arch":[…],"nyxus":[…],"channel":bool,"checkupdates":bool}
+#   --yes       no prompt, --noconfirm (the page runs with no tty)
+#   --no-snapshot / --no-verify   skip step 2 / step 4
+#
+# WHAT IT NEVER DOES: a bare `pacman -Sy` (partial upgrade — gate 13q49),
+# curl anything, or write a config under the user's home. Chrome, shell and
+# /opt/nyxus arrive as nyxus-* packages from the [nyxus] channel when it is
+# configured in /etc/pacman.conf (TRK-1281); until the owner hosts it, this
+# lists Arch packages only and says so.
+set -uo pipefail
+
+MODE="run"
+ASSUME_YES=0
+SNAPSHOT=1
+VERIFY=1
+FROM_DIR=""
+ROLLBACK_DRY=0
+ROLLBACK_FULL=0
+ROLLBACK_FORCE=0
+while (( $# )); do
+  case "$1" in
+    --check)        MODE="check" ;;
+    --json)         MODE="json" ;;
+    --rollback)     MODE="rollback" ;;
+    --selfcheck)    MODE="selfcheck" ;;
+    --dry-run)      ROLLBACK_DRY=1 ;;
+    --full)         ROLLBACK_FULL=1 ;;
+    --force)        ROLLBACK_FORCE=1 ;;
+    --yes|-y)       ASSUME_YES=1 ;;
+    --no-snapshot)  SNAPSHOT=0 ;;
+    --no-verify)    VERIFY=0 ;;
+    --from)         shift; FROM_DIR="${1:-}"; [[ -n "${FROM_DIR}" ]] || { printf -- '--from needs a directory\n' >&2; exit 2; } ;;
+    --from=*)       FROM_DIR="${1#--from=}" ;;
+    -h|--help)
+      cat <<'EOF'
+Usage: nyxus-update [--check | --json] [--yes] [--no-snapshot] [--no-verify] [--from <dir>]
+       nyxus-update --rollback [--dry-run] [--full [--force]] [--yes]
+       nyxus-update --selfcheck
+
+  (no args)      list pending packages, snapshot, pacman -Syu, snapshot,
+                 self-check (nyxus-selfcheck; the hook records the verdict)
+  --from <dir>   offline: install every *.pkg.tar.* in <dir> with pacman -U
+  --check        pending packages only (checkupdates lines); exit 10 if any
+  --json         pending packages as JSON (for Settings and the timer)
+  --yes          do not ask; pass --noconfirm to pacman
+  --no-snapshot  skip the snapper pre/post update snapshots
+  --no-verify    skip the self-check afterwards
+  --rollback     undo the LAST nyxus-update transaction: revert between the
+                 pre-update/post-update snapshots through nyxus-undo (one
+                 transaction, work since survives). --dry-run shows the
+                 plan; --full is the boot-critical-only snapper rollback;
+                 refuses plainly when no pre-update snapshot exists
+  --selfcheck    run nyxus-selfcheck elevated and RECORD the verdict
+
+Arch packages come from the mirrors. NYXUS packages (nyxus-shell, nyxus-scripts,
+nyxus-theme, nyxus-system) come from the [nyxus] channel when /etc/pacman.conf
+has it; otherwise they ride the next ISO. Never runs a bare sync (-Sy without
+-u), never phones home, never rewrites your configs.
+EOF
+      exit 0 ;;
+    *) printf 'nyxus-update: unknown argument %s (see --help)\n' "$1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+NYXUS_PKGS=(nyxus-shell nyxus-scripts nyxus-theme nyxus-system)
+
+channel_configured() {
+  # An ACTIVE [nyxus] section (not a commented one) in the live pacman.conf.
+  grep -qE '^\[nyxus\]' /etc/pacman.conf 2>/dev/null
+}
+
+have_checkupdates() { command -v checkupdates >/dev/null 2>&1; }
+
+# ── step 1: what is waiting ───────────────────────────────────────────────
+PENDING=()
+list_pending() {
+  PENDING=()
+  have_checkupdates || return 2
+  local _out _rc
+  _out="$(checkupdates 2>/dev/null)"; _rc=$?
+  # checkupdates: 0 = updates listed, 2 = nothing to do, 1 = error.
+  if (( _rc == 1 )); then return 1; fi
+  if [[ -n "${_out}" ]]; then mapfile -t PENDING <<< "${_out}"; fi
+  return 0
+}
+
+nyxus_pending_count() {
+  local _n=0 _l
+  for _l in "${PENDING[@]}"; do
+    case "${_l%% *}" in nyxus-shell|nyxus-scripts|nyxus-theme|nyxus-system) _n=$((_n + 1)) ;; esac
+  done
+  printf '%s' "${_n}"
+}
+
+if [[ "${MODE}" == "check" ]]; then
+  list_pending; _rc=$?
+  (( _rc == 2 )) && exit 2
+  (( _rc == 1 )) && exit 1
+  if (( ${#PENDING[@]} )); then printf '%s\n' "${PENDING[@]}"; exit 10; fi
+  exit 0
+fi
+
+if [[ "${MODE}" == "json" ]]; then
+  list_pending; _rc=$?
+  _cu=true; (( _rc == 2 )) && _cu=false
+  _ch=false; channel_configured && _ch=true
+  python3 - "${_cu}" "${_ch}" "${PENDING[@]}" <<'PY'
+import json, sys
+cu, ch, *lines = sys.argv[1:]
+arch, nyx = [], []
+for l in lines:
+    p = l.split()
+    if len(p) >= 4 and p[2] == "->":
+        e = {"name": p[0], "from": p[1], "to": p[3]}
+    elif p:
+        e = {"name": p[0], "from": "", "to": ""}
+    else:
+        continue
+    (nyx if e["name"] in ("nyxus-shell", "nyxus-scripts", "nyxus-theme", "nyxus-system") else arch).append(e)
+print(json.dumps({"count": len(arch) + len(nyx), "arch": arch, "nyxus": nyx,
+                  "channel": ch == "true", "checkupdates": cu == "true"}))
+PY
+  exit 0
+fi
+
+# ── elevation, shared by the transaction, the rollback and the selfcheck ──
+elev_setup() {
+  ELEV=()
+  if [[ "$(id -u)" -ne 0 ]]; then
+    if command -v pkexec >/dev/null 2>&1; then ELEV=(pkexec)
+    elif command -v sudo >/dev/null 2>&1; then ELEV=(sudo)
+    else printf 'Need pkexec or sudo for this.\n' >&2; exit 1; fi
+  fi
+}
+
+# ── --selfcheck: run it elevated so the verdict is RECORDED ──────────────
+if [[ "${MODE}" == "selfcheck" ]]; then
+  elev_setup
+  exec "${ELEV[@]}" /usr/local/libexec/nyxus-update-helper selfcheck
+fi
+
+# ── --rollback: the way back (CS-1053 / TRK-1312) ────────────────────────
+# All logic lives in /usr/local/libexec/nyxus-update-helper (polkit action
+# com.nyxus.update-helper): it finds the updater's own pre-update/post-update
+# snapshot pair and reverts between them through nyxus-undo's engine — the
+# one undochange path this build has (WIP-730). Refusals come back with
+# their own sentences and exit codes (13 no pre snapshot, 14 no post half,
+# 22 --full without a boot-critical verdict; nyxus-undo's 10..21 unchanged).
+if [[ "${MODE}" == "rollback" ]]; then
+  _ra=(rollback)
+  (( ROLLBACK_DRY ))   && _ra+=(--dry-run)
+  (( ROLLBACK_FULL ))  && _ra+=(--full)
+  (( ROLLBACK_FORCE )) && _ra+=(--force)
+  if (( ! ROLLBACK_DRY )) && (( ! ASSUME_YES )) && [[ -t 0 ]]; then
+    if (( ROLLBACK_FULL )); then
+      printf 'FULL rollback: the pre-update snapshot becomes the next boot and everything after it on the system volume is DISCARDED.\n'
+    else
+      printf 'Roll back the last update: revert exactly what it changed (the pre/post snapshot pair); everything done since survives.\n'
+    fi
+    read -r -p 'Continue? [y/N] ' _yn
+    [[ "${_yn,,}" == y* ]] || exit 0
+  fi
+  elev_setup
+  exec "${ELEV[@]}" /usr/local/libexec/nyxus-update-helper "${_ra[@]}"
+fi
+
+# ── interactive / page run ────────────────────────────────────────────────
+if [[ -z "${FROM_DIR}" ]]; then
+  if command -v nyxus-banner >/dev/null 2>&1 && [[ -t 1 ]]; then nyxus-banner --motd; else printf 'Nyxus Suxyn — updates\n'; fi
+  list_pending; _rc=$?
+  if (( _rc == 2 )); then
+    printf 'checkupdates is not on PATH (pacman-contrib). Cannot list pending packages without touching the live sync db.\n' >&2
+    printf 'Refusing a sync-only refresh (no -u). That is a partial upgrade.\n' >&2
+    exit 2
+  fi
+  if (( ${#PENDING[@]} == 0 )); then
+    printf 'Arch packages: up to date (checkupdates found none).\n'
+    if channel_configured; then
+      printf 'NYXUS packages ([nyxus] channel): up to date.\n'
+    else
+      printf 'NYXUS packages: no [nyxus] channel in /etc/pacman.conf — shell / apps ride the next ISO.\n'
+    fi
+    exit 0
+  fi
+  printf 'Packages waiting: %s (NYXUS: %s)\n' "${#PENDING[@]}" "$(nyxus_pending_count)"
+  printf '%s\n' "${PENDING[@]:0:12}"
+  (( ${#PENDING[@]} > 12 )) && printf '  … %s more\n' "$(( ${#PENDING[@]} - 12 ))"
+  channel_configured || printf '(no [nyxus] channel configured — NYXUS chrome is not in this list)\n'
+  printf '\nThis will: snapshot (snapper) → pkexec pacman -Syu → nyxus-verify-installed\n'
+  printf 'It will not rewrite your configs.\n'
+else
+  [[ -d "${FROM_DIR}" ]] || { printf 'nyxus-update: --from %s is not a directory\n' "${FROM_DIR}" >&2; exit 2; }
+  mapfile -t BUNDLE < <(find "${FROM_DIR}" -maxdepth 1 -type f -name '*.pkg.tar.*' ! -name '*.sig' | sort)
+  (( ${#BUNDLE[@]} )) || { printf 'nyxus-update: no *.pkg.tar.* in %s\n' "${FROM_DIR}" >&2; exit 2; }
+  printf 'Offline bundle: %s package file(s) in %s\n' "${#BUNDLE[@]}" "${FROM_DIR}"
+  printf '%s\n' "${BUNDLE[@]##*/}"
+  printf '\nThis will: snapshot (snapper) → pkexec pacman -U <bundle> → nyxus-verify-installed\n'
+fi
+
+if (( ! ASSUME_YES )) && [[ -t 0 ]]; then
+  read -r -p 'Continue? [Y/n] ' _yn
+  [[ "${_yn,,}" == n* ]] && exit 0
+fi
+
+# ── elevation ─────────────────────────────────────────────────────────────
+elev_setup
+
+# ── step 2: snapshot (pre) ────────────────────────────────────────────────
+# The description pre-update-<stamp> / post-update-<stamp> IS the record —
+# --rollback finds the pair by these descriptions (nyxus-update-helper), so
+# they are a contract, not a comment.
+_stamp="$(date +%Y%m%d-%H%M%S)"
+PRE_TAKEN=0
+take_snapshot() { # $1 pre|post
+  if [[ -x /usr/local/libexec/nyxus-backup-helper ]]; then
+    printf 'Snapshot: taking the %s-update snapshot (nyxus-backup-helper)…\n' "$1"
+    "${ELEV[@]}" /usr/local/libexec/nyxus-backup-helper create "$1-update-${_stamp}" \
+      && return 0
+    printf 'Snapshot: not taken (helper refused — continuing without one)\n'
+    return 1
+  elif command -v snapper >/dev/null 2>&1; then
+    printf 'Snapshot: taking the %s-update snapshot (snapper)…\n' "$1"
+    "${ELEV[@]}" snapper -c root create -d "$1-update-${_stamp}" \
+      && return 0
+    printf 'Snapshot: not taken (snapper is installed but no root config)\n'
+    return 1
+  fi
+  printf 'Snapshot: snapper is not installed — updating without one\n'
+  return 1
+}
+if (( SNAPSHOT )); then
+  take_snapshot pre && PRE_TAKEN=1
+fi
+
+# ── step 3: the transaction ───────────────────────────────────────────────
+NOCONF=()
+(( ASSUME_YES )) && NOCONF=(--noconfirm)
+[[ -t 0 ]] || NOCONF=(--noconfirm)
+if [[ -z "${FROM_DIR}" ]]; then
+  printf 'Updating packages…\n'
+  "${ELEV[@]}" pacman -Syu "${NOCONF[@]}"; _prc=$?
+else
+  printf 'Installing the offline bundle…\n'
+  "${ELEV[@]}" pacman -U "${NOCONF[@]}" "${BUNDLE[@]}"; _prc=$?
+fi
+# ── step 3b: snapshot (post) — bound the transaction, success OR failure,
+#    so pre-update-<stamp>..post-update-<stamp> is exactly what pacman did
+#    and --rollback can revert it as ONE transaction (never a sledgehammer).
+if (( SNAPSHOT && PRE_TAKEN )); then
+  take_snapshot post || true
+fi
+if (( _prc != 0 )); then
+  printf 'pacman exited %s — nothing verified. The way back: nyxus-update --rollback (pair pre/post-update-%s).\n' "${_prc}" "${_stamp}" >&2
+  exit "${_prc}"
+fi
+
+# ── step 4: self-check ────────────────────────────────────────────────────
+# nyxus-selfcheck is the full CS-1053 check (it runs nyxus-verify-installed
+# inside and adds the boot-critical set). This unprivileged run PRINTS; the
+# RECORDED verdict is the pacman hook's (91-nyxus-selfcheck.hook ran as root
+# inside the transaction above). nyxus-verify-installed alone is the
+# fallback for an image that predates nyxus-selfcheck.
+if (( VERIFY )); then
+  if command -v nyxus-selfcheck >/dev/null 2>&1; then
+    printf '\nSelf-check (nyxus-selfcheck):\n'
+    if ! nyxus-selfcheck --source update; then
+      printf 'Self-check FAILED — the way back: nyxus-update --rollback (--dry-run first shows the plan).\n' >&2
+    fi
+  elif command -v nyxus-verify-installed >/dev/null 2>&1; then
+    printf '\nSelf-check (nyxus-verify-installed):\n'
+    nyxus-verify-installed || printf 'Self-check reported problems — see above. The pre-update snapshot is the rollback.\n' >&2
+  else
+    printf '\n(no nyxus-selfcheck or nyxus-verify-installed on PATH — self-check skipped)\n'
+  fi
+fi
+if (( PRE_TAKEN )); then
+  printf '\nUndo this update if it misbehaves: nyxus-update --rollback   (snapshot pair pre/post-update-%s)\n' "${_stamp}"
+fi
+exit 0

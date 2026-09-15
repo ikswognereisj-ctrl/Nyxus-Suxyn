@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+# Point greetd at the Quickshell greeter chain, with a backup and a reminder
+# to disarm the dead-man AFTER a successful login.
+#
+# Does not sudo itself. Run:
+#   sudo nyxus-enable-qs-greeter
+#
+# This is the arming step. It must:
+#   · reset the trial MARK (or the next boot restores GTK before greetd)
+#   · disable the 15-minute revert TIMER (that is what killed the 2026-09-08
+#     trial 15 minutes in — the log line said "second boot" but it was the
+#     timer treating the MARK written at boot as a second boot)
+#   · install a qs wrapper that runs under cage, pins the eDP GPU, and can
+#     find nyxus-greet-auth
+#   · patch the GTK fallback pin so amdgpu (this chassis) is not skipped
+#   · add greeter to the render group (qs needs renderD*)
+# 2026-09-11: enabling QS greetd + plymouth-hold hung after splash, no TTY.
+# Refused until a timed fallback exists that cannot steal DRM from getty.
+if [[ "${NYXUS_I_MEAN_IT:-}" != "1" ]]; then
+  echo "REFUSED: nyxus-enable-qs-greeter locked this machine after splash." >&2
+  echo "Use: sudo nyxus-repair-at-root" >&2
+  exit 2
+fi
+
+set -euo pipefail
+
+CFG=/etc/greetd/config.toml
+CHAIN=/usr/local/bin/nyxus-greeter-chain
+QS_DST=/usr/local/bin/nyxus-greeter-qs
+DISARM_DST=/usr/local/bin/nyxus-greeter-disarm
+REVERT=/usr/local/bin/nyxus-greeter-revert
+GTK=/usr/local/bin/nyxus-greeter
+PLY_DST=/usr/local/bin/nyxus-plymouth-hold-until-greeter
+# sudo resets HOME to /root; these assets live in the invoking user's
+# tree. Resolve it, never a hardcoded account (idiom from
+# nyxus-repair-at-root).
+OWNER_HOME=$(getent passwd "${SUDO_USER:-$USER}" | cut -d: -f6)
+OWNER_HOME=${OWNER_HOME:-$HOME}
+LANE="${OWNER_HOME}/.local/share/nyxus/greeter-lane"
+QS_SRC="$LANE/nyxus-greeter-qs"
+CHAIN_SRC="$LANE/nyxus-greeter-chain"
+DISARM_SRC="$LANE/nyxus-greeter-disarm"
+PIN_PY="$LANE/patch-gtk-pin.py"
+PLY_SRC="${OWNER_HOME}/.local/share/nyxus-boot-smooth/nyxus-plymouth-hold-until-greeter"
+[ -f "$PLY_SRC" ] || PLY_SRC="${OWNER_HOME}/.local/share/nyxus/nyxus-plymouth-hold-until-greeter"
+MARK=/var/lib/nyxus/greeter-trial
+
+if [ "$(id -u)" -ne 0 ]; then
+  cat <<EOF
+This edits greetd and must be run with sudo (it will not sudo itself):
+
+  sudo $0
+
+It will:
+  1. Back up $CFG and point default_session at $CHAIN
+  2. Install cage+amdgpu qs wrapper, eDP pin on the GTK fallback
+  3. Reset the dead-man MARK so the next boot is trial boot 1
+  4. Disable the 15-minute revert timer (keep next-boot service)
+  5. Add greeter to group render
+  6. Install plymouth-hold that treats qs as greeter-up
+  7. Leave the next-boot dead-man armed — after a successful QS login:
+
+       sudo nyxus-greeter-disarm
+
+Do not skip disarm.
+EOF
+  exit 1
+fi
+
+[ -f "$CFG" ] || { echo "missing $CFG" >&2; exit 1; }
+[ -x "$CHAIN" ] || { echo "missing $CHAIN" >&2; exit 1; }
+[ -x "$QS_SRC" ] || { echo "missing $QS_SRC" >&2; exit 1; }
+
+STAMP=$(date +%Y%m%d-%H%M%S)
+BACKUP="${CFG}.bak-qs-${STAMP}"
+cp -a "$CFG" "$BACKUP"
+echo "backup -> $BACKUP"
+
+# Only rewrite the default_session command line. Keep user = greeter.
+if grep -q '^command =' "$CFG"; then
+  tmp=$(mktemp)
+  awk -v cmd="$CHAIN" '
+    BEGIN { done=0 }
+    /^command =/ && done==0 {
+      print "command = \"" cmd "\""
+      done=1
+      next
+    }
+    { print }
+  ' "$CFG" >"$tmp"
+  cat "$tmp" >"$CFG"
+  rm -f "$tmp"
+else
+  echo "no command = line in $CFG" >&2
+  exit 1
+fi
+
+echo "greetd default_session.command -> $CHAIN"
+grep -n '^command =' "$CFG" || true
+
+install -m 0755 "$QS_SRC" "$QS_DST"
+echo "installed $QS_DST (cage + eDP pin + auth PATH)"
+
+if [ -x "$CHAIN_SRC" ]; then
+  install -m 0755 "$CHAIN_SRC" "$CHAIN"
+  echo "installed $CHAIN (log path greeter can write — qs actually starts)"
+fi
+# greeter could not append /var/log/... (root:root 644); bash then skipped qs.
+install -d -m 0755 /var/lib/greetd
+touch /var/lib/greetd/nyxus-greeter-chain.log /var/log/nyxus-greeter-chain.log
+chown greeter:greeter /var/lib/greetd/nyxus-greeter-chain.log /var/log/nyxus-greeter-chain.log 2>/dev/null || true
+chmod 664 /var/lib/greetd/nyxus-greeter-chain.log /var/log/nyxus-greeter-chain.log 2>/dev/null || true
+
+if [ -x "$DISARM_SRC" ]; then
+  install -m 0755 "$DISARM_SRC" "$DISARM_DST"
+  echo "installed $DISARM_DST (kills service AND timer)"
+fi
+
+if [ -f "$PIN_PY" ] && [ -x "$GTK" ]; then
+  cp -a "$GTK" "${GTK}.bak-pin-${STAMP}"
+  python3 "$PIN_PY" "$GTK" || echo "NOTE: GTK pin patch skipped" >&2
+fi
+
+# Point the revert script at THIS backup, not the Sep 5 hardcoded path.
+if [ -f "$REVERT" ]; then
+  cp -a "$REVERT" "${REVERT}.bak-${STAMP}"
+  python3 - "$REVERT" "$BACKUP" <<'PY'
+import pathlib, re, sys
+p = pathlib.Path(sys.argv[1])
+backup = sys.argv[2]
+text = p.read_text()
+text2, n = re.subn(r'^BACKUP=.*$', f'BACKUP="{backup}"', text, count=1, flags=re.M)
+if n:
+    p.write_text(text2)
+    print("revert BACKUP ->", backup)
+else:
+    print("NOTE: could not rewrite revert BACKUP", file=sys.stderr)
+PY
+fi
+
+# Trial boot 1 must not see a leftover MARK from 2026-09-08.
+rm -f "$MARK"
+mkdir -p /var/lib/nyxus
+echo "cleared $MARK — next boot is trial boot 1"
+
+# The 15-minute timer treated MARK-at-boot as "second boot" and restored GTK
+# 15 minutes later. Boot-2 rescue stays on the oneshot service only.
+systemctl disable --now nyxus-greeter-revert.timer 2>/dev/null || true
+rm -f /etc/systemd/system/timers.target.wants/nyxus-greeter-revert.timer
+systemctl enable nyxus-greeter-revert.service 2>/dev/null || true
+systemctl daemon-reload
+echo "revert timer off; next-boot service armed"
+
+# qs talks to renderD*; greeter is only in video today.
+if getent group render >/dev/null; then
+  usermod -aG render greeter
+  echo "greeter ∈ render"
+fi
+
+if [ -f "$PLY_SRC" ]; then
+  cp -a "$PLY_DST" "${PLY_DST}.bak-qs-${STAMP}" 2>/dev/null || true
+  install -m 0755 "$PLY_SRC" "$PLY_DST"
+  echo "installed $PLY_DST (cage|regreet|qs + wayland socket)"
+else
+  echo "NOTE: $PLY_SRC missing — plymouth-hold not updated" >&2
+fi
+
+cat <<EOF
+
+QS greeter is armed for the NEXT login (or reboot).
+
+After you actually land on the desktop from that greeter:
+
+  sudo nyxus-greeter-disarm
+
+Without that, nyxus-greeter-revert.service will restore GTK on the
+second boot. Logs: /var/log/nyxus-greeter-chain.log
+TTY escape: Ctrl+Alt+F2.
+EOF

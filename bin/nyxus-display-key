@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# ============================================================================
+#  NYXUS Suxyn — the display key.
+#
+#  KEY_SWITCHVIDEOMODE (227) arrives as XF86Display. It is the key printed with
+#  the two-screens glyph, it is what every other laptop uses to put the picture
+#  on a projector, and in this build it was bound to nothing.
+#
+#  WHAT IT DOES, in the order a person actually wants:
+#
+#    no external display   → say so. Do not open a window, do not cycle
+#                            through one monitor pretending it is a choice.
+#    external, mirrored    → extend it (the external to the right of the panel)
+#    external, extended    → mirror it
+#
+#  MIRROR IS THE ENTRY STATE because that is what the key is for in the room it
+#  gets pressed in: someone has just plugged into a projector and wants their
+#  screen on the wall. Extending is the state you choose deliberately at a desk,
+#  and the desk is where the Settings page is a better tool than a function key.
+#
+#  ONE OUTPUT NAME IS NEVER ASSUMED. The internal panel is whichever output the
+#  compositor reports as eDP*/LVDS*, not a hard-coded eDP-1, because the same
+#  ISO boots on machines that name it differently.
+# ============================================================================
+set -uo pipefail
+
+notify() {
+  # ON SCREEN, like the volume keys — not a corner notification. nyxus-osd
+  # talks to the same OSD plate shell/Osd.qml already draws for volume and
+  # brightness, and falls back on its own if the shell is not running.
+  # glyph below is U+F108 (desktop), a literal character rather than an
+  # escape: printf %b does not decode \\u and shipped tofu once.
+  nyxus-osd "" "$1" "video-display"
+}
+
+if ! command -v hyprctl >/dev/null; then
+  notify "The display key needs the compositor's control socket."
+  exit 1
+fi
+
+mons="$(hyprctl -j monitors 2>/dev/null)"
+[[ -n "${mons}" ]] || { notify "Could not read the displays."; exit 1; }
+
+read -r internal external mirrored <<<"$(printf '%s' "${mons}" | python3 -c '
+import json, re, sys
+try:
+    ms = json.load(sys.stdin)
+except Exception:
+    print("  ", end=""); raise SystemExit
+internal = external = ""
+mirror = "no"
+for m in ms:
+    n = m.get("name") or ""
+    if re.match(r"^(eDP|LVDS)", n, re.I):
+        internal = internal or n
+    else:
+        external = external or n
+    if m.get("mirrorOf"):
+        mirror = "yes"
+print(internal or "-", external or "-", mirror)
+' 2>/dev/null)"
+
+if [[ "${external:--}" == "-" || -z "${external:-}" ]]; then
+  notify "No external display is connected."
+  exit 0
+fi
+
+if [[ "${mirrored}" == "yes" ]]; then
+  # extend: put the external to the right of the panel at its preferred mode
+  hyprctl keyword monitor "${external},preferred,auto,1" >/dev/null 2>&1 \
+    && notify "Extended onto ${external}" \
+    || notify "Could not extend onto ${external}."
+else
+  hyprctl keyword monitor "${external},preferred,auto,1,mirror,${internal}" >/dev/null 2>&1 \
+    && notify "Mirrored onto ${external}" \
+    || notify "Could not mirror onto ${external}."
+fi

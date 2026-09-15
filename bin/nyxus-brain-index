@@ -1,0 +1,255 @@
+#!/usr/bin/env python3
+"""nyxus-brain-index — build the retrieval index for the system brain.
+
+WHAT THIS IS FOR
+    A local model on the Alienware that actually knows THIS machine: its build,
+    its configs, and the rulings behind them.
+
+WHY RETRIEVAL RATHER THAN A FINE-TUNE, WHICH WAS THE ALTERNATIVE
+    The corpus is about two million words of the owner's own documentation. A
+    2B fine-tune cannot hold that; it compresses it into a paraphrase and
+    confidently invents the parts it lost. Retrieval reads the real file and can
+    quote it.
+
+    The deciding argument is not accuracy though, it is STALENESS. He changes
+    this system constantly. A fine-tune is correct on the day it is trained and
+    wrong every day after, and fixing it means another training run. An index
+    is rebuilt in minutes and can be rebuilt after any change.
+
+    Fine-tuning is the right tool for teaching a model a SKILL or a STYLE. This
+    is a job about FACTS, and facts belong in a retrievable store.
+
+WHAT IT INDEXES
+    1. The NYXUS repo's own documentation — docs/, the root *.md, and the header
+       comments in shell/*.qml, which is where most of this build's real
+       reasoning lives.
+    2. THIS MACHINE'S LIVE CONFIG — ~/.config/hypr, ~/.config/nyxus and friends.
+       Without these it would know the project but not the computer, and the
+       whole point is the computer.
+
+    Both matter, and they are tagged differently in the output so an answer can
+    say whether it is quoting the design or the machine as it stands.
+
+EMBEDDINGS
+    nomic-embed-text through the local ollama. Nothing leaves the machine, which
+    matters here: this corpus contains his configs, his paths, and his security
+    posture notes.
+"""
+import hashlib
+import json
+import os
+import sys
+import time
+import urllib.request
+
+OLLAMA = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
+EMBED_MODEL = os.environ.get("NYXUS_BRAIN_EMBED", "nomic-embed-text")
+OUT_DIR = os.path.expanduser(os.environ.get("NYXUS_BRAIN_DIR", "~/.local/share/nyxus-brain"))
+
+# Chunk size is a real trade-off, not a default. Too small and a chunk loses the
+# context that makes it meaningful (half a rule, without the reason). Too large
+# and the embedding averages several topics into a vector that matches none of
+# them well. ~1200 characters is roughly a section of prose or one QML header.
+CHUNK = 1200
+OVERLAP = 200
+
+SKIP_DIRS = {
+    ".git", "node_modules", "target", "__pycache__", ".venv", ".venv-train",
+    "render-scratch", "build", "dist", ".cache", "models",
+}
+
+
+def post(path, payload):
+    req = urllib.request.Request(
+        OLLAMA + path,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=120) as r:
+        return json.loads(r.read())
+
+
+def embed(text):
+    return post("/api/embeddings", {"model": EMBED_MODEL, "prompt": text})["embedding"]
+
+
+def chunks_of(text, path, kind):
+    """Split with overlap so a fact spanning a boundary is not lost from both sides."""
+    text = text.strip()
+    if not text:
+        return
+    step = CHUNK - OVERLAP
+    for i in range(0, len(text), step):
+        piece = text[i:i + CHUNK]
+        if len(piece.strip()) < 80:      # too small to carry meaning on its own
+            continue
+        # The line number makes an answer checkable. "It says so somewhere" is
+        # not useful; "SetPageScreenlock.qml:117" is.
+        line = text.count("\n", 0, i) + 1
+        yield {"text": piece, "source": path, "line": line, "kind": kind}
+        if i + CHUNK >= len(text):
+            break
+
+
+def read(p):
+    try:
+        with open(p, "r", encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except Exception:
+        return ""
+
+
+def qml_header(text):
+    """Only the leading comment block of a QML file.
+
+    The bodies are bindings and layout maths that a language model cannot
+    usefully answer questions about, but the headers in this build explain WHY
+    things are the way they are — which is exactly what gets asked.
+    """
+    out = []
+    for ln in text.splitlines():
+        s = ln.strip()
+        if s.startswith("//"):
+            out.append(s.lstrip("/ ").rstrip())
+        elif s.startswith("pragma") or s.startswith("import") or s == "":
+            continue
+        else:
+            break
+    return "\n".join(out)
+
+
+def gather(repo, live_dirs):
+    docs = []
+
+    def walk(root, kind, exts, transform=None):
+        if not os.path.isdir(root):
+            return
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
+            for fn in filenames:
+                if not any(fn.endswith(e) for e in exts):
+                    continue
+                p = os.path.join(dirpath, fn)
+                try:
+                    if os.path.getsize(p) > 2_000_000:
+                        continue
+                except OSError:
+                    continue
+                body = read(p)
+                if transform:
+                    body = transform(body)
+                docs.extend(chunks_of(body, p, kind))
+
+    if repo:
+        walk(os.path.join(repo, "docs"), "design", (".md",))
+        for fn in os.listdir(repo) if os.path.isdir(repo) else []:
+            if fn.endswith(".md"):
+                docs.extend(chunks_of(read(os.path.join(repo, fn)), os.path.join(repo, fn), "design"))
+        walk(os.path.join(repo, "shell"), "design", (".qml",), transform=qml_header)
+
+    # THE MACHINE ITSELF. Tagged "machine" so an answer can distinguish what was
+    # designed from what is actually installed — they drift, and the drift is
+    # usually the interesting part.
+    for d in live_dirs:
+        walk(d, "machine", (".conf", ".json", ".toml", ".ini", ".md", ".sh"))
+
+    return docs
+
+
+def main():
+    # ⚠ THE DEFAULT MUST EXIST ON THE MACHINE THAT RUNS THIS.
+    # ~/Nyxus-Suxyn is the checkout path on the MSI. On the Alienware the repo
+    # is ~/Projects/Nyxus-Core, and pointing at the wrong one does not error —
+    # it walks nothing, indexes only the config dirs, and reports success. That
+    # is how a scheduled rebuild replaced an 11,686-chunk index with 398 and
+    # called it done. Both candidates are tried, in order.
+    repo = os.environ.get("NYXUS_BRAIN_REPO", "")
+    if not repo:
+        # ORDER MATTERS. ~/nyxus-brain-corpus is a dedicated mirror of the
+        # documentation and shell, staged on this machine precisely so the
+        # brain has something to read; it is the source the 11,686-chunk index
+        # was built from. ~/Projects/Nyxus-Core is a DIFFERENT and much smaller
+        # repo — 46 docs and no QML against the corpus's 462 — and picking it
+        # looks like success while losing nine tenths of what the brain knows.
+        for cand in ("~/nyxus-brain-corpus", "~/Projects/Nyxus-Core",
+                     "~/Nyxus-Suxyn"):
+            if os.path.isdir(os.path.expanduser(cand)):
+                repo = os.path.expanduser(cand)
+                break
+    repo = os.path.expanduser(repo or "~/Nyxus-Suxyn")
+    live = [
+        os.path.expanduser("~/.config/hypr"),
+        os.path.expanduser("~/.config/nyxus"),
+        os.path.expanduser("~/.config/quickshell"),
+    ]
+    if not os.path.isdir(repo):
+        print(f"note: no repo at {repo} — indexing this machine's config only")
+        repo = None
+
+    print("gathering...")
+    docs = gather(repo, live)
+    if not docs:
+        print("nothing to index — check NYXUS_BRAIN_REPO"); return 1
+    print(f"  {len(docs)} chunks from {len(set(d['source'] for d in docs))} files")
+
+    os.makedirs(OUT_DIR, exist_ok=True)
+    vecs, meta = [], []
+    t0 = time.time()
+    for i, d in enumerate(docs, 1):
+        try:
+            vecs.append(embed(d["text"]))
+            meta.append(d)
+        except Exception as e:
+            print(f"  ! embed failed for {d['source']}: {e}")
+            continue
+        if i % 50 == 0 or i == len(docs):
+            rate = i / max(time.time() - t0, 0.001)
+            eta = (len(docs) - i) / max(rate, 0.001)
+            print(f"  embedded {i}/{len(docs)}  {rate:.1f}/s  eta {eta/60:.1f}m", flush=True)
+
+    # ── REFUSE TO REPLACE A GOOD INDEX WITH A GUTTED ONE ─────────────────
+    # A rebuild that finds far less than last time has almost certainly lost a
+    # source, not watched the owner delete his documentation. That is exactly
+    # what happened on 2026-09-06: a wrong repo default walked nothing, indexed
+    # only the config dirs, wrote 398 chunks over 11,686, and EXITED ZERO. The
+    # brain got quietly stupider and nothing said so.
+    #
+    # Overwriting is the destructive step, so the check belongs immediately
+    # before it — after the expensive embedding, because a cheap early guess at
+    # the count would have to duplicate the walking rules to be accurate.
+    prev_path = os.path.join(OUT_DIR, "built.json")
+    if os.path.exists(prev_path) and not os.environ.get("NYXUS_BRAIN_FORCE"):
+        try:
+            prev = json.load(open(prev_path)).get("chunks", 0)
+        except Exception:
+            prev = 0
+        if prev and len(meta) < prev * 0.5:
+            print(f"\nREFUSING TO WRITE. Previous index had {prev} chunks, this "
+                  f"run found only {len(meta)}.")
+            print("Something is missing rather than deleted — usually a source "
+                  "directory that did not exist on this machine.")
+            print(f"  repo scanned: {repo}")
+            print("The existing index is untouched. Fix the source, or set "
+                  "NYXUS_BRAIN_FORCE=1 if the shrink is real.")
+            return 2
+
+    import numpy as np
+    arr = np.array(vecs, dtype="float32")
+    # Normalise once at build time so querying is a plain dot product rather
+    # than a cosine computed per row on every question.
+    norms = np.linalg.norm(arr, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    arr = arr / norms
+    np.save(os.path.join(OUT_DIR, "vectors.npy"), arr)
+    with open(os.path.join(OUT_DIR, "meta.json"), "w") as f:
+        json.dump(meta, f)
+    with open(os.path.join(OUT_DIR, "built.json"), "w") as f:
+        json.dump({"built_at": time.strftime("%F %T"), "chunks": len(meta),
+                   "embed_model": EMBED_MODEL, "dim": int(arr.shape[1])}, f, indent=2)
+    print(f"\nindex written to {OUT_DIR}")
+    print(f"  {len(meta)} chunks, dim {arr.shape[1]}, {time.time()-t0:.0f}s")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# ============================================================================
+# nyxus-locale-fallback — guarantee en_US.UTF-8 exists on the installed system
+#
+# Runs INSIDE the Calamares chroot from the main shellprocess, after the
+# `locale` / `localecfg` modules have written the user's chosen locale.
+#
+# ── WHAT WAS ALREADY RIGHT, SO NOBODY "FIXES" IT AGAIN ─────────────────────
+# The build already does the obvious things, and this script is NOT a
+# substitute for any of them:
+#   · airootfs /etc/locale.gen ships with `en_US.UTF-8 UTF-8` uncommented
+#   · airootfs /etc/locale.conf ships `LANG=en_US.UTF-8`
+#   · customize_airootfs.sh runs locale-gen at bake time
+#   · Calamares SHOWS the locale page (settings.conf `show:` sequence) and
+#     runs `locale` + `localecfg` in its `exec:` sequence
+# So a user is never required to know that /etc/locale.gen exists. That was
+# the concern this addresses and it was already covered.
+#
+# ── THE ACTUAL GAP ─────────────────────────────────────────────────────────
+# Calamares' localecfg REWRITES /etc/locale.gen for the locale the user
+# picked. Choose de_DE.UTF-8 in the installer and en_US.UTF-8 can end up
+# NOT generated on the target. That matters here more than on a stock Arch
+# install because NYXUS components assume a working en_US.UTF-8 exists:
+# nyxus_welcome.py and nyxus_settings_pages_personal.py both name it, and
+# audit.sh forces UTF-8 for the same reason (WIP-65). A missing locale does
+# not error loudly — it degrades into mojibake and C-collation sorting,
+# which is the quiet class of defect this repo keeps ruling against.
+#
+# So: en_US.UTF-8 is treated as a FLOOR, never as the choice. The user's own
+# locale is whatever they picked and is never touched — LANG in
+# /etc/locale.conf is left exactly as localecfg wrote it. This only ensures
+# the English fallback is also GENERATED and therefore available.
+#
+# Idempotent: if the line is already enabled, nothing is written and
+# locale-gen is not re-run.
+#
+# © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+# ============================================================================
+set -uo pipefail
+
+GEN=/etc/locale.gen
+WANT='en_US.UTF-8 UTF-8'
+
+say() { printf '[nyxus-locale-fallback] %s\n' "$*"; }
+
+if [[ ! -f "${GEN}" ]]; then
+  say "WARN ${GEN} absent — nothing to do"
+  exit 0
+fi
+
+# Already enabled (an uncommented line naming it)? Then we are done.
+if grep -Eq '^[[:space:]]*en_US\.UTF-8[[:space:]]+UTF-8[[:space:]]*$' "${GEN}"; then
+  say "en_US.UTF-8 already enabled — no change, no locale-gen"
+  exit 0
+fi
+
+# Prefer uncommenting the stock commented line over appending a duplicate,
+# so the file keeps the shape the rest of the distro expects.
+if grep -Eq '^[[:space:]]*#[[:space:]]*en_US\.UTF-8[[:space:]]+UTF-8' "${GEN}"; then
+  sed -i -E 's/^[[:space:]]*#[[:space:]]*(en_US\.UTF-8[[:space:]]+UTF-8)/\1/' "${GEN}"
+  say "uncommented the stock en_US.UTF-8 entry in ${GEN}"
+else
+  printf '%s\n' "${WANT}" >> "${GEN}"
+  say "appended '${WANT}' to ${GEN}"
+fi
+
+if command -v locale-gen >/dev/null 2>&1; then
+  if locale-gen; then
+    say "locale-gen complete — en_US.UTF-8 is available as a fallback"
+  else
+    say "WARN locale-gen failed; the user's own locale is unaffected"
+  fi
+else
+  say "WARN locale-gen not found; ${GEN} updated, generation deferred"
+fi
+
+# Never fail the install over a fallback locale.
+exit 0

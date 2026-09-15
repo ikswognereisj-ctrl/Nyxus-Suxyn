@@ -1,0 +1,217 @@
+#!/usr/bin/env bash
+# nyxus-gpu-probe — which graphics hardware is in this machine, and whether
+# this build targets it. (TRK-1205 / CS-1058, 2026-08-22, seat AMD)
+#
+# WHY THIS EXISTS. Until 2026-08-22 the tree "un-targeted AMD by decision" —
+# the package list said "hardware-locked build for the MSI GS77 (Intel Iris Xe
+# + NVIDIA only)", the hardware doc said "AMD: untested", and nothing on the
+# image could tell a user on a Ryzen box whether the desktop in front of them
+# was supported or an accident. The owner ruled 2026-08-20 that the OS must
+# pick up "any typical PC ~2012-now", so the decision is now the other way:
+# Intel, AMD and NVIDIA graphics are ALL targets, and this script is the one
+# place that says so in a form a gate can read and a user can see.
+#
+# THE SUPPORT MATRIX lives in this file ONLY (the `SUPPORT` table below).
+# Gate 13s50 in iso-builder/verify-profile.sh derives what it asserts from
+# `nyxus-gpu-probe --matrix`: every package a row names must be in
+# packages.x86_64, and the amd row must read `supported`. Edit the table, and
+# the gate follows; a gate that states the matrix in prose would drift from it.
+#
+# WHAT IT READS — sysfs only, so it works on the live ISO, in the Calamares
+# chroot and in a VM with no lspci. /sys/class/drm/card*/device/{vendor,
+# boot_vga} and the bound driver symlink. lspci, when present, is used only
+# for the marketing name.
+#
+# MODES (none is `--check`, on purpose: every `--check` in this tree must have
+# a gate runner, and the runner here is 13s50 calling `--matrix`):
+#   --line    one human sentence for the Welcome wizard / About
+#   --json    machine-readable: gpus[], hybrid, primary, verdict
+#   --matrix  the support table, one row per vendor, tab-separated:
+#             vendor<TAB>driver(s)<TAB>status<TAB>packages that make it work
+#   (no args) a short report to stdout
+# Exit status is 0 whenever the probe ran; 2 for a bad argument. "No GPU found"
+# is a result, not an error — a VM with virtio-gpu or a headless box is one.
+
+set -u
+
+# ── the matrix ──────────────────────────────────────────────────────────────
+# vendor | kernel driver(s) | status | the packages.x86_64 entries that make it
+# real. `status` is one of: supported | legacy | unsupported.
+#  - supported: the desktop, Vulkan and VA-API video decode all have a driver.
+#  - legacy:    the desktop works on Mesa but Vulkan does not (pre-GCN AMD on
+#               the `radeon` driver — Radeon HD 2000-6000, 2007-2011 — and
+#               NVIDIA cards older than Turing on `nouveau`, because the
+#               nvidia-open modules this build ships start at Turing/2018).
+SUPPORT=(
+  "intel	i915 xe	supported	mesa vulkan-intel lib32-vulkan-intel intel-media-driver libva-intel-driver"
+  "amd	amdgpu	supported	mesa vulkan-radeon lib32-vulkan-radeon lib32-mesa"
+  "amd-legacy	radeon	legacy	mesa"
+  "nvidia	nvidia nvidia_drm	supported	nvidia-open-dkms nvidia-utils lib32-nvidia-utils egl-wayland libva-nvidia-driver"
+  "nvidia-legacy	nouveau	legacy	mesa"
+  "hybrid	any two of the above	supported	switcheroo-control"
+)
+
+usage() {
+  printf 'usage: nyxus-gpu-probe [--line|--json|--matrix]\n' >&2
+  exit 2
+}
+
+vendor_name() {
+  case "${1,,}" in
+    0x8086) printf 'intel' ;;
+    0x1002|0x1022) printf 'amd' ;;
+    0x10de) printf 'nvidia' ;;
+    0x1af4) printf 'virtio' ;;
+    0x15ad) printf 'vmware' ;;
+    0x1234|0x1b36) printf 'qemu' ;;
+    *) printf 'other' ;;
+  esac
+}
+
+# Marketing name from lspci if it is there; the PCI slot otherwise.
+pretty_name() {
+  local slot="$1" line=""
+  if command -v lspci >/dev/null 2>&1; then
+    line="$(lspci -s "${slot}" 2>/dev/null | head -n1)"
+    line="${line#*: }"
+    [[ -n "${line}" ]] && { printf '%s' "${line}"; return; }
+  fi
+  printf '%s' "${slot}"
+}
+
+# One GPU per line: slot<TAB>vendor<TAB>driver<TAB>boot_vga<TAB>name
+probe() {
+  local card dev slot vend drv boot vendor
+  for card in /sys/class/drm/card[0-9]*; do
+    [[ -d "${card}/device" ]] || continue
+    # skip connectors (card0-eDP-1) — only bare cardN have a PCI device dir
+    [[ "${card##*/}" =~ ^card[0-9]+$ ]] || continue
+    dev="${card}/device"
+    [[ -r "${dev}/vendor" ]] || continue
+    slot="$(basename "$(readlink -f "${dev}")")"
+    slot="${slot#0000:}"
+    vend="$(<"${dev}/vendor")"
+    vendor="$(vendor_name "${vend}")"
+    drv="none"
+    [[ -L "${dev}/driver" ]] && drv="$(basename "$(readlink -f "${dev}/driver")")"
+    boot=0
+    [[ -r "${dev}/boot_vga" ]] && boot="$(<"${dev}/boot_vga")"
+    printf '%s\t%s\t%s\t%s\t%s\n' "${slot}" "${vendor}" "${drv}" "${boot}" "$(pretty_name "${slot}")"
+  done | sort -u
+}
+
+# Map one probed GPU onto a matrix row key.
+row_for() {
+  local vendor="$1" drv="$2"
+  case "${vendor}:${drv}" in
+    intel:*)          printf 'intel' ;;
+    amd:amdgpu)       printf 'amd' ;;
+    amd:radeon)       printf 'amd-legacy' ;;
+    amd:*)            printf 'amd' ;;
+    nvidia:nvidia*)   printf 'nvidia' ;;
+    nvidia:nouveau)   printf 'nvidia-legacy' ;;
+    nvidia:*)         printf 'nvidia' ;;
+    *)                printf 'other' ;;
+  esac
+}
+
+status_for() {
+  local key="$1" row
+  for row in "${SUPPORT[@]}"; do
+    IFS=$'\t' read -r rv _ rs _ <<<"${row}"
+    [[ "${rv}" == "${key}" ]] && { printf '%s' "${rs}"; return; }
+  done
+  printf 'unsupported'
+}
+
+stack_for() {
+  case "$1" in
+    intel)         printf 'Mesa, ANV Vulkan, VA-API' ;;
+    amd)           printf 'Mesa, RADV Vulkan, VA-API' ;;
+    amd-legacy)    printf 'Mesa (radeon), no Vulkan' ;;
+    nvidia)        printf 'nvidia-open, Vulkan, NVDEC' ;;
+    nvidia-legacy) printf 'nouveau, no Vulkan' ;;
+    *)             printf 'generic (virtual or unknown)' ;;
+  esac
+}
+
+# ── modes ───────────────────────────────────────────────────────────────────
+mode="${1:-report}"
+case "${mode}" in
+  --matrix)
+    printf '%s\n' "${SUPPORT[@]}"
+    exit 0 ;;
+  --line|--json|report) ;;
+  *) usage ;;
+esac
+
+mapfile -t GPUS < <(probe)
+n=${#GPUS[@]}
+hybrid=0; (( n >= 2 )) && hybrid=1
+
+# verdict = the weakest status across real GPUs; virtual GPUs do not count.
+verdict="supported"; primary=""; labels=(); keys=()
+for g in "${GPUS[@]}"; do
+  IFS=$'\t' read -r slot vendor drv boot name <<<"${g}"
+  key="$(row_for "${vendor}" "${drv}")"
+  keys+=("${key}")
+  st="$(status_for "${key}")"
+  case "${vendor}" in virtio|vmware|qemu) st="virtual" ;; esac
+  [[ "${boot}" == "1" && -z "${primary}" ]] && primary="${name}"
+  labels+=("${name} (${drv}) — ${st}: $(stack_for "${key}")")
+  case "${verdict}:${st}" in
+    *:virtual) ;;
+    supported:legacy) verdict="legacy" ;;
+    *:unsupported) verdict="unsupported" ;;
+  esac
+done
+if (( n == 0 )); then
+  verdict="none"
+fi
+
+case "${mode}" in
+  --line)
+    # Short, vendor-level — this is the Welcome wizard's one-line summary.
+    if (( n == 0 )); then
+      printf 'none detected (virtual machine?) — generic Mesa path\n'
+    else
+      short=()
+      for key in "${keys[@]}"; do
+        case "${key}" in
+          intel)         short+=("Intel") ;;
+          amd)           short+=("AMD") ;;
+          amd-legacy)    short+=("AMD (legacy)") ;;
+          nvidia)        short+=("NVIDIA") ;;
+          nvidia-legacy) short+=("NVIDIA (legacy)") ;;
+          *)             short+=("virtual") ;;
+        esac
+      done
+      joined="$(printf '%s + ' "${short[@]}")"; joined="${joined% + }"
+      (( hybrid )) && joined="${joined} hybrid"
+      printf '%s — %s\n' "${joined}" "${verdict}"
+    fi ;;
+  --json)
+    printf '{"gpus":['
+    first=1
+    for g in "${GPUS[@]}"; do
+      IFS=$'\t' read -r slot vendor drv boot name <<<"${g}"
+      key="$(row_for "${vendor}" "${drv}")"
+      (( first )) || printf ','
+      first=0
+      printf '{"slot":"%s","vendor":"%s","driver":"%s","boot_vga":%s,"name":"%s","status":"%s"}' \
+        "${slot}" "${vendor}" "${drv}" "${boot:-0}" "${name//\"/\\\"}" "$(status_for "${key}")"
+    done
+    printf '],"hybrid":%s,"primary":"%s","verdict":"%s"}\n' \
+      "$([[ ${hybrid} -eq 1 ]] && echo true || echo false)" "${primary//\"/\\\"}" "${verdict}"
+    ;;
+  report)
+    printf 'nyxus-gpu-probe — graphics hardware vs the NYXUS Suxyn target matrix\n'
+    if (( n == 0 )); then
+      printf '  no GPU exposed under /sys/class/drm (virtual machine or headless)\n'
+    fi
+    for l in "${labels[@]}"; do printf '  %s\n' "${l}"; done
+    (( hybrid )) && printf '  hybrid graphics: yes (%d GPUs; primary: %s)\n' "${n}" "${primary:-unknown}"
+    printf '  verdict: %s\n' "${verdict}"
+    ;;
+esac
+exit 0

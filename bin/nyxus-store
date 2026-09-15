@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Nyxus Suxyn — raise glass Store. Never GTK nyxus_store.py.
+set -u
+if ! command -v qs >/dev/null 2>&1; then
+  echo "Store needs the desktop shell (qs)." >&2
+  exit 2
+fi
+section=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --section)
+      section="${2:-}"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+if [[ -n "${section}" ]]; then
+  out="$(qs ipc call store at "${section}" 2>&1)" || true
+else
+  out="$(qs ipc call store engage 2>&1)" || true
+fi
+if [[ "${out}" == *"Target not found."* ]]; then
+  out="$(qs ipc call nyxus store 2>&1)" || true
+fi
+if [[ "${out}" == *"Target not found."* ]]; then
+  echo "Store is not in the running shell." >&2
+  printf '%s\n' "${out}" >&2
+  exit 2
+fi
+printf '%s\n' "${out}"
+exit 0

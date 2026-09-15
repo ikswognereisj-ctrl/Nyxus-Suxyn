@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+# nyxus-wallpaper-autostart
+#
+# Read the user's persisted wallpaper choice and set it through
+# nyxus-set-wallpaper (swww/hyprpaper backend aware). Falls back
+# to the shipped default if the config is missing or points at a file
+# that no longer exists. Sourced by hyprland.conf exec-once and the
+# bound $mod+ALT+W key.
+set -u
+
+CONF="${HOME}/.config/nyxus/wallpaper.conf"
+# Suxyn default (2026-08-22, owner ruling "the starlight"): the desktop
+# background is the shipping hero. The fallback stays the same file the
+# skel conf declares: if the conf is gone, you get the default the conf
+# would have given you, not a different identity. (Before this it was
+# voyage-galaxy, then concrete-rose, then the ALIEN wall — the fallback
+# IS identity.)
+DEFAULT="/usr/share/backgrounds/nyxus/suxyn-starlight-galaxy.png"
+# The LEGACY_PNG branch that stood here repainted the parent build's alien
+# wall from ~/.config/hypr/walls if DEFAULT was unreadable — the fallback IS
+# identity (WIP-198, WIP-132), so a foreign last resort re-acquires the
+# foreign look at the exact moment the theme is most broken. Removed under
+# WIP-425 with the wall itself.
+
+WALLPAPER_PATH=""
+if [[ -r "${CONF}" ]]; then
+  # shellcheck source=/dev/null
+  source "${CONF}" || true
+fi
+
+# If the persisted absolute path doesn't resolve — e.g. it was written with a
+# DIFFERENT user's $HOME baked in (the skel default ships a build-time path) —
+# recover via the slug (WALLPAPER=) under THIS user's home before falling back
+# to the shipped default. This makes the choice user-agnostic.
+if [[ ( -z "${WALLPAPER_PATH:-}" || ! -r "${WALLPAPER_PATH}" ) && -n "${WALLPAPER:-}" ]]; then
+  for _cand in "${HOME}/.config/hypr/walls/${WALLPAPER}.png" \
+               "/usr/share/backgrounds/nyxus/${WALLPAPER}.png"; do
+    if [[ -r "${_cand}" ]]; then WALLPAPER_PATH="${_cand}"; break; fi
+  done
+fi
+
+if [[ -z "${WALLPAPER_PATH:-}" || ! -r "${WALLPAPER_PATH}" ]]; then
+  if [[ -r "${DEFAULT}" ]]; then
+    WALLPAPER_PATH="${DEFAULT}"
+  else
+    echo "nyxus-wallpaper-autostart: no readable wallpaper found" >&2
+    exit 1
+  fi
+fi
+
+# ── TRK-3253 · THE FIRST-LOGIN BACKGROUND SWITCH ────────────────────────────
+# Owner, 2026-08-27: "at first login a different background image shows, then
+# it changes to the one set as default."
+#
+# THE COMPONENT THAT PAINTS FIRST IS THIS SCRIPT, and until now it painted the
+# wrong thing. `hyprland.conf` exec-once runs it the moment Hyprland is up,
+# seconds before quickshell has finished loading, so whatever it hands
+# nyxus-set-wallpaper IS the first frame the owner sees of his session. It
+# handed over the wallpaper.conf hero unconditionally.
+#
+# But the shipped session default is `sky_mode = "headliner"` (shell/Prefs.qml
+# `property string sky_mode: "headliner"`), and Prefs.qml states the layering
+# in as many words: "Any sky is a Bottom-layer surface; the wallpaper is
+# Background, one layer further down, so a live sky always wins the pixel
+# regardless of what wallpaper.conf names." `Headliner.qml` sets
+# `color: "black"` on its window. So on a fresh account the wallpaper is NEVER
+# what ends up on screen — the Starlight Headliner covers it the instant the
+# shell finishes loading.
+#
+# MEASURED, and this is the whole complaint in two numbers:
+#
+#   painted first  suxyn-starlight-galaxy.png            mean RGB 25.9 27.3 37.0
+#   covered by     the Headliner (its committed still is
+#                  grub/themes/nyxus/background.png)     mean RGB  0.1  0.1  0.1
+#
+# A gold-and-blue galaxy replaced a second later by a near-black starfield.
+# Nothing was racing and nothing was misconfigured; two components were simply
+# painting two different pictures, in order.
+#
+# THE FIX IS TO MAKE THE FIRST FRAME ALREADY CORRECT. When the sky owns the
+# ground, paint the sky's own committed still instead of a wallpaper that is
+# about to be covered. That still is the SAME FILE the boot chain already uses
+# for exactly this purpose — GRUB's theme background, /etc/greetd's login seed
+# and shell/lock-still.png are byte-identical to it (md5 1b7bf223, asserted by
+# 13ua/13uh) — so GRUB, the greeter, this first frame and the live Headliner
+# are now one continuous picture from power-on to desktop.
+#
+# It is NOT a repin of the hero — and TRK-3621 is what finally made that
+# sentence TRUE. It used to `exec nyxus-set-wallpaper "${SKY_STILL}"`, and that
+# setter PERSISTS whatever it paints (its own header says so). So every login
+# under the shipped `sky_mode: "headliner"` rewrote wallpaper.conf to
+#     WALLPAPER="background"
+#     WALLPAPER_PATH="/usr/share/grub/themes/nyxus/background.png"
+# and the user's chosen picture was gone. Downstream, Settings > Background
+# then showed the GRUB still as "ON THE DESKTOP", no tile read as selected
+# (`currentSlug` matched nothing), and TRK-3504's hero-first featured row lost
+# its lead tile because "background" resolves in no wallpaper directory. The
+# owner reported it as "i was trying to get new background images and that got
+# messed up".
+#
+# The first frame is a PAINT, not a CHOICE, so it now passes --no-persist.
+# wallpaper.conf is untouched, Wallpaper Studio
+# and Settings still write it, and the moment `sky_mode` is "wallpaper" the
+# chosen picture is what gets painted, here and everywhere else. Set the key
+# back and the next login paints the wallpaper again with no other change.
+#
+# GUARDED THREE WAYS, because this runs before anything else the user has:
+# an unreadable settings.json, an unparseable one, or a missing still all fall
+# straight through to the wallpaper path below. This can only ever swap WHICH
+# existing file is painted; it can never leave the desktop with none.
+SKY_STILL="/usr/share/grub/themes/nyxus/background.png"
+SETTINGS_JSON="${HOME}/.config/nyxus/settings.json"
+_sky_mode="headliner"          # shell/Prefs.qml's own default, restated
+if [[ -r "${SETTINGS_JSON}" ]]; then
+  # Flat top-level string key. A grep, not a JSON parser: this is the login
+  # path and it must not acquire a dependency that can fail. An unmatched
+  # pattern leaves the default above, which is also what Prefs.qml would use.
+  _sky_read="$(grep -oE '"sky_mode"[[:space:]]*:[[:space:]]*"[A-Za-z]+"' \
+                 "${SETTINGS_JSON}" 2>/dev/null | tail -n1 \
+               | sed -E 's/.*"([A-Za-z]+)"$/\1/')"
+  [[ -n "${_sky_read}" ]] && _sky_mode="${_sky_read}"
+fi
+if [[ "${_sky_mode}" != "wallpaper" ]] && [[ -r "${SKY_STILL}" ]]; then
+  WALLPAPER_PATH="${SKY_STILL}"
+fi
+
+if command -v nyxus-set-wallpaper >/dev/null 2>&1; then
+  # TRK-3621: only the user's OWN wallpaper is allowed to be remembered here.
+  # When the sky-still branch above swapped the path, this is a transient
+  # first-frame paint and must not be written back as a choice — nor should it
+  # re-derive the accent from a near-black GRUB still.
+  if [[ "${WALLPAPER_PATH}" == "${SKY_STILL}" ]]; then
+    exec nyxus-set-wallpaper "${WALLPAPER_PATH}" --no-persist --no-accent
+  fi
+  exec nyxus-set-wallpaper "${WALLPAPER_PATH}"
+fi
+
+pkill -x swaybg 2>/dev/null || true
+exec swaybg -i "${WALLPAPER_PATH}" -m fill -c "#000000"

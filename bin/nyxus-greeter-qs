@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# The Quickshell greeter itself. Exits non-zero on any failure so the wrapper
+# above it can fall through to ReGreet.
+export NYXUS_GREET_USER="${NYXUS_GREET_USER:-gowski}"
+export NYXUS_GREET_AUTH=/usr/local/libexec/nyxus-greet-auth
+export QT_LOGGING_RULES='qt.qpa.*=false'
+exec qs -p /usr/share/nyxus-greeter/shell.qml

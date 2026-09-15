@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Welcome-note launcher RETIRED (WIP-36). Stamp marker and exit.
+set -euo pipefail
+MARKER="${HOME}/.config/nyxus/welcome-note.done"
+mkdir -p "$(dirname "$MARKER")"
+echo retired >"$MARKER"
+exit 0

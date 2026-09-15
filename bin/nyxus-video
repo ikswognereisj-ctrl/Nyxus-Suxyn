@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# NYXUS Video — the front door for video playback.
+#
+# WHY THIS FILE EXISTS
+#
+# The Start Menu shipped a tile named "Video" whose exec was the bare string
+# `mpv`. Run with no arguments, mpv prints its CLI usage to a terminal nobody
+# is looking at and exits 0 — so clicking "Video" in the NYXUS Start Menu did
+# nothing at all. No window, no error, no feedback. That is the exact feeling
+# the owner asked us to remove: the box is ticked and the human is lost.
+#
+# mpv's own packaged launcher already knew this. /usr/share/applications/
+# mpv.desktop ships:
+#
+#     Exec=mpv --player-operation-mode=pseudo-gui -- %U
+#
+# `pseudo-gui` is what makes mpv behave like a double-clickable application:
+# it opens a window and keeps running with no file, instead of exiting. The
+# Launcher calls binaries directly rather than going through .desktop files,
+# so it bypassed the flag upstream put there for precisely this reason.
+#
+# WHY A WRAPPER RATHER THAN INLINING THE FLAGS IN Launcher.qml
+#
+# Two reasons, and the first one is user-visible:
+#
+#   1. The Start Menu renders each tile's `exec` string verbatim as the
+#      caption under its icon (shell/Launcher.qml, the dCard and dRow
+#      delegates). Inlining would print
+#      "mpv --player-operation-mode=pseudo-gui" under the Video icon — flag
+#      soup shown to the same person we are trying to stop confusing. A tile
+#      captioned "nyxus-video" reads like the rest of the roster.
+#
+#   2. This is the seam. When NYXUS Video ships as a real app, its tile does
+#      not change and Launcher.qml is not touched a second time: this file's
+#      body is replaced and every caller follows. QML is a shared, contended
+#      file in this repo; a launcher script is not.
+#
+# This wrapper deliberately does NOT try to be a player. It is the honest
+# minimum that makes the tile do something, landed ahead of the app because a
+# tile that silently does nothing is worse than a tile that is absent.
+#
+# © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+set -u
+
+# If mpv is somehow absent, say so where a person can see it rather than
+# failing silently the way the bare-`mpv` tile did. This is the whole point
+# of the file, so it must not reintroduce the defect on the error path.
+if ! command -v mpv >/dev/null 2>&1; then
+  if command -v notify-send >/dev/null 2>&1; then
+    notify-send -a "NYXUS Video" -u critical \
+      "Video player unavailable" \
+      "mpv is not installed on this system."
+  fi
+  echo "nyxus-video: mpv not found" >&2
+  exit 127
+fi
+
+# pseudo-gui is the difference between a window and a usage message.
+# "$@" forwards any files the caller passed (Files' Open With, a mimeapps
+# route, drag-and-drop), so this works both as a bare launcher and a handler.
+exec mpv --player-operation-mode=pseudo-gui -- "$@"

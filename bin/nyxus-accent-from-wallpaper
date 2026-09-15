@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# ════════════════════════════════════════════════════════════════════
+# nyxus-accent-from-wallpaper   ·   rev 2026-07-23 (GALAXY LOCK)
+#
+# HISTORICAL: used to re-skin the desktop from the current wallpaper.
+# OWNER DIRECTIVE 2026-07-23: GALAXY is locked. follow_wallpaper is
+# OFF and the only accent.json preset is `prism`. This script now REFUSES
+# to mutate the palette so old wallpaper blues/creams can never return.
+# Bound keys still call it safely — it exits 0 with a notice.
+#
+# To force an extract for experimentation (dev only):
+#   NYXUS_ALLOW_WALLPAPER_ACCENT=1 nyxus-accent-from-wallpaper
+#
+# © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+# ════════════════════════════════════════════════════════════════════
+set -u
+
+export PATH="${HOME}/.local/bin:${PATH}"
+CONF="${HOME}/.config/nyxus/accent.json"
+
+if [[ "${NYXUS_ALLOW_WALLPAPER_ACCENT:-0}" != "1" ]]; then
+  printf 'accent: GALAXY locked (follow_wallpaper off) — wallpaper extract disabled\n'
+  printf '        active palette stays prism. re-apply with: nyxus-apply-accent prism\n'
+  exit 0
+fi
+
+# ── DEV-ONLY path below (opt-in) ─────────────────────────────────────
+WCONF="${HOME}/.config/nyxus/wallpaper.conf"
+CACHE="${HOME}/.cache/nyxus"
+mkdir -p "${CACHE}"
+
+IMG=""
+MPV_VIDEO="$(pgrep -ax mpvpaper 2>/dev/null | head -1 | grep -oE '/[^ ]+\.(mp4|mkv|webm|mov)' | head -1 || true)"
+if [[ -n "${MPV_VIDEO}" && -r "${MPV_VIDEO}" ]] && command -v ffmpeg >/dev/null; then
+  FRAME="${CACHE}/wallframe.png"
+  if ffmpeg -y -loglevel error -ss 2 -i "${MPV_VIDEO}" -frames:v 1 "${FRAME}" 2>/dev/null; then
+    IMG="${FRAME}"
+  fi
+fi
+
+if [[ -z "${IMG}" && -r "${WCONF}" ]]; then
+  # shellcheck disable=SC1090
+  source "${WCONF}" 2>/dev/null || true
+  for cand in "${WALLPAPER_PATH:-}" "/usr/share/backgrounds/nyxus/${WALLPAPER:-}.png" \
+              "${HOME}/.config/hypr/walls/${WALLPAPER:-}.png"; do
+    [[ -n "${cand}" && -r "${cand}" ]] && { IMG="${cand}"; break; }
+  done
+fi
+
+if [[ -z "${IMG}" || ! -r "${IMG}" ]]; then
+  echo "accent: could not resolve a wallpaper image" >&2
+  exit 1
+fi
+
+if ! command -v nyxus-palette-extract >/dev/null; then
+  echo "accent: nyxus-palette-extract missing" >&2
+  exit 1
+fi
+
+PAL="$(nyxus-palette-extract "${IMG}")" || exit 1
+TMP="$(mktemp)"
+jq --argjson p "${PAL}" '
+  .presets.wallpaper = $p
+  | .active = "wallpaper"
+  | .follow_wallpaper = true
+' "${CONF}" > "${TMP}" && mv "${TMP}" "${CONF}"
+
+nyxus-apply-accent wallpaper
+echo "accent: DEV override applied from wallpaper (${IMG})"

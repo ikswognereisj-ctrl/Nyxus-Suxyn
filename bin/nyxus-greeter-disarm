@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Make the Quickshell greeter permanent. Run AFTER a good QS login.
+set -euo pipefail
+systemctl disable --now nyxus-greeter-revert.service 2>/dev/null || true
+systemctl disable --now nyxus-greeter-revert.timer 2>/dev/null || true
+rm -f /etc/systemd/system/nyxus-greeter-revert.service
+rm -f /etc/systemd/system/nyxus-greeter-revert.timer
+rm -f /etc/systemd/system/graphical.target.wants/nyxus-greeter-revert.service
+rm -f /etc/systemd/system/timers.target.wants/nyxus-greeter-revert.timer
+rm -f /var/lib/nyxus/greeter-trial
+systemctl daemon-reload
+echo "dead man's switch disarmed — service AND 15-minute timer gone"
+echo "the new login screen is now permanent"

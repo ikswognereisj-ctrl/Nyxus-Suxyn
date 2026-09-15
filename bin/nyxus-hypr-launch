@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# NYXUS Hyprland launcher — switches to Safe Mode config when the kernel
+# was booted with `nyxus.safemode=1`. Otherwise launches the normal session.
+#
+# WHERE THIS ACTUALLY WORKS. The two paths are NOT the same and only one of
+# them is automatic — do not collapse them back into one sentence.
+#
+#   · LIVE ISO — works end to end. The "Safe Mode" entry in grub/grub.cfg
+#     (UEFI) and syslinux/syslinux.cfg (BIOS), plus their twins in the
+#     Kage-Ryu menus build-iso.sh writes, put the flag on the command line.
+#     Those entries stay on the graphical target, so greetd starts, regreet
+#     runs /usr/share/wayland-sessions/nyxus-hyprland.desktop, and its
+#     Exec=nyxus-session-start greps /proc/cmdline and execs this wrapper.
+#     Every normal boot fails that grep and never reaches here.
+#
+#   · INSTALLED DISK — STILL NOT AUTOMATIC, and this file cannot fix it.
+#     /etc/grub.d/41_nyxus_recovery does set nyxus.safemode=1, but the same
+#     entry sets systemd.unit=multi-user.target and masks
+#     display-manager.service — so greetd never starts, the .desktop session
+#     command never runs, and nothing execs this wrapper. The user lands on a
+#     TTY, where typing `nyxus-hypr-launch` DOES work (the flag is in
+#     /proc/cmdline and this file is on PATH), but nothing on screen says so.
+#     Closing that means changing the recovery entry or printing the hint at
+#     the console. It is an open item and was deliberately not attempted with
+#     the live-ISO fix.
+#
+# There is no SDDM in this build (greetd + regreet) and no shell alias — do
+# not re-document either as the entrypoint.
+#
+# Ships to /usr/local/bin, not /usr/bin: that is where every nyxus tool in this
+# profile lands and the only prefix profiledef.sh's file_permissions covers.
+
+set -u
+LOG="${XDG_CACHE_HOME:-$HOME/.cache}/nyxus/session.log"
+mkdir -p "$(dirname "$LOG")"
+
+# -E with the dot escaped and explicit space/edge anchors, not -w: `-w` treats
+# the unescaped `.` as "any character" and its word boundaries stop at the
+# non-word `.`, so `foo.nyxus.safemode=1` and `nyxusXsafemode=1` both matched.
+# Nothing this repo boots produces either, but a kernel arg that can be
+# satisfied by a near-miss is not a switch. Keep identical to the predicate in
+# nyxus-session-start — two spellings of one test is how they drift apart.
+if grep -qE '(^| )nyxus\.safemode=1( |$)' /proc/cmdline 2>/dev/null; then
+    cfg="$HOME/.config/hypr/conf.d/nyxus-safemode.conf"
+    [[ -f "$cfg" ]] || cfg="/etc/skel/.config/hypr/conf.d/nyxus-safemode.conf"
+    echo "$(date -Is) safe-mode session ($cfg)" >> "$LOG"
+    exec Hyprland --config "$cfg"
+fi
+
+cfg="$HOME/.config/hypr/hyprland.conf"
+echo "$(date -Is) normal session ($cfg)" >> "$LOG"
+exec Hyprland --config "$cfg"

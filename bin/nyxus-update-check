@@ -1,0 +1,234 @@
+#!/usr/bin/env python3
+"""
+nyxus-update-check — tell the person about updates BEFORE they go looking.
+
+★ THIS EXISTS BECAUSE OF ONE QUESTION THE OWNER ASKED, 2026-08-12:
+  "does it show when updates are available for installed apps, and does it
+  surface them without being asked?"
+
+  The first half was already true. The second half was not, and the
+  measurement is worth keeping: `nyxus_updater.py` has no background check,
+  no notifier and no autostart entry; `SetPageUpdates.qml` in Settings shows
+  updates, but only once you navigate to that page; the Store checked only
+  when its Updates section was opened. Every surface in the build was PULL.
+  The system knew and never said.
+
+  This is the push half. It runs on a `systemd --user` timer, sends one
+  desktop notification when something is waiting, and its button opens the
+  Store on the Updates page.
+
+⛔ `checkupdates`, NEVER `pacman -Sy`.
+   `checkupdates` (pacman-contrib) copies the sync database to a private
+   directory and refreshes THAT, so it can tell you what is waiting without
+   touching the real database. A bare `pacman -Sy` leaves the system in a
+   partially-upgraded state, which is the single most reliable way to break
+   an Arch install. `SetPageUpdates.qml` carries the same warning; this is
+   the second reader of the same rule, not a second copy of the rule.
+
+⛔ NO TERMINAL, EVER. The owner's rule is absolute and gates 14/15 enforce
+   it in the apps. The notification's action opens a GUI. Nothing here
+   drops anyone into a shell.
+
+QUIET BY DESIGN
+    · Silent when there is nothing to say — no "you are up to date" popup.
+    · Silent when it cannot reach the network. A laptop that wakes on a
+      train must not accuse itself of being broken.
+    · One notification per set of updates: the count is remembered in
+      ~/.cache/nyxus/update-check.json and an identical count is not
+      re-announced. Being nagged hourly about the same 3 updates is how
+      people learn to dismiss notifications without reading them.
+    · Switched off by `touch ~/.config/nyxus/update-check.disabled`, which
+      the unit checks with ConditionPathExists so the timer does not even
+      run.
+
+© 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+"""
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+APP_NAME = "NYXUS Store"
+CACHE = Path(os.environ.get("XDG_CACHE_HOME") or (Path.home() / ".cache")) / "nyxus"
+STATE = CACHE / "update-check.json"
+DISABLED = Path.home() / ".config" / "nyxus" / "update-check.disabled"
+
+# Where the Store lives. /usr/local/bin/nyxus-store is the wrapper the ISO
+# installs; the direct module path is the fallback for a dev checkout.
+STORE_WRAPPER = "/usr/local/bin/nyxus-store"
+STORE_MODULE = "/opt/nyxus/nyxus_store.py"
+
+
+def _run(cmd: list[str], timeout: int = 90) -> tuple[int, str]:
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True,
+                           timeout=timeout, check=False)
+        return p.returncode, p.stdout
+    except (OSError, subprocess.SubprocessError):
+        return 1, ""
+
+
+def count_updates() -> tuple[int, list[str]]:
+    """(total, first few human names). Empty on any failure — see QUIET."""
+    names: list[str] = []
+
+    # ONE updater (TRK-1282 / CS-1074): `nyxus-update --json` is the reader
+    # Settings ▸ Updates uses too; this timer consumes the same answer. The
+    # checkupdates / pacman -Qu paths below are the fallback for a checkout
+    # where the CLI is not on PATH.
+    via_cli = False
+    if shutil.which("nyxus-update"):
+        rc, out = _run(["nyxus-update", "--json"])
+        if rc == 0 and out.strip():
+            try:
+                data = json.loads(out)
+                for e in data.get("arch", []) + data.get("nyxus", []):
+                    if e.get("name"):
+                        names.append(e["name"])
+                via_cli = True
+            except ValueError:
+                via_cli = False
+    if via_cli:
+        pass
+    elif shutil.which("checkupdates"):
+        # rc 2 means "nothing to do", which is not an error.
+        rc, out = _run(["checkupdates"])
+        if rc in (0, 2):
+            for line in out.splitlines():
+                parts = line.split()
+                if parts:
+                    names.append(parts[0])
+    elif shutil.which("pacman"):
+        rc, out = _run(["pacman", "-Qu"], timeout=30)
+        if rc == 0:
+            for line in out.splitlines():
+                parts = line.split()
+                if parts:
+                    names.append(parts[0])
+
+    if shutil.which("flatpak"):
+        rc, out = _run(["flatpak", "remote-ls", "--updates",
+                        "--columns=application"], timeout=60)
+        if rc == 0:
+            names.extend(x.strip() for x in out.splitlines() if x.strip())
+
+    return len(names), names
+
+
+def pretty(names: list[str]) -> list[str]:
+    """Real application names where the catalogue knows them.
+
+    "firefox, gimp and 35 others" is a package list. "Firefox, GNU Image
+    Manipulation Program and 35 others" is a sentence about the person's
+    own computer. Falls back to the package name silently — this is a
+    notification, not a place to explain a missing catalogue.
+    """
+    try:
+        # Served dir wins over a possibly-stale system /opt/nyxus (same
+        # rule as the GTK apps); on the image NYXUS_APP_DIR is unset.
+        sys.path.insert(0, os.environ.get("NYXUS_APP_DIR") or "/opt/nyxus")
+        import nyxus_appstream                       # noqa: PLC0415
+        cat = nyxus_appstream.catalog()
+        out = []
+        for n in names:
+            info = cat.get(n)
+            out.append(info.name if (info and info.name) else n)
+        return out
+    except Exception:
+        return list(names)
+
+
+def load_state() -> dict:
+    try:
+        return json.loads(STATE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def save_state(data: dict) -> None:
+    try:
+        CACHE.mkdir(parents=True, exist_ok=True)
+        STATE.write_text(json.dumps(data), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def open_store() -> None:
+    if os.access(STORE_WRAPPER, os.X_OK):
+        cmd = [STORE_WRAPPER, "--section", "updates"]
+    elif Path(STORE_MODULE).is_file():
+        cmd = [sys.executable, STORE_MODULE, "--section", "updates"]
+    else:
+        return
+    try:
+        subprocess.Popen(cmd, start_new_session=True)
+    except OSError:
+        pass
+
+
+def notify(total: int, names: list[str]) -> None:
+    if not shutil.which("notify-send"):
+        return
+    shown = pretty(names[:3])
+    rest = total - len(shown)
+    body = ", ".join(shown)
+    if rest > 0:
+        body += f" and {rest} other{'s' if rest != 1 else ''}"
+
+    title = f"{total} update{'s' if total != 1 else ''} available"
+    # Do NOT use notify-send -A/--wait. That held the oneshot unit until the
+    # toast was dismissed, so systemd's 15min cap killed it and the 6h timer
+    # never re-fired. Fire-and-forget; body names the Store door.
+    body = body + "\nOpen Store → Updates."
+    try:
+        subprocess.Popen(
+            ["notify-send",
+             "--app-name", APP_NAME,
+             "--icon", "system-software-install",
+             "--urgency", "normal",
+             "--expire-time", "20000",
+             title, body],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        pass
+
+
+def main() -> int:
+    if DISABLED.exists():
+        return 0
+
+    total, names = count_updates()
+
+    state = load_state()
+    state_out = {"count": total, "checked": int(time.time())}
+
+    if total == 0:
+        # Nothing to say. Record it so the next non-zero count is treated
+        # as new and does get announced.
+        save_state(state_out)
+        return 0
+
+    # Do not re-announce an identical backlog the person has already seen
+    # and chosen not to act on.
+    if state.get("count") == total and state.get("notified"):
+        save_state({**state_out, "notified": True})
+        return 0
+
+    save_state({**state_out, "notified": True})
+    notify(total, names)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        sys.exit(130)

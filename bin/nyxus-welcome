@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# NYXUS · Welcome Wizard launcher  rev 2026.05.11-r9-eww
+#
+# Gating logic (so this only ever runs once unless forced):
+#   • Skips silently if ~/.nyxus/welcome-done exists.
+#   • Skips if NYXUS_NO_WELCOME=1.
+#   • Re-runs if NYXUS_WELCOME_FORCE=1.
+#
+# Hyprland exec-once line installs this so it fires on first interactive
+# login.  Wait briefly for the bar / wallpaper to settle so the wizard
+# doesn't paint over an in-progress compositor scene.
+set -u
+
+MARKER="$HOME/.nyxus/welcome-done"
+MARKER_LEGACY="$HOME/.config/nyxus/welcome.done"
+LOCK="/tmp/nyxus-welcome.lock"
+
+if [[ -z "${NYXUS_WELCOME_FORCE:-}" ]]; then
+  [[ -f "$MARKER" || -f "$MARKER_LEGACY" ]] && exit 0
+fi
+[[ -n "${NYXUS_NO_WELCOME:-}" ]] && exit 0
+
+# single-instance lock
+exec 9>"$LOCK"
+flock -n 9 || exit 0
+
+# TRK-3598 (2026-08-31): the old "settle delay so swaybg + eww are up" sleep 2
+# is removed. This build ships neither swaybg nor eww (TRK-3579/3580), so the
+# delay was waiting on software that does not exist. Nothing below depends on
+# elapsed time — the flock above already serialises against a second launch,
+# and the next step only stats/execs the python module.
+
+# Locate the python module (installed by customize_airootfs into ~/.nyxus)
+PY="$HOME/.nyxus/nyxus_welcome.py"
+[[ -x "$PY" ]] || PY="$HOME/.nyxus/nyxus_welcome.py"
+[[ -f "$PY" ]] || { echo "nyxus-welcome: script missing at $PY" >&2; exit 1; }
+
+exec python3 "$PY" "$@"

@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# ============================================================================
+#  nyxus-set-grub-default-kage
+#
+#  Make the INSTALLED system default-boot the Kage-Ryu kernel, with stock
+#  `linux` remaining available as a rescue entry. Calamares copies the live
+#  filesystem to disk (both kernels present) and runs grub-mkconfig; because
+#  stock linux version-sorts ABOVE Kage-Ryu, GRUB would otherwise pick stock
+#  as entry 0.
+#
+#  Runs from the Calamares `shellprocess` module INSIDE the new root
+#  (dontChroot: false), after `grubcfg` + `bootloader`. Safe no-op if there
+#  is no Kage-Ryu entry (e.g. a stock-only ISO built with NYX_WITH_KAGE_RYU=0).
+#
+#  ── REWRITTEN 2026-08-14 (WIP-618): NO grubenv, EVER. ──────────────────────
+#  The previous version flipped GRUB_DEFAULT=saved + GRUB_SAVEDEFAULT=true and
+#  ran `grub-set-default`, which writes /boot/grub/grubenv — and /boot/grub
+#  lives on btrfs here, where GRUB's environment block cannot be written
+#  in-place. Every boot then drew a raw error console over the themed menu:
+#
+#      error: commands/loadenv.c:check_blocklists:289: sparse file not allowed.
+#      Press any key to continue...
+#
+#  measured at ~12 SECONDS of error screen per boot on the 08-14 testbed
+#  (docs/proof/wip618-bootchain-0814/). Worse, it did this UNCONDITIONALLY —
+#  the "safe no-op" only skipped step 2, so even stock-only installs got the
+#  broken grubenv machinery. The default now moves by menuentry ID in
+#  /etc/default/grub (a plain file GRUB reads at mkconfig time, btrfs-safe),
+#  and grubenv is deleted outright: grub-install creates one by default, and
+#  00_header's `if [ -s grubenv ]; then load_env` is what trips the error.
+# ============================================================================
+set -u
+
+GRUBCFG="/boot/grub/grub.cfg"
+DEF="/etc/default/grub"
+
+[ -r "${GRUBCFG}" ] || { echo "nyxus-grub: no ${GRUBCFG} — skipping"; exit 0; }
+
+# Find the Kage-Ryu menuentry id (the last single-quoted token before the
+# opening brace on the first kage-ryu menuentry line). Version-agnostic.
+id="$(grep -E "^[[:space:]]*menuentry .*kage-ryu" "${GRUBCFG}" \
+       | head -1 \
+       | grep -oP "'\K[^']+(?=' *\{)")"
+
+# Fallback: match the human title if the id form isn't present.
+if [ -z "${id}" ]; then
+  id="$(grep -oP "menuentry '\K[^']*kage-ryu[^']*" "${GRUBCFG}" | head -1)"
+fi
+
+if [ -n "${id}" ] && [ -f "${DEF}" ]; then
+  # GRUB_DEFAULT accepts a menuentry id string. Written to /etc/default/grub
+  # and baked into grub.cfg by a regen — no environment block involved.
+  if grep -q '^GRUB_DEFAULT=' "${DEF}"; then
+    sed -i "s|^GRUB_DEFAULT=.*|GRUB_DEFAULT=\"${id}\"|" "${DEF}"
+  else
+    printf '\nGRUB_DEFAULT="%s"\n' "${id}" >> "${DEF}"
+  fi
+  # SAVEDEFAULT must stay off — with it, every menuentry gets a `savedefault`
+  # that write grubenv at boot, which is the btrfs error again.
+  sed -i 's|^GRUB_SAVEDEFAULT=.*|GRUB_SAVEDEFAULT=false|' "${DEF}"
+  if grub-mkconfig -o "${GRUBCFG}" >/dev/null 2>&1; then
+    echo "nyxus-grub: default boot → ${id} via GRUB_DEFAULT by id (stock linux kept as rescue)"
+  else
+    echo "nyxus-grub: grub-mkconfig failed after setting default — check ${DEF}"
+  fi
+else
+  echo "nyxus-grub: no Kage-Ryu menuentry in ${GRUBCFG} (stock-only ISO?) — default stays entry 0"
+fi
+
+# Always: no environment block on btrfs. grub-install drops one; nothing may
+# read or write it (GRUB_DEFAULT is a plain string, SAVEDEFAULT is off).
+rm -f /boot/grub/grubenv
+
+exit 0

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# RETIRED. The 2026-09-11 login/boot pass hung after splash with no TTY.
+# This name stays so a shell history `sudo nyxus-finish-login-boot` cannot
+# arm Quickshell greetd again. It only restores @ from snapshot 169.
+exec nyxus-repair-at-root "$@"

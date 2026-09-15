@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# ============================================
+# NYXUS · remove the live `nyx` account from an INSTALLED system (WIP-615)
+# Copyright © 2026 Joseph Sierengowski
+# NYX-J5W-2026-SIERENGOWSKI-LOCKED
+# ============================================
+#
+# Runs from Calamares' shellprocess, INSIDE the target chroot, after the
+# `users` module has created the real account. Argument $1 is the username
+# chosen in the installer (shellprocess passes its $USER variable — one of
+# the only two variables that module defines).
+#
+# WHY: customize_airootfs.sh creates `nyx` (uid 1000, password `nyx`) at
+# BAKE time for the live session, so it sits in the image's /etc/passwd,
+# /etc/shadow and /home — and unpackfs copies all three onto every install.
+# The deleak pass scrubbed live *config* (sudoers drop-in, autologin,
+# installer shortcuts) but never the account itself, so every installed
+# machine shipped a second login with a publicly-known password, and the
+# greeter's user picker offered it first. Found on the 2026-08-14
+# zero-injection re-proof (docs/proof/cala-audit-0813/z-uefi-07-vt2-checks.png).
+#
+# Lives here rather than inline in shellprocess.conf because the module
+# expands $word in command strings and defines only $ROOT/$USER — a stray
+# $var in any command disarms the whole post-install list up front
+# (the 2026-08-13 lesson, documented at length in shellprocess.conf).
+#
+# Non-fatal by design: shipping the account is the status quo this fixes,
+# not a reason to abort an otherwise-good install. Failures WARN loudly so
+# they land in /var/log/Calamares.log (preservefiles keeps it on the target).
+set -u
+
+chosen="${1:-}"
+
+if [ "$chosen" = "nyx" ]; then
+  # The person deliberately named their account nyx. The users module has
+  # already taken the name over (password, groups, shell are theirs now);
+  # deleting it here would destroy the account they just created.
+  echo "[remove-live-user] chosen username IS nyx — account adopted by the users module, nothing removed"
+  exit 0
+fi
+
+if id nyx >/dev/null 2>&1; then
+  if userdel -r nyx 2>/dev/null || userdel nyx 2>/dev/null; then
+    echo "[remove-live-user] live account nyx removed"
+  else
+    echo "[remove-live-user] WARN userdel nyx failed — the live account may survive on this install"
+  fi
+  # userdel -r can leave the home behind if a mount or stray file blocks it,
+  # and plain userdel never removes it. The group lingers if userdel could
+  # not take it. Both are idempotent no-ops when already gone.
+  rm -rf /home/nyx
+  if getent group nyx >/dev/null 2>&1; then
+    groupdel nyx 2>/dev/null || echo "[remove-live-user] WARN groupdel nyx failed"
+  fi
+  # The greeter remembers the last user; a cache naming nyx would keep
+  # offering a login that no longer exists. Regenerated on first login.
+  rm -f /var/cache/regreet/* 2>/dev/null
+  echo "[remove-live-user] done — passwd, home, group and greeter cache clear of nyx"
+else
+  echo "[remove-live-user] no nyx account present — nothing to do"
+fi
+exit 0

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# This pointed at "$HOME/.nyxus/nyxus_updater.py". That path only resolves on
+# a real install, where build-iso.sh symlinks ~/.nyxus — under an overridden
+# $HOME (any preview session) it does not exist, so Updates died with a bare
+# python "No such file or directory" and no window. Same defect family as
+# Store and Backup (CHECKLIST WIP-14); this shim was missed in that pass.
+#
+# NYXUS_APP_DIR lets the preview session (scripts/suxyn-session) run the copy
+# in git instead of the one installed at /opt/nyxus. On a real install the
+# variable is unset and this resolves to /opt/nyxus.
+APP_DIR="${NYXUS_APP_DIR:-/opt/nyxus}"
+export PYTHONPATH="${APP_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
+exec python3 "${APP_DIR}/nyxus_updater.py" "$@"

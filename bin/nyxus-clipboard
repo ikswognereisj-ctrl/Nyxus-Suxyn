@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+# nyxus-clipboard — thin wrapper around cliphist + wl-clipboard.
+#
+# Usage:
+#   nyxus-clipboard pick                    Open the rofi picker (default)
+#   nyxus-clipboard list                    Print the history (id  text)
+#   nyxus-clipboard wipe                    Wipe the entire history
+#   nyxus-clipboard watch                   Start the watcher (text + image)
+#   nyxus-clipboard stop                    Kill the watcher
+#   nyxus-clipboard restart                 Stop + start
+#   nyxus-clipboard status                  Print "running" or "stopped"
+#
+# Settings honored from ~/.config/nyxus/settings.json (clipboard.* keys):
+#   picker_theme   (string, default "nyxus")  — rofi theme name under
+#                                                ~/.config/rofi/<theme>.rasi
+#   skip_secrets   (bool,   default true)     — best-effort drop of
+#                                                short alphanumeric entries
+#                                                that look like passwords
+#   max_kb         (int,    default 64)       — passed as --max-dedupe-search
+#                                                / --max-items hint
+#   max_entries    (int,    default 200)      — used by `wipe-old`
+#
+# Hard contract:
+#   · Never edits /etc.
+#   · Never asks for sudo.
+#   · Always exits 0 on graceful no-ops; non-zero only on real failures.
+set -euo pipefail
+
+CONF="${HOME}/.config/nyxus/settings.json"
+
+read_pref() {
+  # read_pref <key> <default> — extract clipboard.<key> from settings.json
+  local key="$1" default="$2"
+  if [[ ! -f "$CONF" ]] || ! command -v jq >/dev/null 2>&1; then
+    printf '%s' "$default"; return 0
+  fi
+  local v
+  v="$(jq -r --arg k "$key" '.clipboard[$k] // empty' "$CONF" 2>/dev/null || true)"
+  if [[ -z "$v" || "$v" == "null" ]]; then
+    printf '%s' "$default"
+  else
+    printf '%s' "$v"
+  fi
+}
+
+require() {
+  for c in "$@"; do
+    if ! command -v "$c" >/dev/null 2>&1; then
+      echo "nyxus-clipboard: missing required tool: $c" >&2
+      return 1
+    fi
+  done
+}
+
+cmd_watch() {
+  require wl-paste cliphist || exit 1
+  # Don't double-spawn.
+  if pgrep -f "wl-paste --type text --watch cliphist" >/dev/null; then
+    echo "watcher already running"; return 0
+  fi
+  local max_kb; max_kb="$(read_pref max_kb 64)"
+  # cliphist takes --max-dedupe-search in bytes for newer versions; we
+  # pass it via env so older builds still work.
+  CLIPHIST_MAX_KB="${max_kb}" \
+    nohup wl-paste --type text  --watch cliphist store \
+      >/dev/null 2>&1 &
+  CLIPHIST_MAX_KB="${max_kb}" \
+    nohup wl-paste --type image --watch cliphist store \
+      >/dev/null 2>&1 &
+  disown -a 2>/dev/null || true
+  echo "watcher started"
+}
+
+cmd_stop() {
+  pkill -f "wl-paste --type text --watch"  2>/dev/null || true
+  pkill -f "wl-paste --type image --watch" 2>/dev/null || true
+  echo "stopped"
+}
+
+cmd_restart() {
+  cmd_stop
+  sleep 0.2
+  cmd_watch
+}
+
+cmd_status() {
+  if pgrep -f "wl-paste --type text --watch cliphist" >/dev/null; then
+    echo "running"
+  else
+    echo "stopped"
+  fi
+}
+
+cmd_list() {
+  require cliphist || exit 1
+  cliphist list
+}
+
+cmd_wipe() {
+  require cliphist || exit 1
+  cliphist wipe
+  echo "wiped"
+}
+
+cmd_pick() {
+  require cliphist wl-copy || exit 1
+  local theme; theme="$(read_pref picker_theme nyxus)"
+  local skip_secrets; skip_secrets="$(read_pref skip_secrets true)"
+  local theme_arg=()
+  if command -v rofi >/dev/null 2>&1; then
+    if [[ -f "${HOME}/.config/rofi/${theme}.rasi" ]]; then
+      theme_arg=(-theme "${HOME}/.config/rofi/${theme}.rasi")
+    fi
+    local list
+    list="$(cliphist list)"
+    if [[ "$skip_secrets" == "true" ]]; then
+      # drop entries that look like a single password (≤32 chars, only
+      # mixed-case letters + digits + symbols, no spaces)
+      list="$(printf '%s\n' "$list" \
+        | awk -F'\t' '
+            { if (length($2) > 32 || $2 ~ / / || $2 ~ /[ \t]/) print $0;
+              else if ($2 !~ /^[A-Za-z0-9!@#\$%^&*\(\)_+\-=]+$/) print $0; }')"
+    fi
+    local sel
+    sel="$(printf '%s\n' "$list" \
+      | rofi -dmenu -i "${theme_arg[@]}" -p clipboard || true)"
+    [[ -z "$sel" ]] && exit 0
+    printf '%s\n' "$sel" | cliphist decode | wl-copy
+  else
+    echo "rofi not installed — falling back to plain copy of latest entry" >&2
+    cliphist list | head -n 1 | cliphist decode | wl-copy
+  fi
+}
+
+# Open the real Clipboard application.
+#
+# There has been a full GTK Clipboard app in this build the whole time
+# (opt/nyxus/nyxus_clipboard.py — ClipboardWindow, history list, pin, search)
+# and nothing ever opened it: the Start menu tile and the .desktop entry both
+# run `nyxus-clipboard` with no arguments, which used to mean `pick`, which is
+# a rofi dmenu. So clicking Clipboard in the Start menu gave you a dmenu strip
+# instead of the application — and in a preview session, where the rofi theme
+# path does not resolve, it gave you nothing at all and exited 1 in silence.
+#
+# No-argument now means "open the app", which is what every other tile in the
+# menu means. Every sub-command below still does exactly what it did, so the
+# keybind and any script that calls `nyxus-clipboard pick` are unaffected.
+cmd_app() {
+  local app_dir="${NYXUS_APP_DIR:-/opt/nyxus}"
+  if [[ -f "${app_dir}/nyxus_clipboard.py" ]]; then
+    export PYTHONPATH="${app_dir}${PYTHONPATH:+:${PYTHONPATH}}"
+    exec python3 "${app_dir}/nyxus_clipboard.py" "$@"
+  fi
+  # No app on disk: the rofi picker is still a working clipboard, so fall
+  # through to it rather than failing at the user.
+  cmd_pick
+}
+
+main() {
+  local sub="${1:-app}"
+  # ⚠ `shift` with no positional arguments returns 1, and this script runs
+  # under `set -e`. So EVERY no-argument invocation — which is what the Start
+  # menu tile, the .desktop entry and the keybind all do — died right here,
+  # silently, with status 1, before reaching any sub-command. The default
+  # branch of this dispatcher had never once run. `|| :` is the whole fix.
+  shift || :
+  case "$sub" in
+    app)     cmd_app     "$@" ;;
+    pick)    cmd_pick    "$@" ;;
+    list)    cmd_list    "$@" ;;
+    wipe)    cmd_wipe    "$@" ;;
+    watch)   cmd_watch   "$@" ;;
+    stop)    cmd_stop    "$@" ;;
+    restart) cmd_restart "$@" ;;
+    status)  cmd_status  "$@" ;;
+    -h|--help|help)
+      sed -n '2,/^set -euo/p' "$0" | sed 's/^# \{0,1\}//;/^set -euo/d'
+      ;;
+    *)
+      echo "nyxus-clipboard: unknown sub-command: $sub" >&2
+      echo "try: nyxus-clipboard --help" >&2
+      exit 2
+      ;;
+  esac
+}
+
+main "$@"

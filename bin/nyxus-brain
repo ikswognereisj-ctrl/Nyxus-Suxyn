@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -u
+case "${1:-}" in
+  --ask|--reindex|--facts|--selftest|--watch|--chat|-h|--help)
+    exec python3 /opt/nyxus/nyxus_brain.py "$@"
+    ;;
+esac
+if ! command -v qs >/dev/null 2>&1; then echo "Brain needs qs." >&2; exit 2; fi
+out="$(qs ipc call brain engage 2>&1)" || true
+[[ "${out}" == *"Target not found."* ]] && out="$(qs ipc call nyxus brain 2>&1)" || true
+printf '%s\n' "${out}"

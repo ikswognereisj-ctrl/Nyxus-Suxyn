@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# NYXUS — smartd warning → the person at the keyboard
+# © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+#
+# ── WHY THIS EXISTS ──────────────────────────────────────────────────────────
+# smartd's whole reason for running is to say "this disk is dying" before the
+# disk says it. Its default way of saying so is mail to root. This build has
+# no MTA and nobody has ever opened a local mailbox on it, so the default
+# route is a warning that is technically emitted and functionally silent —
+# the same defect class as the user units that shipped WantedBy a target
+# nothing pushes (WIP-529).
+#
+# /etc/smartd.conf therefore ships `-m <nothing> -M exec <this script>`:
+# no mail, this instead.
+#
+# ── HOW IT REACHES A DESKTOP ─────────────────────────────────────────────────
+# smartd runs as root with no session. The route from root to a logged-in
+# user's notification daemon is the one this build already uses in
+# nyxus-pacman-toast (the pacman PostTransaction hook): enumerate logged-in
+# users with loginctl, then drop to each one with XDG_RUNTIME_DIR and
+# DBUS_SESSION_BUS_ADDRESS pointing at their own runtime bus. That is the
+# precedent; this does not invent a second one.
+#
+# ── WHAT smartd HANDS US ─────────────────────────────────────────────────────
+# Environment, per smartd(8): SMARTD_MESSAGE (one line), SMARTD_FULLMESSAGE
+# (the whole thing), SMARTD_DEVICESTRING / SMARTD_DEVICE, SMARTD_FAILTYPE
+# ("EmailTest" when a human ran `smartd -q onecheck` style tests).
+#
+# ── THE LIMITATION, SAID OUT LOUD ────────────────────────────────────────────
+# If NOBODY is logged in when the disk starts failing, no notification is
+# seen. The journal line below is always written and the marker file is
+# always dropped, so the evidence survives — but nothing in this build reads
+# that marker at login yet. Filed rather than faked.
+set -u
+
+MSG="${SMARTD_MESSAGE:-A disk reported a S.M.A.R.T. problem.}"
+DEV="${SMARTD_DEVICESTRING:-${SMARTD_DEVICE:-unknown device}}"
+KIND="${SMARTD_FAILTYPE:-unknown}"
+TITLE="Disk health warning — ${DEV}"
+
+# 1 · The record. Always, first, before anything that can fail.
+if command -v logger >/dev/null 2>&1; then
+  logger -t nyxus-smart -p daemon.crit -- "${KIND}: ${DEV}: ${MSG}"
+fi
+
+# 2 · The marker, for anything that later wants to surface this at login.
+#     Written with a private umask: it names the machine's hardware.
+if mkdir -p /var/lib/nyxus 2>/dev/null; then
+  ( umask 077
+    printf '{"when":"%s","device":"%s","failtype":"%s","message":"%s"}\n' \
+      "$(date -Is)" "${DEV//\"/\'}" "${KIND//\"/\'}" "${MSG//\"/\'}" \
+      > /var/lib/nyxus/smart-warning.json
+  ) 2>/dev/null || true
+fi
+
+# 3 · The person. Every logged-in user gets it, at critical urgency, with no
+#     expiry — a dying disk is not a toast you let slide past.
+for u in $(loginctl list-users --no-legend 2>/dev/null | awk '{print $2}'); do
+  uid="$(id -u "${u}" 2>/dev/null)" || continue
+  [ -S "/run/user/${uid}/bus" ] || continue
+  sudo -u "${u}" \
+    XDG_RUNTIME_DIR="/run/user/${uid}" \
+    DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${uid}/bus" \
+    notify-send -a "NYXUS" -u critical -t 0 -i drive-harddisk \
+      "${TITLE}" "${MSG}
+
+Back up anything you cannot lose, now. Settings ▸ System ▸ Storage has the
+full S.M.A.R.T. report." 2>/dev/null || true
+done
+
+exit 0

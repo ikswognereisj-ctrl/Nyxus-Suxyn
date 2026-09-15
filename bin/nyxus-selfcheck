@@ -1,0 +1,465 @@
+#!/usr/bin/env bash
+# nyxus-selfcheck — the POST-UPDATE SELF-CHECK for an installed Nyxus Suxyn
+# box (CS-1053 / dispatch TRK-1081; ledger rows TRK-1310..TRK-1316; folds the
+# runtime half of GAP-1's "recovery when an update breaks").
+#
+# WHAT THIS IS. nyxus-verify-installed (TRK-1282) answers "are the pieces
+# there"; THIS answers "will the machine come back up" — and it RECORDS the
+# verdict so the next session start can surface it with the rollback offer.
+# It runs after every pacman transaction (etc/pacman.d/hooks/
+# 91-nyxus-selfcheck.hook) and at the end of every `nyxus-update` run.
+#
+# THE CHECKS, each one computed against files — never asserted in prose:
+#   verify-installed   nyxus-verify-installed's own verdict (greetd enabled,
+#                      qs present, shell.qml parses, channel state)
+#   kernel image       every /usr/lib/modules/<ver>/pkgbase kernel has its
+#                      /boot/vmlinuz-<name>, BYTE-IDENTICAL to the package's
+#                      own /usr/lib/modules/<ver>/vmlinuz (mkinitcpio's
+#                      install hook is what copies it — identical means the
+#                      copy happened for THIS kernel, stale means it did not)
+#   initramfs          /boot/initramfs-<name>.img exists and is not older
+#                      than the kernel image beside it (newer-or-equal)
+#   bootloader         /boot/grub/grub.cfg names vmlinuz-<name> for at least
+#                      one installed kernel, or a systemd-boot loader entry
+#                      points at a file that exists — a menu with no valid
+#                      entry is a machine that stops at the firmware
+#   greetd             greetd.service is enabled and config.toml has its
+#                      command line (the login path, boot-critical)
+#   shell supervisor   nyxus-shell-supervisor ships executable and the
+#                      Hyprland config still carries the uncommented
+#                      exec-once line that starts it (WIP-632's lesson: the
+#                      shell with no supervisor stays dead once killed)
+#   ship manifest      /etc/nyxus-build is present with its `source commit`
+#                      line (the build stamp every install carries)
+#
+# BOOT-CRITICAL vs NOT. kernel/initramfs/bootloader/greetd failures set
+# boot_critical=true in the verdict — those are the cases where the FULL
+# rollback (snapper rollback, discards everything after the snapshot) is a
+# fair offer. Everything else fails the verdict but leaves boot_critical
+# false, and the precise `nyxus-update --rollback` (snapper undochange of
+# the one update, via nyxus-undo) is the only cure offered. That split is
+# the WIP-730 ruling applied here: undo one transaction, never a sledgehammer,
+# unless the machine would not boot.
+#
+# THE RECORD. --record (and --hook, which implies it) writes the verdict to
+# $NYXUS_SELFCHECK_STATE_DIR/last.json (default /var/lib/nyxus/update —
+# /var/lib/nyxus is the precedent nyxus-smart-toast set) world-readable, and
+# appends one line to history.jsonl. The skel user unit
+# nyxus-selfcheck-notify.service reads it at the next login (--notify) and
+# offers the rollback through notify-send — the same actioned-notification
+# mechanism nyxus-update-check uses, no terminal anywhere.
+#
+# MODES
+#   (none)      run the checks, print one line each, exit 0 ok / 1 failed
+#   --json      the verdict as JSON on stdout (human lines suppressed)
+#   --record    also write the state file (needs write access to the dir)
+#   --hook      pacman PostTransaction mode: skips inside a chroot/bake
+#               (PID 1's root vs ours, via /proc) and on the live ISO
+#               (/run/archiso), records, and NEVER exits non-zero — a hook
+#               must not scare pacman, the recorded verdict is the product
+#   --status    print the LAST RECORDED verdict; exit 0 ok, 1 failed,
+#               3 nothing recorded
+#   --notify    session side (the user unit): if the last recorded verdict
+#               failed and was not rolled back, wait for the notification
+#               daemon and offer `nyxus-update --rollback`; boot-critical
+#               verdicts re-notify every login, others once per verdict
+#   --source X  tag the record (update / hook / manual)
+#
+# TEST HOOKS (the nyxus-undo pattern: they let the gate run the REAL engine
+# against a scratch root; pkexec strips the environment so none of them
+# survives into a privileged call):
+#   NYXUS_SELFCHECK_ROOT        prefix for /boot, /usr/lib/modules, /etc
+#   NYXUS_SELFCHECK_STATE_DIR   where last.json lives
+#   NYXUS_SELFCHECK_SYSTEMCTL   systemctl replacement ("none" skips)
+#   NYXUS_SELFCHECK_VERIFY      nyxus-verify-installed replacement ("none")
+#   NYXUS_SELFCHECK_SNAPPER     snapper replacement (snapshot discovery)
+#   NYXUS_SELFCHECK_NOTIFY_SEND / NYXUS_SELFCHECK_BUS_WAIT /
+#   NYXUS_SELFCHECK_ROLLBACK_CMD   the --notify path, stubbed for the gate
+#
+# WHAT IT NEVER DOES: roll anything back, restart anything, write outside
+# the state dir, or abort a pacman transaction.
+set -uo pipefail
+
+R="${NYXUS_SELFCHECK_ROOT:-}"
+STATE_DIR="${NYXUS_SELFCHECK_STATE_DIR:-${R}/var/lib/nyxus/update}"
+SYSCTL="${NYXUS_SELFCHECK_SYSTEMCTL:-systemctl}"
+VERIFY="${NYXUS_SELFCHECK_VERIFY:-}"
+SNAPPER="${NYXUS_SELFCHECK_SNAPPER:-snapper}"
+
+MODE="run"
+AS_JSON=0
+RECORD=0
+HOOK=0
+SOURCE="manual"
+while (( $# )); do
+  case "$1" in
+    --json)    AS_JSON=1 ;;
+    --record)  RECORD=1 ;;
+    --hook)    HOOK=1; RECORD=1; SOURCE="hook" ;;
+    --status)  MODE="status" ;;
+    --notify)  MODE="notify" ;;
+    --source)  shift; SOURCE="${1:-manual}" ;;
+    --source=*) SOURCE="${1#--source=}" ;;
+    -h|--help) sed -n '2,86p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) printf 'nyxus-selfcheck: unknown argument %s (see --help)\n' "$1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+STATE_FILE="${STATE_DIR}/last.json"
+
+# ── --status: read the record, say what it says ───────────────────────────
+if [[ "${MODE}" == "status" ]]; then
+  if [[ ! -r "${STATE_FILE}" ]]; then
+    printf 'nyxus-selfcheck: nothing recorded yet (%s)\n' "${STATE_FILE}"
+    exit 3
+  fi
+  python3 - "${STATE_FILE}" <<'PY'
+import json, sys
+try:
+    s = json.load(open(sys.argv[1]))
+except Exception as e:
+    print("nyxus-selfcheck: state file unreadable: %s" % e); sys.exit(3)
+verdict = "OK" if s.get("ok") else "FAILED"
+extra = " BOOT-CRITICAL" if s.get("boot_critical") else ""
+rb = " (already rolled back)" if s.get("rolled_back") else ""
+print("last self-check: %s%s%s — %s, source=%s, %d check(s) failed"
+      % (verdict, extra, rb, s.get("when", "?"), s.get("source", "?"),
+         int(s.get("fails", 0))))
+for c in s.get("checks", []):
+    if c.get("status") == "fail":
+        print("  [FAIL] %s: %s" % (c.get("id"), c.get("msg")))
+if not s.get("ok") and not s.get("rolled_back"):
+    print("  the way back: nyxus-update --rollback  (--dry-run first shows the plan)")
+sys.exit(0 if s.get("ok") else 1)
+PY
+  exit $?
+fi
+
+# ── --notify: the next-session surfacing (TRK-1315) ───────────────────────
+if [[ "${MODE}" == "notify" ]]; then
+  NS_BIN="${NYXUS_SELFCHECK_NOTIFY_SEND:-notify-send}"
+  BUS_WAIT="${NYXUS_SELFCHECK_BUS_WAIT:-60}"
+  ROLLBACK_CMD="${NYXUS_SELFCHECK_ROLLBACK_CMD:-nyxus-update --rollback}"
+  [[ -r "${STATE_FILE}" ]] || exit 0
+  read -r _ok _bc _when _fails < <(python3 - "${STATE_FILE}" <<'PY'
+import json, sys
+try:
+    s = json.load(open(sys.argv[1]))
+except Exception:
+    print("ok true never 0"); sys.exit(0)
+print("%s %s %s %s" % ("bad" if (not s.get("ok") and not s.get("rolled_back")) else "ok",
+                       "true" if s.get("boot_critical") else "false",
+                       s.get("when", "never").replace(" ", "_"),
+                       int(s.get("fails", 0))))
+PY
+) || exit 0
+  [[ "${_ok}" == "bad" ]] || exit 0
+  # Once per verdict per user — except boot-critical, which nags every login.
+  _cache="${XDG_CACHE_HOME:-${HOME}/.cache}/nyxus"
+  _stampf="${_cache}/selfcheck-notified"
+  if [[ "${_bc}" != "true" && -f "${_stampf}" ]] \
+     && [[ "$(cat "${_stampf}" 2>/dev/null)" == "${_when}" ]]; then
+    exit 0
+  fi
+  # A notification with no daemon is a no-op, and notify-send would D-Bus
+  # activate whichever daemon is installed-and-activatable — possibly not
+  # the shell's own server (shell/Sys.qml). Wait for the name instead.
+  _i=0
+  while (( _i < BUS_WAIT )); do
+    if busctl --user --no-pager list 2>/dev/null | grep -q 'org.freedesktop.Notifications'; then
+      break
+    fi
+    sleep 2; _i=$(( _i + 2 ))
+  done
+  _title="An update did not pass its self-check"
+  _body="The last system update left ${_fails} check(s) failing."
+  if [[ "${_bc}" == "true" ]]; then
+    _title="The last update may stop this machine booting"
+    _body="${_body} A boot-critical piece (kernel, startup image, bootloader or login screen) looks wrong. Rolling back restores the snapshot taken before the update."
+  else
+    _body="${_body} Rolling back undoes that one update and leaves everything else alone."
+  fi
+  mkdir -p "${_cache}" 2>/dev/null || true
+  # -A implies --wait: blocks until dismissed or clicked (the
+  # nyxus-update-check pattern; the unit carries TimeoutStartSec=infinity).
+  _action="$("${NS_BIN}" -a "NYXUS" -i system-software-update -u critical -t 0 \
+      -A "rollback=Roll back this update" -A "later=Not now" \
+      "${_title}" "${_body}" 2>/dev/null || true)"
+  printf '%s\n' "${_when}" > "${_stampf}" 2>/dev/null || true
+  if [[ "${_action}" == "rollback" ]]; then
+    _out="$(${ROLLBACK_CMD} --yes 2>&1)"; _rrc=$?
+    if (( _rrc == 0 )); then
+      "${NS_BIN}" -a "NYXUS" -i system-software-update \
+        "Update rolled back" "$(printf '%s' "${_out}" | tail -3)" 2>/dev/null || true
+    else
+      "${NS_BIN}" -a "NYXUS" -u critical -i dialog-error \
+        "Rollback did not complete" "$(printf '%s' "${_out}" | tail -3)
+Settings > System > Backup has the full restore points." 2>/dev/null || true
+    fi
+  fi
+  exit 0
+fi
+
+# ── --hook guards: never record a verdict from a bake or a live stick ─────
+if (( HOOK )); then
+  # Chroot detection with no named-binary dependency (13q46: a unit's
+  # script may not require a command the image does not package, and
+  # systemd-detect-virt rides base unlisted): PID 1's root differing from
+  # ours IS the chroot fact systemd-detect-virt --chroot reads. The hook
+  # runs as root, where /proc/1/root is readable; an unreadable /proc
+  # (a bare bake chroot) also lands on the skip side, which is the safe one.
+  if [[ "$(stat -c %d:%i /proc/1/root/. 2>/dev/null)" != "$(stat -c %d:%i /. 2>/dev/null)" ]]; then
+    printf 'nyxus-selfcheck: chroot (bake/install) environment — skipped\n'
+    exit 0
+  fi
+  if [[ -d /run/archiso ]]; then
+    printf 'nyxus-selfcheck: live ISO session — skipped (nothing installed to verify)\n'
+    exit 0
+  fi
+fi
+
+# ── the checks ────────────────────────────────────────────────────────────
+CHK="$(mktemp "${TMPDIR:-/tmp}/nyxus-selfcheck-XXXXXX")"
+trap 'rm -f "${CHK}"' EXIT
+FAILS=0
+BOOT_CRIT=0
+add() { # $1 id  $2 ok|warn|fail  $3 critical 0/1  $4 msg
+  printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >> "${CHK}"
+  if [[ "$2" == "fail" ]]; then
+    FAILS=$(( FAILS + 1 ))
+    [[ "$3" == "1" ]] && BOOT_CRIT=1
+  fi
+  if (( ! AS_JSON )); then
+    case "$2" in
+      ok)   printf '[ OK ] %s: %s\n' "$1" "$4" ;;
+      warn) printf '[WARN] %s: %s\n' "$1" "$4" ;;
+      fail) printf '[FAIL] %s: %s\n' "$1" "$4" ;;
+    esac
+  fi
+}
+
+# 1 · nyxus-verify-installed, the placeholder scope folded in whole
+V_RC=""
+if [[ "${VERIFY}" != "none" ]]; then
+  _v="${VERIFY}"
+  if [[ -z "${_v}" ]]; then
+    _v="$(command -v nyxus-verify-installed || true)"
+    [[ -z "${_v}" && -x "${R}/usr/local/bin/nyxus-verify-installed" ]] && _v="${R}/usr/local/bin/nyxus-verify-installed"
+  fi
+  if [[ -n "${_v}" ]]; then
+    _vout="$("${_v}" 2>&1)"; V_RC=$?
+    if (( V_RC == 0 )); then
+      add verify-installed ok 0 "nyxus-verify-installed passed"
+    else
+      _vfirst="$(printf '%s\n' "${_vout}" | grep -m1 '\[FAIL\]' || true)"
+      add verify-installed fail 0 "nyxus-verify-installed exited ${V_RC}: ${_vfirst:-see its output}"
+    fi
+  else
+    add verify-installed warn 0 "nyxus-verify-installed not found — piece inventory not run"
+  fi
+fi
+
+# 2 · kernels: image copied, initramfs present and newer-or-equal
+KERNELS=()
+for _md in "${R}/usr/lib/modules"/*/; do
+  [[ -f "${_md}pkgbase" ]] || continue
+  _name="$(tr -d '[:space:]' < "${_md}pkgbase")"
+  _ver="$(basename "${_md}")"
+  KERNELS+=("${_name}:${_ver}")
+  _bk="${R}/boot/vmlinuz-${_name}"
+  _pk="${_md}vmlinuz"
+  if [[ ! -f "${_bk}" ]]; then
+    add "kernel-image-${_name}" fail 1 "/boot/vmlinuz-${_name} is MISSING — this kernel cannot boot"
+  elif [[ -f "${_pk}" ]] && ! cmp -s "${_bk}" "${_pk}"; then
+    add "kernel-image-${_name}" fail 1 "/boot/vmlinuz-${_name} differs from the package's ${_ver} image — the boot copy is stale (mkinitcpio's install hook did not run for this kernel)"
+  else
+    add "kernel-image-${_name}" ok 1 "/boot/vmlinuz-${_name} present$( [[ -f "${_pk}" ]] && printf ' and matches the %s package image' "${_ver}" )"
+  fi
+  _init="${R}/boot/initramfs-${_name}.img"
+  if [[ ! -f "${_init}" ]]; then
+    add "initramfs-${_name}" fail 1 "/boot/initramfs-${_name}.img is MISSING — the kernel has no startup image"
+  elif [[ -f "${_bk}" && "${_bk}" -nt "${_init}" ]]; then
+    add "initramfs-${_name}" fail 1 "/boot/initramfs-${_name}.img is OLDER than vmlinuz-${_name} — the startup image was not regenerated for this kernel"
+  else
+    add "initramfs-${_name}" ok 1 "/boot/initramfs-${_name}.img present, newer-or-equal to its kernel"
+  fi
+done
+if (( ${#KERNELS[@]} == 0 )); then
+  add kernel-modules fail 1 "no kernel package under /usr/lib/modules (no */pkgbase) — nothing installed can boot"
+fi
+
+# 3 · bootloader: an entry that points at something real
+_grubcfg="${R}/boot/grub/grub.cfg"
+_loader="${R}/boot/loader/entries"
+if [[ -f "${_grubcfg}" ]]; then
+  _hit=""
+  for _k in "${KERNELS[@]}"; do
+    grep -q "vmlinuz-${_k%%:*}" "${_grubcfg}" && { _hit="${_k%%:*}"; break; }
+  done
+  if [[ -n "${_hit}" ]]; then
+    add bootloader ok 1 "grub.cfg references vmlinuz-${_hit}"
+  else
+    add bootloader fail 1 "grub.cfg exists but names NO installed kernel — grub-mkconfig has not run since the kernel set changed"
+  fi
+elif [[ -d "${_loader}" ]]; then
+  _sane=0
+  for _e in "${_loader}"/*.conf; do
+    [[ -f "${_e}" ]] || continue
+    _lp="$(sed -n 's/^linux[[:space:]]\{1,\}//p' "${_e}" | head -1)"
+    [[ -n "${_lp}" && -f "${R}/boot${_lp}" ]] && { _sane=1; break; }
+  done
+  if (( _sane )); then
+    add bootloader ok 1 "a systemd-boot loader entry points at an existing kernel"
+  else
+    add bootloader fail 1 "systemd-boot loader entries exist but none points at a file that exists under /boot"
+  fi
+else
+  add bootloader fail 1 "no /boot/grub/grub.cfg and no /boot/loader/entries — no bootloader configuration found"
+fi
+
+# 4 · the login path: greetd enabled + configured
+if [[ "${SYSCTL}" != "none" ]] && command -v "${SYSCTL%% *}" >/dev/null 2>&1; then
+  if "${SYSCTL}" is-enabled greetd.service >/dev/null 2>&1; then
+    add greetd-enabled ok 1 "greetd.service is enabled"
+  else
+    add greetd-enabled fail 1 "greetd.service is NOT enabled — the machine would boot to a TTY"
+  fi
+else
+  add greetd-enabled warn 1 "systemctl unavailable — greetd enable state not checked"
+fi
+_gcfg="${R}/etc/greetd/config.toml"
+if [[ -f "${_gcfg}" ]] && grep -q '^command *= *"' "${_gcfg}"; then
+  add greetd-config ok 1 "greetd config.toml present with its session command"
+else
+  add greetd-config fail 1 "greetd config.toml missing or has no command line — no greeter would start"
+fi
+
+# 5 · the shell supervisor is shipped AND wired (WIP-632)
+_sup="${R}/usr/local/bin/nyxus-shell-supervisor"
+if [[ -x "${_sup}" ]]; then
+  add shell-supervisor ok 0 "nyxus-shell-supervisor ships executable"
+else
+  add shell-supervisor fail 0 "nyxus-shell-supervisor missing or not executable — a shell that dies stays dead (WIP-632)"
+fi
+_hcfg=""
+for _c in "${R}/etc/skel/.config/hypr/hyprland.conf" "${R}/usr/share/nyxus/hypr/hyprland.conf"; do
+  [[ -f "${_c}" ]] && { _hcfg="${_c}"; break; }
+done
+if [[ -n "${_hcfg}" ]] && grep -Eq '^[[:space:]]*exec-once[[:space:]]*=.*nyxus-shell-supervisor' "${_hcfg}"; then
+  add shell-supervisor-wired ok 0 "hyprland.conf carries the uncommented exec-once that starts the supervisor"
+else
+  add shell-supervisor-wired fail 0 "no uncommented exec-once starts nyxus-shell-supervisor in ${_hcfg:-any known hyprland.conf} — the desktop shell would never start"
+fi
+
+# 6 · the build stamp every install carries
+_stampfile="${R}/etc/nyxus-build"
+if [[ -f "${_stampfile}" ]] && grep -q 'source commit' "${_stampfile}"; then
+  add ship-manifest ok 0 "/etc/nyxus-build present ($(sed -n 's/^source commit[[:space:]]*: *//p' "${_stampfile}" | head -1 | cut -c1-24))"
+else
+  add ship-manifest fail 0 "/etc/nyxus-build missing or without its source commit line — the install lost its build stamp"
+fi
+
+# 7 · snapshot discovery — informational, best-effort, never a check.
+#     The rollback pair is pre-update-<stamp>/post-update-<stamp>, the
+#     descriptions nyxus-update writes; discovery needs snapper privileges,
+#     so a plain user run records null and says nothing.
+PRE_N=""; POST_N=""
+if command -v "${SNAPPER%% *}" >/dev/null 2>&1; then
+  _csv="$("${SNAPPER}" --csvout -c root list --columns number,description 2>/dev/null || true)"
+  if [[ -n "${_csv}" ]]; then
+    read -r PRE_N POST_N < <(NYXUS_SELFCHECK_CSV="${_csv}" python3 - <<'PY'
+import csv, io, os
+rows = list(csv.DictReader(io.StringIO(os.environ.get("NYXUS_SELFCHECK_CSV", ""))))
+pre = post = ""
+for r in rows:
+    d = (r.get("description") or "").strip()
+    n = (r.get("number") or "").strip()
+    if d.startswith("pre-update-") and n.isdigit():
+        stamp = d[len("pre-update-"):]
+        p = ""
+        for r2 in rows:
+            if (r2.get("description") or "").strip() == "post-update-" + stamp \
+               and (r2.get("number") or "").strip().isdigit() \
+               and int(r2["number"]) > int(n):
+                p = r2["number"].strip()
+        if pre == "" or int(n) > int(pre):
+            pre, post = n, p
+print("%s %s" % (pre or "-", post or "-"))
+PY
+) || true
+    [[ "${PRE_N}" == "-" ]] && PRE_N=""
+    [[ "${POST_N:-}" == "-" ]] && POST_N=""
+  fi
+fi
+
+# ── verdict: emit, and record when asked ─────────────────────────────────
+WHEN="$(date -Is)"
+_rec=""
+if (( RECORD )); then
+  if mkdir -p "${STATE_DIR}" 2>/dev/null && [[ -w "${STATE_DIR}" ]]; then
+    _rec="${STATE_FILE}"
+  else
+    printf '[WARN] state: %s not writable — verdict NOT recorded (run via the hook or with privileges)\n' "${STATE_DIR}" >&2
+  fi
+fi
+python3 - "${CHK}" "${WHEN}" "${SOURCE}" "${PRE_N:-}" "${POST_N:-}" "${_rec}" "${AS_JSON}" <<'PY'
+import json, os, sys, tempfile
+chk, when, source, pre, post, rec, as_json = sys.argv[1:8]
+checks = []
+fails = warns = 0
+crit = False
+for line in open(chk, encoding="utf-8"):
+    parts = line.rstrip("\n").split("\t", 3)
+    if len(parts) != 4:
+        continue
+    cid, st, bc, msg = parts
+    checks.append({"id": cid, "status": st,
+                   "boot_critical": bc == "1", "msg": msg})
+    if st == "fail":
+        fails += 1
+        if bc == "1":
+            crit = True
+    elif st == "warn":
+        warns += 1
+verdict = {
+    "schema": 1,
+    "when": when,
+    "source": source,
+    "ok": fails == 0,
+    "boot_critical": crit,
+    "fails": fails,
+    "warns": warns,
+    "checks": checks,
+    "pre_snapshot": int(pre) if pre.isdigit() else None,
+    "post_snapshot": int(post) if post.isdigit() else None,
+    "rolled_back": False,
+    "rollback": "nyxus-update --rollback",
+}
+if rec:
+    d = os.path.dirname(rec)
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=".last-")
+    with os.fdopen(fd, "w") as fh:
+        json.dump(verdict, fh, indent=2)
+        fh.write("\n")
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, rec)
+    with open(os.path.join(d, "history.jsonl"), "a") as fh:
+        fh.write(json.dumps({k: verdict[k] for k in
+                             ("when", "source", "ok", "boot_critical",
+                              "fails", "warns")}) + "\n")
+if as_json == "1":
+    json.dump(verdict, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+PY
+if (( FAILS )); then
+  if (( ! AS_JSON )); then
+    printf 'nyxus-selfcheck: %s check(s) FAILED%s\n' "${FAILS}" \
+      "$( (( BOOT_CRIT )) && printf ' — BOOT-CRITICAL' )"
+    printf 'the way back: nyxus-update --rollback   (--dry-run first shows the plan)\n'
+  fi
+  (( HOOK )) && exit 0
+  exit 1
+fi
+(( ! AS_JSON )) && printf 'nyxus-selfcheck: all checks passed\n'
+exit 0

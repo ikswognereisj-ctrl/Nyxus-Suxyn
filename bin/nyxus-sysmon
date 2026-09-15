@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -u
+if ! command -v qs >/dev/null 2>&1; then echo "Monitor needs qs." >&2; exit 2; fi
+out="$(qs ipc call sysmon engage 2>&1)" || true
+[[ "${out}" == *"Target not found."* ]] && out="$(qs ipc call nyxus sysmon 2>&1)" || true
+printf '%s\n' "${out}"

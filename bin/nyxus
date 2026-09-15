@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+# NYXUS · CLI dispatcher · rev 2026-05-13 r1
+# Usage:
+#   nyxus                  → list modules
+#   nyxus <mod> [args...]  → run /opt/nyxus/nyxus_<mod>.py
+#   nyxus status [...]     → /usr/local/bin/nyxus-status (TRK-1230: every
+#                            daemon/unit/timer/watcher; --json, --on/--off)
+#   nyxus doctor [...]     → nyxus_doctor.py (--json, --report, --fast)
+#   nyxus --version
+set -euo pipefail
+# Falls back through NYXUS_APP_DIR before /opt/nyxus. Every shipped .desktop
+# file execs `nyxus <mod>`, so without this the whole MIME layer — including
+# "open a folder", which routes to `nyxus files` — pointed at the host's
+# /opt/nyxus in a preview session and failed.
+NYXUS_HOME="${NYXUS_HOME:-${NYXUS_APP_DIR:-/opt/nyxus}}"
+NYXUS_VERSION="2026.05.13"
+PROG="$(basename "$0")"
+
+case "${1:-}" in
+  ""|"-h"|"--help")
+    echo "NYXUS ${NYXUS_VERSION} — module dispatcher"
+    echo ""
+    echo "Usage:  ${PROG} <module> [args...]"
+    echo ""
+    echo "Health:"
+    echo "  status     every NYXUS daemon/unit/timer/watcher (--json, --on/--off <unit>)"
+    echo "  doctor     health checks for the current stack (--json, --report, --fast)"
+    echo "  update     THE updater: snapshot, full upgrade, self-check (--check/--json)"
+    echo "  rollback   undo the last update (nyxus-update --rollback; --dry-run/--full)"
+    echo "  selfcheck  the post-update self-check (--status shows the recorded verdict)"
+    echo ""
+    echo "Available modules (from ${NYXUS_HOME}):"
+    for f in "${NYXUS_HOME}"/nyxus_*.py; do
+      [ -e "$f" ] || continue
+      m="$(basename "$f" .py)"; m="${m#nyxus_}"
+      printf "  %s\n" "$m"
+    done
+    exit 0
+    ;;
+  --version|-V)
+    echo "NYXUS ${NYXUS_VERSION}"
+    exit 0
+    ;;
+esac
+
+MOD="$1"; shift
+MOD="${MOD//-/_}"
+# Owner 2026-08-19: Settings is glass QML, never GTK nyxus_settings.py.
+if [ "${MOD}" = "settings" ]; then
+  exec /usr/local/bin/nyxus-settings "$@"
+fi
+# Next Cut: Notes is glass QML, never GTK nyxus_notes.py.
+if [ "${MOD}" = "notes" ]; then
+  exec /usr/local/bin/nyxus-notes "$@"
+fi
+
+# Next Cut: Calculator is glass QML, never GTK nyxus_calculator.py.
+if [ "${MOD}" = "calculator" ]; then
+  exec /usr/local/bin/nyxus-calculator "$@"
+fi
+
+# Next Cut: Media is glass QML, never GTK nyxus_media.py. Popup unchanged.
+if [ "${MOD}" = "media" ]; then
+  exec /usr/local/bin/nyxus-media "$@"
+fi
+
+# Next Cut: Files is glass QML, never GTK nyxus_files.py.
+if [ "${MOD}" = "files" ]; then
+  exec /usr/local/bin/nyxus-files "$@"
+fi
+
+# Next Cut: Store is glass QML, never GTK nyxus_store.py.
+if [ "${MOD}" = "store" ]; then
+  exec /usr/local/bin/nyxus-store "$@"
+fi
+
+# Next Cut: Reader is glass QML, never GTK nyxus_reader.py.
+if [ "${MOD}" = "reader" ]; then
+  exec /usr/local/bin/nyxus-reader "$@"
+fi
+
+# Next Cut: Calendar is glass QML, never GTK nyxus_calendar.py.
+if [ "${MOD}" = "calendar" ]; then
+  exec /usr/local/bin/nyxus-calendar "$@"
+fi
+
+# Next Cut: Viewer is glass QML, never GTK nyxus_viewer.py.
+if [ "${MOD}" = "viewer" ]; then
+  exec /usr/local/bin/nyxus-viewer "$@"
+fi
+
+# Next Cut: Archive is glass QML, never GTK nyxus_archive.py.
+if [ "${MOD}" = "archive" ]; then
+  exec /usr/local/bin/nyxus-archive "$@"
+fi
+
+# Next Cut: Weather is glass QML, never GTK nyxus_weather.py.
+if [ "${MOD}" = "weather" ]; then
+  exec /usr/local/bin/nyxus-weather "$@"
+fi
+
+# Next Cut: Clock app is glass QML, never GTK nyxus_clock.py.
+# Bar overlay remains `qs ipc call nyxus clock`.
+if [ "${MOD}" = "clock" ]; then
+  exec /usr/local/bin/nyxus-clock "$@"
+fi
+
+# Next Cut: Screenshot is glass QML, never GTK nyxus_screenshot.py.
+if [ "${MOD}" = "screenshot" ]; then
+  exec /usr/local/bin/nyxus-screenshot "$@"
+fi
+# Next Cut: Help is glass QML, never GTK nyxus_help.py.
+if [ "${MOD}" = "help" ]; then
+  exec /usr/local/bin/nyxus-help "$@"
+fi
+
+if [ "${MOD}" = "brain" ]; then
+  exec /usr/local/bin/nyxus-brain "$@"
+fi
+if [ "${MOD}" = "control" ] || [ "${MOD}" = "hardware" ]; then
+  exec /usr/local/bin/nyxus-control "$@"
+fi
+if [ "${MOD}" = "sysmon" ]; then
+  exec /usr/local/bin/nyxus-sysmon "$@"
+fi
+# TRK-1230: `nyxus status` is a script, not a module. Resolved through PATH
+# first so a preview HOME's ~/.local/bin copy wins over the host's, then the
+# shipped /usr/local/bin path.
+if [ "${MOD}" = "status" ]; then
+  if command -v nyxus-status >/dev/null 2>&1; then
+    exec nyxus-status "$@"
+  fi
+  exec /usr/local/bin/nyxus-status "$@"
+fi
+# TRK-1282: `nyxus update` is THE updater (checkupdates → snapshot → pacman
+# -Syu → self-check; --check/--json/--from <dir>). PATH first so a preview's
+# ~/.local/bin copy wins, then the shipped one. Never the GTK nyxus_updater.py
+# (that window now calls this same CLI).
+if [ "${MOD}" = "update" ]; then
+  if command -v nyxus-update >/dev/null 2>&1; then
+    exec nyxus-update "$@"
+  fi
+  exec /usr/local/bin/nyxus-update "$@"
+fi
+# CS-1053 / TRK-1312: `nyxus rollback` = the updater's way back (undo the
+# last update's snapshot pair through nyxus-undo; --dry-run / --full pass
+# through). Same PATH-first resolution as `update`.
+if [ "${MOD}" = "rollback" ]; then
+  if command -v nyxus-update >/dev/null 2>&1; then
+    exec nyxus-update --rollback "$@"
+  fi
+  exec /usr/local/bin/nyxus-update --rollback "$@"
+fi
+# CS-1053 / TRK-1310: `nyxus selfcheck` runs the post-update self-check
+# (or --status for the recorded verdict). Unprivileged run prints; the
+# recorded verdict comes from the pacman hook or `nyxus update --selfcheck`.
+if [ "${MOD}" = "selfcheck" ]; then
+  if command -v nyxus-selfcheck >/dev/null 2>&1; then
+    exec nyxus-selfcheck "$@"
+  fi
+  exec /usr/local/bin/nyxus-selfcheck "$@"
+fi
+TARGET="${NYXUS_HOME}/nyxus_${MOD}.py"
+if [ ! -f "${TARGET}" ]; then
+  echo "${PROG}: unknown module '${MOD}' (no ${TARGET})" >&2
+  exit 2
+fi
+mkdir -p "${HOME}/.cache/nyxus"
+exec python3 "${TARGET}" "$@" 2>>"${HOME}/.cache/nyxus/${MOD}.log"

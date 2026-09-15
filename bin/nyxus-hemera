@@ -1,0 +1,1340 @@
+#!/usr/bin/env python3
+"""
+nyxus-hemera — the scan engine behind Settings ▸ Security (HEMERA).
+
+★ WHY THIS EXISTS, and the one rule it is built around.
+
+  The owner approved the Hemera scan experience on 2026-08-15 (`WIP-654`):
+  a Quick Scan, a weekly full scan that stays out of the way, three volumes
+  of notification, a protection history, right-click "Scan with Hemera" —
+  and, at the centre of all of it, a QUARANTINE FLOW THAT NEVER DELETES.
+
+  A finding is ISOLATED into a locked vault stripped of its exec bits, and
+  then the machine STOPS and asks. Restore, Delete or Keep is the person's
+  call, every time, with no timeout and no default. An antivirus that
+  deletes the wedding photos it mis-scored is worse than no antivirus at
+  all, and this build's whole premise is a machine a non-expert can trust.
+
+  So: the ONLY code in this file that can remove a file the person owns is
+  `_drop_original_after_verify`, which refuses unless the vault copy is
+  proven byte-for-byte first, and `cmd_vault_delete` / `cmd_vault_restore`,
+  which exist only because the person typed the word. Gate 13q29 pins that
+  set by parsing this file's AST — a new deletion anywhere else fails the
+  build, not a review.
+
+⛔ DELIBERATELY NOT HERE, by design and not omission (`WIP-654`):
+
+  · NO real-time on-access daemon. `clamd`/`clamonacc` are never started,
+    never enabled, never referenced. Scans happen when the person asks or
+    when the weekly timer fires, and nothing sits in the kernel's way of
+    every open(2).
+  · NO imports from the NYXUS security stack. Suxyn was forked from NYXUS
+    on 2026-08-02 with that stack stripped ON PURPOSE. This file reaches
+    `~/Nyxus-Core` for nothing, ever. The fork boundary is not a suggestion.
+
+⛔ NO TERMINAL, EVER — the owner's absolute rule. Everything here is either
+   a timer, a context-menu entry, or a Settings page calling `--json`.
+
+★ AND THE SECOND RULE, added 2026-08-15 (`WIP-665`): THE DOWNLOAD IS ASKED FOR.
+
+  clamav ships with NO definitions. Nothing in this build ever ran the
+  downloader, so on a real machine every scan honestly reported "no virus
+  definitions downloaded yet" and Hemera could not find anything at all.
+
+  The owner ruled on 2026-08-15, in these terms: a PROMPTED FIRST-BOOT
+  DOWNLOAD. Not bundled into the ISO — the image stays its current size.
+  Not a silent background fetch — nobody is surprised by ~300 MB moving on
+  their connection. The person is ASKED, once: what it is, roughly how big,
+  and that scanning cannot work until it happens. Accept and it downloads;
+  decline and the honest no-definitions state simply persists, visible, and
+  can be accepted later from Settings ▸ Security.
+
+  So `_fetch_definitions` — the only code in this build that downloads
+  anything — is unreachable except through `cmd_defs_update`, which RETURNS
+  before it on every path where consent was not given. Gate 13q31 pins that
+  as wiring, the same way 13q29 pins the no-auto-delete promise.
+
+★ AND THE LIE THIS FILE MUST NEVER TELL: "you are fine" because it is empty.
+
+  A security tool that reports a clean result when it had nothing to scan
+  with is worse than no security tool, because the person stops looking.
+  "No definitions" is therefore its own outcome at EVERY layer — its own
+  exit code, its own `result` in the JSON, its own history event, and its
+  own notification — and it is never, anywhere, folded into "clean".
+
+SURFACES
+    nyxus-hemera scan quick            Downloads · Desktop · temp
+    nyxus-hemera scan full             the whole home directory, low priority
+    nyxus-hemera scan path P [P...]    one file or folder (the right-click)
+    nyxus-hemera vault list [--json]   what is isolated, and what state it is in
+    nyxus-hemera vault restore ID      put it back where it came from
+    nyxus-hemera vault delete ID       destroy it — the person's word, never ours
+    nyxus-hemera vault keep ID         leave it locked away, mark it reviewed
+    nyxus-hemera history [--json] [--limit N]
+    nyxus-hemera defs [--json]         definition freshness
+    nyxus-hemera defs prompt [--json]  ASK once whether to download them
+    nyxus-hemera defs update --consent [--json]
+                                       download them — refuses without consent
+    nyxus-hemera status [--json]       one summary for the Settings page
+
+EXIT CODES — because a timer and a menu entry see only this number
+    0  clean, or the command did what it said
+    1  a scan found something (clamscan's own code, kept)
+    2  usage: nothing to scan, no such vault item
+    3  the scan could not run — the scanner itself failed
+    4  THE SCAN DID NOT RUN BECAUSE THERE ARE NO DEFINITIONS. Distinct from
+       3 on purpose: one means "the tool is broken", the other means "the
+       tool is empty and here is the cure". Neither is ever 0.
+    5  a download was refused because nobody had consented to it
+    6  a consented download did not produce definitions
+
+THREE VOLUMES (the owner's words: quiet on start, normal on a clean finish,
+CRITICAL on a finding)
+    start           urgency low      — a whisper, easy to miss on purpose
+    clean complete  urgency normal   — "nothing found", said once
+    finding         urgency critical — with a Review button that opens
+                                       Settings ▸ Security
+
+WHERE THINGS LIVE (all under the person's own home — nothing system-wide)
+    ~/.local/share/nyxus/hemera/vault/        the locked vault, 0700
+    ~/.local/share/nyxus/hemera/history.jsonl the protection history
+    ~/.cache/nyxus/hemera-state.json          last-scan summary for the page
+  `NYXUS_HEMERA_HOME` relocates all three. It exists so the proof harness can
+  run the REAL engine against a throwaway tree instead of a mock — the same
+  confined-HOME pattern the Settings proofs use.
+
+© 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import shutil
+import stat
+import subprocess
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+
+APP_NAME = "Hemera"
+
+# ── the vault's two permissions, and why they are constants ──────────────
+# They are named, module-level and asserted by gate 13q29 because "stripped
+# of exec permissions" is the row's own words and a literal buried in a
+# function is a thing that drifts. 0o600: readable and writable by the owner
+# and by nobody else, and NO exec bit on any of the three triads. 0o700 on
+# the directory: a directory needs its own +x to be traversed at all, so the
+# lock there is the group/other zeros, not the owner's x.
+VAULT_BLOB_MODE = 0o600
+VAULT_DIR_MODE = 0o700
+VAULT_META_MODE = 0o600
+
+# Scan kinds, and what each one looks at.
+KIND_QUICK = "quick"
+KIND_FULL = "full"
+KIND_PATH = "path"
+
+# clamscan's own exit codes.
+CLAM_CLEAN = 0
+CLAM_FOUND = 1
+
+# ── exit codes that are NOT clamscan's, and why they are constants ────────
+# The Settings page reads `--json`; a systemd unit, a context-menu entry and
+# any shell see only this number. So the number has to carry the one
+# distinction that matters most in this file: "I looked and found nothing"
+# and "I had nothing to look WITH" are different answers, and only the first
+# one is 0.
+#
+# ⚠ cmd_scan's existing `return 3` and `return 2` are deliberately left as
+#   literals. Gate 13q29 check 7 asserts the hard-failure branch as an `If`
+#   testing `scanned` that contains a literal Constant 3; swapping that for a
+#   name would blind a gate that is doing its job. New codes get constants;
+#   the ones an existing gate already pins do not move.
+EXIT_OK = 0
+EXIT_NO_DEFINITIONS = 4
+EXIT_NO_CONSENT = 5
+EXIT_UPDATE_FAILED = 6
+
+# The `result` a scan records when it stopped because it had no signatures.
+# It is its own word — never "clean", and never folded into "error" either,
+# because "the tool is empty" has a cure the person can act on and "the tool
+# is broken" does not.
+RESULT_NO_DEFS = "no-definitions"
+
+
+class HemeraUnsafe(RuntimeError):
+    """Raised when an invariant that protects the person's file does not hold.
+
+    Every raise of this ends with the original file still exactly where the
+    person left it. That is the entire point of the class.
+    """
+
+
+# ── where things live ────────────────────────────────────────────────────
+
+def hemera_home() -> Path:
+    override = os.environ.get("NYXUS_HEMERA_HOME")
+    if override:
+        return Path(override)
+    base = os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share")
+    return Path(base) / "nyxus" / "hemera"
+
+
+def vault_dir() -> Path:
+    return hemera_home() / "vault"
+
+
+def history_path() -> Path:
+    return hemera_home() / "history.jsonl"
+
+
+def state_path() -> Path:
+    override = os.environ.get("NYXUS_HEMERA_HOME")
+    if override:
+        return Path(override) / "state.json"
+    base = os.environ.get("XDG_CACHE_HOME") or (Path.home() / ".cache")
+    return Path(base) / "nyxus" / "hemera-state.json"
+
+
+def ensure_vault() -> Path:
+    v = vault_dir()
+    v.mkdir(parents=True, exist_ok=True)
+    os.chmod(v, VAULT_DIR_MODE)
+    return v
+
+
+# ── the history log ──────────────────────────────────────────────────────
+
+def log_event(event: str, **fields) -> None:
+    """Append one line to the protection history.
+
+    JSON Lines on purpose: appending cannot corrupt what is already written,
+    a truncated tail costs one row instead of the file, and the Settings page
+    reads it with two lines of Python. Never rewritten, never rotated in
+    place — see `history --limit`.
+    """
+    row = {"ts": int(time.time()), "event": event}
+    row.update(fields)
+    try:
+        p = history_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, sort_keys=True) + "\n")
+    except OSError:
+        # A history that cannot be written must never take a scan down with
+        # it. The scan is the protection; the log is the receipt.
+        pass
+
+
+def read_history(limit: int = 200) -> list[dict]:
+    try:
+        lines = history_path().read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    out: list[dict] = []
+    for line in lines[-limit:] if limit > 0 else lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.append(json.loads(line))
+        except ValueError:
+            continue
+    return out
+
+
+# ── notifications, at exactly three volumes ──────────────────────────────
+
+def notify(urgency: str, title: str, body: str, *,
+           icon: str = "security-medium", review: bool = False,
+           quiet: bool = False) -> None:
+    if quiet or not shutil.which("notify-send"):
+        return
+    cmd = ["notify-send", "--app-name", APP_NAME,
+           "--urgency", urgency, "--icon", icon]
+    if review:
+        # `-A` implies --wait: notify-send stays alive until the person
+        # dismisses it or clicks, and prints the action key. That is what
+        # makes the button work without this process owning a DBus loop —
+        # nyxus-update-check established the pattern and the unit gives us
+        # the timeout to match.
+        cmd += ["-A", "review=Review"]
+    cmd += [title, body]
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, check=False,
+                           timeout=24 * 60 * 60)
+    except (OSError, subprocess.SubprocessError):
+        return
+    if review and p.stdout.strip() == "review":
+        open_security_page()
+
+
+def notify_ask(urgency: str, title: str, body: str,
+               actions: list[tuple[str, str]], *,
+               icon: str = "security-medium", quiet: bool = False) -> str:
+    """Ask a question on the desktop and return the key the person chose.
+
+    ⛔ AN EMPTY ANSWER IS NOT A YES.
+       If there is no notification daemon, if the notice is swiped away, if
+       the process is killed — this returns "". The only thing silence is
+       ever allowed to do in this file is nothing at all. Every caller treats
+       "" as "did not answer", which is neither consent nor refusal.
+
+    `notify-send -A key=Label` implies --wait: it stays alive until the
+    person clicks or dismisses, then prints the chosen key. That is how the
+    buttons work without this script owning a DBus main loop — the same
+    mechanism `notify()`'s Review button uses, and the reason the units that
+    run these commands carry `TimeoutStartSec=infinity`.
+    """
+    if quiet or not shutil.which("notify-send"):
+        return ""
+    cmd = ["notify-send", "--app-name", APP_NAME,
+           "--urgency", urgency, "--icon", icon]
+    for key, label in actions:
+        cmd += ["-A", f"{key}={label}"]
+    cmd += [title, body]
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, check=False,
+                           timeout=24 * 60 * 60)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return p.stdout.strip()
+
+
+def open_security_page() -> None:
+    """Land on Settings ▸ Security — the Hemera page, never a terminal."""
+    exe = shutil.which("nyxus-settings")
+    if not exe:
+        return
+    try:
+        subprocess.Popen([exe, "security"], start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        pass
+
+
+# ── definition freshness ─────────────────────────────────────────────────
+
+CLAM_DB_DIRS = ("/var/lib/clamav",)
+
+# Only `.cvd` and `.cld` count, and that is not laziness. Those are the two
+# forms a real ClamAV signature database takes — the signed container and its
+# incrementally-updated cousin. A `.hdb` written by hand (which is what this
+# build's own proof harness feeds the scanner) is a signature file, not a
+# database the person can rely on, and counting one would let a test double
+# masquerade as a protected machine.
+CLAM_DB_SUFFIXES = (".cvd", ".cld")
+
+
+def clam_db_dirs() -> tuple[str, ...]:
+    """Where the signature databases live.
+
+    `NYXUS_HEMERA_DB_DIR` relocates the check, and it exists for exactly one
+    reason: the proof harness has to put this engine in BOTH states — with
+    definitions and without — and the only honest way to do that without a
+    network call is to point the check somewhere else. On a real machine
+    this is `/var/lib/clamav` and nothing else. Same confined-tree pattern as
+    `NYXUS_HEMERA_HOME`.
+    """
+    override = os.environ.get("NYXUS_HEMERA_DB_DIR")
+    return (override,) if override else CLAM_DB_DIRS
+
+
+# ── the record of what the person decided about the download ─────────────
+#
+# It lives beside the vault rather than in the cache, and that is deliberate:
+# a cache is a thing you are allowed to throw away, and throwing this away
+# would ask somebody a question they have already answered.
+
+def defs_state_path() -> Path:
+    return hemera_home() / "definitions.json"
+
+
+def load_defs_state() -> dict:
+    try:
+        d = json.loads(defs_state_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return d if isinstance(d, dict) else {}
+
+
+def save_defs_state(data: dict) -> None:
+    try:
+        p = defs_state_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(data, sort_keys=True), encoding="utf-8")
+    except OSError:
+        # Losing this record costs the person one repeated question. Taking a
+        # scan or a download down over it would cost them the feature.
+        pass
+
+
+def defs_info() -> dict:
+    """Age of the newest ClamAV database, or an honest 'never'.
+
+    ClamAV ships with NO definitions — they are downloaded after install. A
+    brand-new machine that has never been online therefore has a scanner and
+    nothing to scan WITH, and saying "0 days old" there would be a lie the
+    person acts on. `days` stays None and `present` stays False.
+
+    ⚠ THE SHAPE OF THIS DICT IS A CONTRACT. `defs --json` is what the
+      Settings ▸ Security page renders, so `present`, `days`, `files`,
+      `newest` and `note` keep their names and their meanings. `prompt` and
+      `last_update` were ADDED on 2026-08-15 (`WIP-665`) so the page can say
+      "you chose Not now on the 15th" instead of only "no definitions" —
+      additive, never a rename. Gate 13q31 pins all five original keys.
+    """
+    newest = 0.0
+    count = 0
+    for d in clam_db_dirs():
+        try:
+            for p in Path(d).iterdir():
+                if p.suffix in CLAM_DB_SUFFIXES:
+                    count += 1
+                    newest = max(newest, p.stat().st_mtime)
+        except OSError:
+            continue
+    st = load_defs_state()
+    decided = {"prompt": st.get("prompt") or {},
+               "last_update": st.get("last_update") or {}}
+    if count == 0:
+        return {"present": False, "days": None, "files": 0, "newest": None,
+                "note": "no virus definitions downloaded yet", **decided}
+    days = max(0, int((time.time() - newest) // 86400))
+    return {"present": True, "days": days, "files": count,
+            "newest": int(newest),
+            "note": f"definitions {days} day(s) old", **decided}
+
+
+# ── the download, and the consent that is the only way to reach it ───────
+
+DEFS_DOWNLOADER = "freshclam"
+# The size the person is told before anything moves. It is the figure the
+# owner ruled on and it has never been measured here, because this build has
+# never run the real download — see the brief's unproven list, which says so
+# in those words.
+DEFS_SIZE_NOTE = "about 300 MB"
+DEFS_FETCH_TIMEOUT = 60 * 60
+DEFS_ASK_TITLE = "Hemera has no virus definitions yet"
+DEFS_ASK_BODY = (
+    "Scanning cannot find anything until the virus definitions are "
+    f"downloaded — {DEFS_SIZE_NOTE}, once. Download them now?")
+
+
+def _fetch_definitions() -> tuple[int, str]:
+    """Run the downloader. THE ONLY CODE IN THIS BUILD THAT DOWNLOADS ANYTHING.
+
+    It is deliberately stupid. It decides nothing, asks nobody, and reads no
+    state — it takes the person's connection, uses it, and reports what
+    happened. Everything that could possibly be a decision lives in
+    `cmd_defs_update`, which is the only caller, and which returns before
+    reaching this function on every path where consent was not given.
+
+    Root is required because the databases live in a system directory, so a
+    normal session goes through `pkexec` — the same route Settings ▸ Security
+    already uses for its privileged actions, and a route that shows the
+    person a dialog they can cancel. Cancelling is a refusal, not an error.
+    """
+    exe = shutil.which(DEFS_DOWNLOADER)
+    if not exe:
+        return 127, f"{DEFS_DOWNLOADER} is not installed"
+    cmd = [exe, "--stdout"]
+    if os.geteuid() != 0:
+        pk = shutil.which("pkexec")
+        if not pk:
+            return 126, "there is no way to ask for administrator approval"
+        cmd = [pk, exe, "--stdout"]
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, check=False,
+                           timeout=DEFS_FETCH_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return 124, "the download did not finish in time"
+    except (OSError, subprocess.SubprocessError) as exc:
+        return 125, f"the downloader could not be started ({exc})"
+    return p.returncode, (p.stdout + "\n" + p.stderr).strip()
+
+
+def _fetch_failure_reason(rc: int, output: str) -> str:
+    """Say what went wrong in words the person can act on.
+
+    Every branch here is a real failure of a real first boot: a laptop with
+    no network yet, a mirror having a bad day, a cancelled password dialog,
+    a disk with no room for 300 MB. None of them may ever be reported as a
+    success, and none of them are worth a CRITICAL notification either —
+    a definition download that did not happen is an inconvenience, not a
+    threat, and treating it as an alarm is how people learn to ignore alarms.
+    """
+    low = output.lower()
+    if rc == 127:
+        return "the definition downloader is not installed"
+    if rc == 126:
+        return "this session cannot ask for administrator approval"
+    if rc == 124:
+        return "the download did not finish in time"
+    if rc == 125:
+        return "the downloader could not be started"
+    if any(k in low for k in ("not authorized", "authentication",
+                              "dismissed", "authorization")):
+        return "administrator approval was not given"
+    if any(k in low for k in ("resolve", "getaddrinfo", "connect",
+                              "network is unreachable", "no route",
+                              "temporary failure", "timed out")):
+        return "there is no network connection right now"
+    if any(k in low for k in ("404", "not found", "mirror", "http")):
+        return "the definition mirror did not answer"
+    if any(k in low for k in ("no space", "disk full", "write")):
+        return "there was not enough room to save the definitions"
+    if any(k in low for k in ("permission denied", "can't create",
+                              "can't open")):
+        return "the definitions directory could not be written"
+    return "the download did not complete"
+
+
+def cmd_defs_update(*, consent: bool, as_json: bool = False,
+                    quiet: bool = False, source: str = "settings") -> int:
+    """Download the definitions — ONLY because somebody said yes.
+
+    ⛔ THE GUARD BELOW IS THE WHOLE FEATURE, not a formality.
+
+       The owner ruled on 2026-08-15 that this download is PROMPTED. So
+       `consent` is not a convenience argument; it is the record that a human
+       was asked and answered yes, and the `return` under it happens BEFORE
+       `_fetch_definitions` is reached on every path through this function.
+       Gate 13q31 asserts exactly that as an ORDER — the guard's return line
+       precedes the first fetch call — so a break that leaves every string in
+       place and only removes the guard still fails the build.
+
+    ⛔ AND SUCCESS IS MEASURED, NOT REPORTED. The downloader's exit code is
+       not the answer to "does this machine have definitions now"; the
+       definitions directory is. A mirror that returns a 200 and a truncated
+       file, an interrupted transfer, a downloader that exits 0 having
+       written nothing — all of them are failures here, because `after` is
+       read back off the disk and both conditions have to hold.
+    """
+    if not consent:
+        log_event("defs-update-refused", source=source,
+                  reason="no consent was recorded")
+        if as_json:
+            print(json.dumps({"ok": False, "consent": False,
+                              "reason": "no consent was recorded — nothing "
+                                        "was downloaded",
+                              "definitions": defs_info()},
+                             indent=2, sort_keys=True))
+        else:
+            print("nyxus-hemera: refusing to download anything without the "
+                  "person's consent — ask first with `defs prompt`, or pass "
+                  "--consent from a surface that has just asked",
+                  file=sys.stderr)
+        return EXIT_NO_CONSENT
+
+    before = defs_info()
+    started = int(time.time())
+    log_event("defs-update-start", source=source,
+              had_definitions=bool(before["present"]))
+    notify("low", "Downloading virus definitions",
+           f"This is {DEFS_SIZE_NOTE} and happens once. You can keep working.",
+           icon="security-medium", quiet=quiet)
+
+    rc, output = _fetch_definitions()
+    after = defs_info()
+    ok = bool(after["present"]) and rc == 0
+    if rc == 0 and not after["present"]:
+        reason = ("the download reported success but no definitions arrived — "
+                  "nothing was saved")
+    else:
+        reason = "" if ok else _fetch_failure_reason(rc, output)
+
+    state = load_defs_state()
+    prompt = dict(state.get("prompt") or {})
+    prompt.setdefault("asked_at", started)
+    prompt["answer"] = "accepted"
+    prompt["answered_at"] = started
+    state["prompt"] = prompt
+    state["last_update"] = {
+        "started": started, "finished": int(time.time()), "ok": ok,
+        "rc": rc, "source": source, "reason": reason,
+        "files_before": before["files"], "files_after": after["files"]}
+    save_defs_state(state)
+    log_event("defs-update-complete", source=source, ok=ok, rc=rc,
+              reason=reason, files=after["files"])
+
+    if ok:
+        notify("normal", "Virus definitions are ready",
+               f"Hemera can scan now — {after['files']} definition file(s) "
+               f"downloaded.", icon="security-high", quiet=quiet)
+    else:
+        # Normal volume, said once, with no retry loop behind it. The person
+        # can try again from Settings ▸ Security whenever they like.
+        notify("normal", "Could not download virus definitions",
+               f"{reason.capitalize()}. Hemera still cannot scan. You can try "
+               f"again from Settings ▸ Security.",
+               icon="security-low", quiet=quiet)
+
+    result = {"ok": ok, "consent": True, "rc": rc, "source": source,
+              "reason": reason, "definitions": defs_info()}
+    if as_json:
+        print(json.dumps(result, indent=2, sort_keys=True))
+    elif ok:
+        print(f"definitions downloaded: {after['files']} file(s)")
+    else:
+        print(f"nyxus-hemera: definitions were NOT downloaded — {reason}",
+              file=sys.stderr)
+    return EXIT_OK if ok else EXIT_UPDATE_FAILED
+
+
+def cmd_defs_prompt(as_json: bool = False, quiet: bool = False) -> int:
+    """Ask, once, whether to download the definitions.
+
+    ⛔ ONCE. EVER. The answer is written down before anything else happens,
+       and any recorded answer — yes, no, or a notice that was swiped away —
+       makes every later run of this command a no-op. That is what stops a
+       timer that fires on every boot from turning into a machine that nags,
+       and it is asserted by gate 13q31 as an early return, not as a comment.
+
+    ⛔ AND A DECLINE DOWNLOADS NOTHING. The only call to `cmd_defs_update`
+       from here sits inside a branch testing the person's own literal
+       choice, which is the same shape the delete path has carried since
+       `WIP-654`: the machine acts on the word it was given, not on a
+       default and not on a fallthrough.
+    """
+    d = defs_info()
+    state = load_defs_state()
+    prompt = dict(state.get("prompt") or {})
+
+    def report(payload: dict, line: str) -> int:
+        if as_json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            print(line)
+        return EXIT_OK
+
+    if d["present"]:
+        return report({"asked": False, "answer": prompt.get("answer", ""),
+                       "skipped": "definitions are already present",
+                       "definitions": d},
+                      "definitions are already present — nothing to ask")
+    if prompt.get("answer"):
+        return report({"asked": False, "answer": prompt["answer"],
+                       "skipped": "this machine has already been asked once",
+                       "definitions": d},
+                      f"already asked once — the answer was "
+                      f"{prompt['answer']}; nothing was downloaded")
+
+    asked_at = int(time.time())
+    answer = notify_ask("normal", DEFS_ASK_TITLE, DEFS_ASK_BODY,
+                        [("download", "Download now"), ("later", "Not now")],
+                        icon="security-low", quiet=quiet)
+    prompt["asked_at"] = asked_at
+    prompt["answered_at"] = int(time.time())
+    prompt["answer"] = ("accepted" if answer == "download"
+                        else "declined" if answer == "later"
+                        else "dismissed")
+    state["prompt"] = prompt
+    save_defs_state(state)
+    log_event("defs-prompt", answer=prompt["answer"])
+
+    if answer == "download":
+        return cmd_defs_update(consent=True, as_json=as_json, quiet=quiet,
+                               source="first-boot prompt")
+
+    # Declined, or never answered. NOTHING is downloaded, the honest
+    # no-definitions state persists exactly as it was, and Settings ▸
+    # Security still carries the button for the day they change their mind.
+    return report({"asked": True, "answer": prompt["answer"],
+                   "downloaded": False,
+                   "note": "nothing was downloaded; definitions can still be "
+                           "fetched from Settings ▸ Security",
+                   "definitions": defs_info()},
+                  f"asked once — {prompt['answer']}; nothing was downloaded")
+
+
+# ── the vault ────────────────────────────────────────────────────────────
+
+def sha256_of(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _new_id(src: Path) -> str:
+    stamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+    tag = hashlib.sha256(
+        f"{src}{time.time_ns()}".encode("utf-8", "replace")).hexdigest()[:8]
+    return f"{stamp}-{tag}"
+
+
+def meta_path(item_id: str) -> Path:
+    return vault_dir() / f"{item_id}.json"
+
+
+def blob_path(item_id: str) -> Path:
+    return vault_dir() / f"{item_id}.blob"
+
+
+def read_meta(item_id: str) -> dict | None:
+    try:
+        return json.loads(meta_path(item_id).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def write_meta(item_id: str, meta: dict) -> None:
+    p = meta_path(item_id)
+    p.write_text(json.dumps(meta, indent=2, sort_keys=True), encoding="utf-8")
+    os.chmod(p, VAULT_META_MODE)
+
+
+def list_vault() -> list[dict]:
+    items: list[dict] = []
+    try:
+        names = sorted(p.stem for p in vault_dir().glob("*.json"))
+    except OSError:
+        return items
+    for item_id in names:
+        m = read_meta(item_id)
+        if m:
+            items.append(m)
+    return items
+
+
+def _write_blob(src: Path, blob: Path) -> None:
+    """Copy the bytes into the vault, born with no exec bit and no group/other.
+
+    O_EXCL so a colliding id can never silently overwrite an existing
+    quarantine record, and the mode is passed to open(2) rather than chmod'd
+    afterwards so the file is never, not even for a scheduling quantum,
+    readable by anyone else.
+    """
+    fd = os.open(blob, os.O_WRONLY | os.O_CREAT | os.O_EXCL, VAULT_BLOB_MODE)
+    try:
+        with os.fdopen(fd, "wb") as out, src.open("rb") as fh:
+            shutil.copyfileobj(fh, out, length=1024 * 1024)
+            out.flush()
+            os.fsync(out.fileno())
+    except BaseException:
+        # A half-written blob is not a quarantine record; drop it and leave
+        # the original alone. This removes only what THIS call created.
+        _discard_partial_blob(blob)
+        raise
+    # Belt and braces against a permissive umask interaction or a filesystem
+    # that ignores the open(2) mode: assert the state we need, do not assume
+    # it. `_drop_original_after_verify` refuses if this ever failed.
+    os.chmod(blob, VAULT_BLOB_MODE)
+
+
+def _discard_partial_blob(blob: Path) -> None:
+    """Remove a blob THIS process just created and could not finish.
+
+    Deliberately its own function so the gate's pinned-set assertion reads as
+    what it is: the only removals in this file are a failed copy of our own
+    making, the verified drop of an original, and the two the person asked
+    for by name.
+    """
+    try:
+        os.unlink(blob)
+    except OSError:
+        pass
+
+
+def _drop_original_after_verify(src: Path, blob: Path, digest: str,
+                                size: int) -> None:
+    """Remove the ORIGINAL — and ONLY after the vault copy is proven.
+
+    ⛔ THIS IS THE ONLY PLACE IN THE SCAN PATH THAT REMOVES ANYTHING, and
+       every one of these checks is a reason to walk away with the person's
+       file untouched. If any of them raise, the caller records "could not
+       isolate" and the file stays exactly where it was. Losing a file we
+       could not safely copy is the failure this whole row exists to make
+       impossible.
+    """
+    if not blob.exists():
+        raise HemeraUnsafe("the vault copy does not exist")
+    st = blob.stat()
+    if not stat.S_ISREG(st.st_mode):
+        raise HemeraUnsafe("the vault copy is not a regular file")
+    if st.st_mode & 0o111:
+        raise HemeraUnsafe("the vault copy still carries an exec bit")
+    if st.st_mode & 0o077:
+        raise HemeraUnsafe("the vault copy is reachable beyond its owner")
+    if st.st_size != size:
+        raise HemeraUnsafe("the vault copy is a different size than the original")
+    if sha256_of(blob) != digest:
+        raise HemeraUnsafe("the vault copy does not match the original's digest")
+    os.unlink(src)
+
+
+def quarantine(src: Path, signature: str, *, scan_id: str = "") -> dict:
+    """Isolate one finding. Returns its vault record.
+
+    The order is the whole safety argument: measure, copy, prove, and only
+    then remove. Anything that goes wrong before the proof leaves the file
+    on disk where the person put it.
+    """
+    src = Path(src)
+    st = src.lstat()
+    if stat.S_ISLNK(st.st_mode):
+        raise HemeraUnsafe("refusing to quarantine a symlink")
+    if not stat.S_ISREG(st.st_mode):
+        raise HemeraUnsafe("refusing to quarantine a non-regular file")
+
+    ensure_vault()
+    item_id = _new_id(src)
+    blob = blob_path(item_id)
+    digest = sha256_of(src)
+    size = st.st_size
+
+    _write_blob(src, blob)
+    try:
+        _drop_original_after_verify(src, blob, digest, size)
+    except (HemeraUnsafe, OSError):
+        # We could not safely take custody, so we take none: the vault copy
+        # goes and the person's file stays exactly where it was. An orphan
+        # blob with no record beside it would be a file nobody can account
+        # for, which is its own kind of data loss.
+        _discard_partial_blob(blob)
+        raise
+
+    meta = {
+        "id": item_id,
+        "state": "quarantined",
+        "origin": str(src),
+        "origin_mode": stat.S_IMODE(st.st_mode),
+        "size": size,
+        "sha256": digest,
+        "signature": signature,
+        "quarantined_at": int(time.time()),
+        "scan_id": scan_id,
+        # Said in the record itself so a person reading the JSON, or the
+        # Settings page rendering it, never has to infer the promise.
+        "note": "isolated, exec permissions stripped — nothing is deleted "
+                "until you choose Delete",
+    }
+    write_meta(item_id, meta)
+    log_event("quarantine", id=item_id, origin=str(src),
+              signature=signature, size=size, scan_id=scan_id)
+    return meta
+
+
+# ── scanning ─────────────────────────────────────────────────────────────
+
+def quick_targets() -> list[Path]:
+    home = Path.home()
+    cand = [home / "Downloads", home / "Desktop", Path("/tmp"),
+            Path("/var/tmp")]
+    return [p for p in cand if p.is_dir()]
+
+
+def full_targets() -> list[Path]:
+    return [Path.home()]
+
+
+def _clam_excludes() -> list[str]:
+    """Never scan our own vault.
+
+    Left in, a full scan of the home directory re-detects every blob it
+    isolated last week and quarantines the quarantine — a loop that grows
+    the vault forever and reports the same threat every Sunday. clamscan
+    takes a regex against the full path.
+    """
+    root = str(hemera_home()).replace("\\", "\\\\")
+    for ch in ".^$*+?()[]{}|":
+        root = root.replace(ch, "\\" + ch)
+    return [f"--exclude-dir=^{root}"]
+
+
+def run_clamscan(targets: list[Path]) -> tuple[int, list[tuple[Path, str]],
+                                               int, int]:
+    """(rc, [(path, signature)...], files_scanned, unreadable_items).
+
+    rc is clamscan's own: 0 clean, 1 found, 2 error. A missing scanner or a
+    missing database is an ERROR, never a clean result — reporting "no
+    threats found" when nothing was actually examined is the single most
+    dangerous lie this file could tell.
+
+    `Total errors` is parsed for a reason measured on 2026-08-15: clamscan
+    returns 2 for a WHOLE-RUN failure and ALSO for "I scanned everything I
+    could and one item was unreadable". Verified against ClamAV 1.5.3 with a
+    single mode-000 directory in the tree — rc 2, `Scanned files: 1`,
+    `Total errors: 1`. A weekly scan of a real home directory hits an
+    unreadable path constantly (fuse mounts, sockets, another user's file
+    under /tmp), so treating every rc 2 as a dead scan would have made the
+    scheduled scan report "scan did not run" essentially forever. The two
+    cases are told apart by whether anything was actually examined.
+    """
+    exe = shutil.which("clamscan")
+    if not exe:
+        return 2, [], 0, 0
+    cmd = [exe, "-r", "--infected", "--stdout", *_clam_excludes(),
+           *[str(t) for t in targets]]
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return 2, [], 0, 0
+
+    findings: list[tuple[Path, str]] = []
+    scanned = 0
+    errors = 0
+    for line in p.stdout.splitlines():
+        line = line.rstrip()
+        if line.endswith(" FOUND"):
+            body = line[: -len(" FOUND")]
+            path_s, _, sig = body.rpartition(": ")
+            if path_s:
+                findings.append((Path(path_s), sig or "unknown"))
+        elif line.startswith("Scanned files:"):
+            try:
+                scanned = int(line.split(":", 1)[1].strip())
+            except ValueError:
+                pass
+        elif line.startswith("Total errors:"):
+            try:
+                errors = int(line.split(":", 1)[1].strip())
+            except ValueError:
+                pass
+    return p.returncode, findings, scanned, errors
+
+
+def save_state(data: dict) -> None:
+    try:
+        p = state_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(data, sort_keys=True), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def load_state() -> dict:
+    try:
+        return json.loads(state_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _no_definitions_stop(kind: str, *, quiet: bool, low: bool) -> int:
+    """A scan that has nothing to scan WITH stops here, and says so everywhere.
+
+    ⛔ WHY THIS RUNS BEFORE THE "Hemera is scanning" NOTICE.
+       Whispering "scanning" and then finding out there are no signatures is
+       a machine telling somebody it is protecting them while it is not. The
+       cheap check comes first so the claim is never made. clamscan's own
+       rc-2-with-nothing-scanned branch further down is the second line of
+       defence and it stays exactly as `WIP-654` built it — that one catches
+       a database that exists and is broken, which this one cannot see.
+
+    ⛔ AND IT MUST NOT SPAM. `low` is the scheduled scan (the weekly timer's
+       ExecStart is the only thing that passes it, and it means "nobody is
+       sitting here waiting for this"). A timer that fires every Sunday must
+       not deliver the same notice every Sunday, so the scheduled path says
+       this ONCE in the machine's life — and not even once if the person was
+       already asked and said no. An interactive scan always answers,
+       because somebody just clicked something and is owed a reply.
+
+       Quiet does not mean invisible: the history row and the recorded
+       `result` are written on EVERY path, notification or not, and the exit
+       code is non-zero, so the unit shows as failed rather than as a scan
+       that went fine.
+    """
+    reason = "no virus definitions are downloaded yet"
+    scan_id = datetime.now().strftime("%Y%m%dT%H%M%S")
+    now = int(time.time())
+    log_event("scan-skipped", scan_id=scan_id, kind=kind, reason=reason,
+              scheduled=low)
+    save_state({"scan_id": scan_id, "kind": kind, "started": now,
+                "finished": now, "result": RESULT_NO_DEFS, "reason": reason,
+                "files": 0, "findings": 0, "isolated": 0, "not_isolated": 0,
+                "partial": False, "unreadable": 0})
+
+    state = load_defs_state()
+    declined = (state.get("prompt") or {}).get("answer") == "declined"
+    already_told = bool(state.get("no_defs_notified_at"))
+    body = ("There are no virus definitions on this machine yet, so nothing "
+            "was checked. Download them from Settings ▸ Security.")
+    if low:
+        if not declined and not already_told:
+            state["no_defs_notified_at"] = now
+            save_defs_state(state)
+            notify("normal", "Hemera could not scan", body,
+                   icon="security-low", quiet=quiet)
+    else:
+        notify("normal", "Hemera could not scan", body,
+               icon="security-low", review=True, quiet=quiet)
+
+    print(f"nyxus-hemera: scan did not run — {reason}", file=sys.stderr)
+    return EXIT_NO_DEFINITIONS
+
+
+def cmd_scan(kind: str, paths: list[str], *, quiet: bool = False,
+             low: bool = False) -> int:
+    if low:
+        # The unit already sets Nice= and IOSchedulingClass=idle; this is the
+        # belt for the braces, and it also covers a scan started by hand.
+        try:
+            os.nice(19)
+        except OSError:
+            pass
+
+    if kind == KIND_QUICK:
+        targets, label = quick_targets(), "Downloads, Desktop and temporary files"
+    elif kind == KIND_FULL:
+        targets, label = full_targets(), "your whole home folder"
+    else:
+        targets = [Path(p) for p in paths]
+        missing = [t for t in targets if not t.exists()]
+        if missing or not targets:
+            print(f"nyxus-hemera: nothing to scan: "
+                  f"{', '.join(str(m) for m in missing) or '<no path given>'}",
+                  file=sys.stderr)
+            return 2
+        label = ", ".join(t.name or str(t) for t in targets)
+
+    if not targets:
+        print("nyxus-hemera: no scannable targets", file=sys.stderr)
+        return 2
+
+    # ⛔ NOTHING TO SCAN WITH — stop before this process claims to be
+    #    scanning anything. `WIP-665`, and the return below is deliberately
+    #    ahead of both the scan-start row and the "Hemera is scanning"
+    #    notification; gate 13q31 asserts that order rather than the words.
+    if not defs_info()["present"]:
+        return _no_definitions_stop(kind, quiet=quiet, low=low)
+
+    scan_id = datetime.now().strftime("%Y%m%dT%H%M%S")
+    started = int(time.time())
+    log_event("scan-start", scan_id=scan_id, kind=kind,
+              targets=[str(t) for t in targets])
+    # VOLUME 1 of 3 — quiet. A scan starting is not news.
+    notify("low", "Hemera is scanning", f"Checking {label}.",
+           icon="security-medium", quiet=quiet)
+
+    rc, findings, scanned, errors = run_clamscan(targets)
+
+    # clamscan's rc 2 covers two very different situations and telling them
+    # apart is the difference between a feature that works on a real machine
+    # and one that says "scan did not run" every single week:
+    #
+    #   · NOTHING was examined — no scanner, or no signature database. That
+    #     is a genuine failure, and it must NEVER be reported as clean.
+    #   · Something was examined and something else could not be read. The
+    #     scan really ran; it just was not exhaustive, and saying exactly
+    #     that is more useful than either "clean" or "failed".
+    #
+    # `scanned` is the discriminator, because it is the only number that
+    # answers "did any file actually get looked at".
+    partial = False
+    if rc not in (CLAM_CLEAN, CLAM_FOUND):
+        if scanned <= 0:
+            d = defs_info()
+            reason = ("no virus definitions are downloaded yet"
+                      if not d["present"] else "the scanner could not run")
+            log_event("scan-error", scan_id=scan_id, kind=kind, reason=reason)
+            save_state({"scan_id": scan_id, "kind": kind, "started": started,
+                        "finished": int(time.time()), "result": "error",
+                        "reason": reason, "files": scanned, "findings": 0})
+            print(f"nyxus-hemera: scan did not run — {reason}", file=sys.stderr)
+            return 3
+        partial = True
+
+    isolated: list[dict] = []
+    failed: list[str] = []
+    for path, sig in findings:
+        try:
+            isolated.append(quarantine(path, sig, scan_id=scan_id))
+        except (HemeraUnsafe, OSError) as exc:
+            failed.append(str(path))
+            log_event("quarantine-failed", scan_id=scan_id, origin=str(path),
+                      signature=sig, reason=str(exc))
+
+    finished = int(time.time())
+    log_event("scan-complete", scan_id=scan_id, kind=kind, files=scanned,
+              findings=len(findings), isolated=len(isolated),
+              not_isolated=len(failed), partial=partial, unreadable=errors)
+    save_state({"scan_id": scan_id, "kind": kind, "started": started,
+                "finished": finished,
+                "result": ("findings" if findings
+                           else "partial" if partial else "clean"),
+                "files": scanned, "findings": len(findings),
+                "isolated": len(isolated), "not_isolated": len(failed),
+                "partial": partial, "unreadable": errors})
+
+    if not findings:
+        # VOLUME 2 of 3 — normal. Said once, on a finish, never repeated.
+        body = f"No threats found in {scanned} file(s)."
+        if partial:
+            # Never let "no threats found" stand alone when the scan could
+            # not see everything. The count is real, so give the real count.
+            body += (f" {errors} item(s) could not be read and were skipped."
+                     if errors else " Some items could not be read.")
+        notify("normal", "Scan complete", body,
+               icon="security-high", quiet=quiet)
+        print(f"{'partial' if partial else 'clean'}: {scanned} file(s) scanned")
+        return 0
+
+    # VOLUME 3 of 3 — CRITICAL, and it says what happened to the file in the
+    # first sentence, because "threat found" without "and it is now in a
+    # locked vault, nothing was deleted" is how people panic.
+    n = len(findings)
+    body = (f"{len(isolated)} moved to the locked vault — nothing was "
+            f"deleted. Choose Restore, Delete or Keep.")
+    if failed:
+        body += f" {len(failed)} could not be isolated and were left in place."
+    notify("critical", f"{n} threat{'s' if n != 1 else ''} found", body,
+           icon="security-low", review=True, quiet=quiet)
+    for m in isolated:
+        print(f"quarantined: {m['id']}  {m['signature']}  {m['origin']}")
+    for f in failed:
+        print(f"NOT isolated (left in place): {f}", file=sys.stderr)
+    return 1
+
+
+# ── the three the person chooses between ─────────────────────────────────
+
+def cmd_vault_restore(item_id: str) -> int:
+    meta = read_meta(item_id)
+    if not meta:
+        print(f"nyxus-hemera: no vault item '{item_id}'", file=sys.stderr)
+        return 2
+    if meta.get("state") != "quarantined" and meta.get("state") != "kept":
+        print(f"nyxus-hemera: '{item_id}' is {meta.get('state')} — nothing to "
+              f"restore", file=sys.stderr)
+        return 2
+    blob = blob_path(item_id)
+    dest = Path(meta["origin"])
+    if not blob.exists():
+        print(f"nyxus-hemera: the vault copy of '{item_id}' is gone",
+              file=sys.stderr)
+        return 2
+    if dest.exists():
+        # Refuse rather than clobber. Something now lives where this came
+        # from, and overwriting it to undo a quarantine would destroy a file
+        # nobody flagged.
+        print(f"nyxus-hemera: {dest} exists again — refusing to overwrite it",
+              file=sys.stderr)
+        return 2
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(blob, dest)
+        if sha256_of(dest) != meta["sha256"]:
+            raise HemeraUnsafe("restored copy does not match the recorded digest")
+        os.chmod(dest, meta.get("origin_mode", 0o600))
+    except (HemeraUnsafe, OSError) as exc:
+        print(f"nyxus-hemera: restore failed: {exc}", file=sys.stderr)
+        return 1
+    # The bytes are back at the origin and verified; the vault copy is now a
+    # duplicate. THIS removal is the person's own Restore, not ours.
+    os.unlink(blob)
+    meta["state"] = "restored"
+    meta["restored_at"] = int(time.time())
+    write_meta(item_id, meta)
+    log_event("restore", id=item_id, origin=meta["origin"])
+    print(f"restored: {dest}")
+    return 0
+
+
+def cmd_vault_delete(item_id: str) -> int:
+    """Destroy a quarantined file — ONLY ever because the person said so.
+
+    Nothing calls this on a timer, on a schedule, on a threshold or after N
+    days. There is no such caller in this build and gate 13q29 fails if the
+    scan path grows one.
+    """
+    meta = read_meta(item_id)
+    if not meta:
+        print(f"nyxus-hemera: no vault item '{item_id}'", file=sys.stderr)
+        return 2
+    if meta.get("state") == "deleted":
+        print(f"nyxus-hemera: '{item_id}' is already deleted", file=sys.stderr)
+        return 0
+    blob = blob_path(item_id)
+    if blob.exists():
+        os.unlink(blob)
+    meta["state"] = "deleted"
+    meta["deleted_at"] = int(time.time())
+    write_meta(item_id, meta)
+    log_event("delete", id=item_id, origin=meta.get("origin", ""))
+    print(f"deleted: {item_id}")
+    return 0
+
+
+def cmd_vault_keep(item_id: str) -> int:
+    meta = read_meta(item_id)
+    if not meta:
+        print(f"nyxus-hemera: no vault item '{item_id}'", file=sys.stderr)
+        return 2
+    if meta.get("state") not in ("quarantined", "kept"):
+        print(f"nyxus-hemera: '{item_id}' is {meta.get('state')}",
+              file=sys.stderr)
+        return 2
+    meta["state"] = "kept"
+    meta["kept_at"] = int(time.time())
+    write_meta(item_id, meta)
+    log_event("keep", id=item_id, origin=meta.get("origin", ""))
+    print(f"kept in the vault: {item_id}")
+    return 0
+
+
+# ── read-only surfaces ───────────────────────────────────────────────────
+
+def cmd_vault_list(as_json: bool) -> int:
+    items = list_vault()
+    if as_json:
+        print(json.dumps(items, indent=2, sort_keys=True))
+        return 0
+    if not items:
+        print("the vault is empty")
+        return 0
+    for m in items:
+        when = datetime.fromtimestamp(
+            m.get("quarantined_at", 0)).strftime("%Y-%m-%d %H:%M")
+        print(f"{m['id']}  {m.get('state','?'):<11} {when}  "
+              f"{m.get('signature','?')}  {m.get('origin','?')}")
+    return 0
+
+
+def cmd_history(as_json: bool, limit: int) -> int:
+    rows = read_history(limit)
+    if as_json:
+        print(json.dumps(rows, indent=2, sort_keys=True))
+        return 0
+    if not rows:
+        print("no protection history yet")
+        return 0
+    for r in rows:
+        when = datetime.fromtimestamp(r.get("ts", 0)).strftime("%Y-%m-%d %H:%M")
+        detail = r.get("origin") or r.get("kind") or ""
+        print(f"{when}  {r.get('event',''):<18} {detail}")
+    return 0
+
+
+def cmd_defs(as_json: bool) -> int:
+    d = defs_info()
+    print(json.dumps(d, indent=2, sort_keys=True) if as_json else d["note"])
+    return 0
+
+
+def cmd_status(as_json: bool) -> int:
+    items = list_vault()
+    counts: dict[str, int] = {}
+    for m in items:
+        counts[m.get("state", "?")] = counts.get(m.get("state", "?"), 0) + 1
+    out = {
+        "scanner": bool(shutil.which("clamscan")),
+        "definitions": defs_info(),
+        "last_scan": load_state(),
+        "vault": {"total": len(items), "by_state": counts,
+                  "awaiting_decision": counts.get("quarantined", 0)},
+        # Stated in the machine-readable surface too, so the page cannot
+        # paint a promise the engine does not keep.
+        "auto_delete": False,
+    }
+    if as_json:
+        print(json.dumps(out, indent=2, sort_keys=True))
+        return 0
+    ls = out["last_scan"]
+    print(f"scanner installed: {'yes' if out['scanner'] else 'no'}")
+    print(f"definitions: {out['definitions']['note']}")
+    print(f"last scan: {ls.get('kind','never')} — {ls.get('result','n/a')}")
+    print(f"vault: {out['vault']['total']} item(s), "
+          f"{out['vault']['awaiting_decision']} awaiting your decision")
+    return 0
+
+
+# ── argv ─────────────────────────────────────────────────────────────────
+
+def build_parser() -> argparse.ArgumentParser:
+    ap = argparse.ArgumentParser(
+        prog="nyxus-hemera",
+        description="Hemera — scan, isolate, and let the person decide.")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    sc = sub.add_parser("scan", help="scan for threats")
+    sc.add_argument("kind", choices=[KIND_QUICK, KIND_FULL, KIND_PATH])
+    sc.add_argument("paths", nargs="*", help="paths, for `scan path`")
+    sc.add_argument("--quiet", action="store_true",
+                    help="send no desktop notifications")
+    sc.add_argument("--low", action="store_true",
+                    help="run at idle priority (the weekly timer sets this)")
+
+    va = sub.add_parser("vault", help="what is isolated, and what to do with it")
+    vsub = va.add_subparsers(dest="vcmd", required=True)
+    vl = vsub.add_parser("list")
+    vl.add_argument("--json", action="store_true")
+    for name in ("restore", "delete", "keep"):
+        vp = vsub.add_parser(name)
+        vp.add_argument("id")
+
+    hi = sub.add_parser("history", help="the protection history")
+    hi.add_argument("--json", action="store_true")
+    hi.add_argument("--limit", type=int, default=200)
+
+    df = sub.add_parser("defs", help="virus definition freshness")
+    df.add_argument("--json", action="store_true")
+    # `defs` with no verb keeps reporting freshness exactly as it always has —
+    # the Settings page reads that and the shape is a contract. The two verbs
+    # are additive.
+    dsub = df.add_subparsers(dest="dcmd")
+    dup = dsub.add_parser(
+        "update", help="download the definitions (needs the person's consent)")
+    dup.add_argument("--json", dest="json_sub", action="store_true")
+    dup.add_argument(
+        "--consent", action="store_true",
+        help="the person has just been asked and said yes. Without this "
+             "nothing is downloaded — this flag IS the owner's 2026-08-15 "
+             "ruling that the download is prompted, never silent")
+    dup.add_argument("--quiet", action="store_true",
+                     help="send no desktop notifications")
+    dup.add_argument("--source", default="settings",
+                     help="which surface asked, for the history")
+    dpr = dsub.add_parser(
+        "prompt", help="ask ONCE whether to download the definitions")
+    dpr.add_argument("--json", dest="json_sub", action="store_true")
+    dpr.add_argument("--quiet", action="store_true")
+
+    st = sub.add_parser("status", help="one summary for the Settings page")
+    st.add_argument("--json", action="store_true")
+    return ap
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    if args.cmd == "scan":
+        return cmd_scan(args.kind, args.paths, quiet=args.quiet, low=args.low)
+    if args.cmd == "vault":
+        if args.vcmd == "list":
+            return cmd_vault_list(args.json)
+        if args.vcmd == "restore":
+            return cmd_vault_restore(args.id)
+        if args.vcmd == "delete":
+            return cmd_vault_delete(args.id)
+        if args.vcmd == "keep":
+            return cmd_vault_keep(args.id)
+    if args.cmd == "history":
+        return cmd_history(args.json, args.limit)
+    if args.cmd == "defs":
+        # `--json` is accepted on either side of the verb, so both halves are
+        # read. argparse lets a subparser's own default overwrite the parent's
+        # value when they share a dest, which is why they do not share one.
+        as_json = bool(args.json) or bool(getattr(args, "json_sub", False))
+        if args.dcmd == "update":
+            # The person's own word, passed through verbatim. There is no
+            # default here and there is no fallthrough: a caller that does
+            # not say --consent gets a refusal, not a download.
+            return cmd_defs_update(consent=args.consent, as_json=as_json,
+                                   quiet=args.quiet, source=args.source)
+        if args.dcmd == "prompt":
+            return cmd_defs_prompt(as_json, quiet=args.quiet)
+        return cmd_defs(as_json)
+    if args.cmd == "status":
+        return cmd_status(args.json)
+    return 2
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        sys.exit(130)

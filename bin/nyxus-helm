@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Helm — the owner's remote machine command bridge (vitals, power,
+# wake-on-LAN, SSH, webcam over Tailscale). It is a Tauri app built from his
+# own checkout (~/Projects/helm), not a packaged NYXUS component, so this
+# shim locates whichever built binary exists rather than assuming one path.
+# TRK-3756.
+for candidate in \
+    "$HOME/Projects/helm/src-tauri/target/release/helm" \
+    "/opt/nyxus/apps/helm/helm" \
+    "helm-desktop"; do
+    if [[ -x "${candidate}" ]] || command -v "${candidate}" >/dev/null 2>&1; then
+        exec "${candidate}" "$@"
+    fi
+done
+# ⚠ DO NOT "just run the build" — measured 2026-09-06, it cannot succeed on
+# his machine as it stands. tauri.conf.json sets frontendDist to
+# ../../artifacts/helm/dist/public and beforeBuildCommand to `pnpm build:web`,
+# which builds that tree — and ~/Projects/artifacts/helm DOES NOT EXIST here.
+# Only the agent side (helm_agent.py plus the apple_tv/arlo/cync modules) was
+# ever copied over. So what is missing is the web frontend SOURCE, not the
+# build step, and the message says that rather than sending him into a build
+# that fails on a path error after installing a toolchain.
+notify-send "Helm" "Desktop shell not built: its web frontend source (Projects/artifacts/helm) is not on this machine" 2>/dev/null
+echo "nyxus-helm: no Helm binary found (looked in ~/Projects/helm/src-tauri/target/release, /opt/nyxus/apps/helm, PATH)" >&2
+exit 1

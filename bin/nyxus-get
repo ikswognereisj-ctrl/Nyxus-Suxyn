@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# nyxus-get — terminal bootstrap for Nyxus Suxyn.
+#
+# ISO is how this product ships. This script is the documented terminal
+# path: clone the real GitHub remote (the only remote this repo has) and
+# print the next honest step. It does not bake. It does not invent a CDN.
+# It does not curl a payload into bash (WIP-769).
+#
+# Documented command (repo is private — GitHub auth is required to clone):
+#
+#   git clone https://github.com/sierengowskisierengowski-cpu/Nyxus-Suxyn.git
+#   cd Nyxus-Suxyn
+#   bash scripts/nyxus-get.sh
+#
+set -uo pipefail
+
+REMOTE="https://github.com/sierengowskisierengowski-cpu/Nyxus-Suxyn.git"
+ICE=$'\e[38;2;127;232;255m'
+SOFT=$'\e[38;2;183;230;242m'
+INK=$'\e[38;2;237;241;255m'
+DIM=$'\e[2m'
+RST=$'\e[0m'
+BOLD=$'\e[1m'
+
+banner() {
+  if command -v nyxus-banner >/dev/null 2>&1; then
+    nyxus-banner
+    return 0
+  fi
+  if [[ -t 1 ]]; then
+    printf '%s' "${SOFT}${DIM}"
+    printf '        ·    *          ·        *\n'
+    printf '%s' "${RST}${ICE}${BOLD}"
+    printf '     Nyxus Suxyn\n'
+    printf '%s' "${RST}${SOFT}${DIM}"
+    printf '        *         ·     *      ·\n'
+    printf '%s' "${RST}${INK}"
+    printf '     ice · glass · daily driver\n'
+    printf '%s' "${RST}${DIM}${SOFT}"
+    printf '     ISO is how you install. Terminal clone is this script.\n'
+    printf '%s\n' "${RST}"
+  else
+    printf 'Nyxus Suxyn — ice · glass · daily driver\n'
+  fi
+}
+
+usage() {
+  cat <<EOF
+Usage: bash scripts/nyxus-get.sh [--help]
+
+Nyxus Suxyn installs from a baked ISO. There is no public curl|bash
+installer and no pacman repo of our chrome (that hosting is not stood
+up). This script tells you the real channels.
+
+  1. Clone (this tree's only remote):
+       git clone ${REMOTE}
+       cd Nyxus-Suxyn
+       bash scripts/nyxus-get.sh
+
+  2. Try the desktop without installing:
+       bash scripts/suxyn-preview.sh
+       bash scripts/suxyn-session --nested
+
+  3. Install onto a disk: bake the ISO (owner command in
+     docs/BRIEF_BAKE_GUARDRAILS_2026-08-06.md §1), write the USB,
+     boot it, double-click Install Nyxus Suxyn.
+
+  4. Keep an installed box's Arch packages current:
+       nyxus-update
+
+The GitHub repo is private. A clone needs your GitHub credentials.
+Do not pipe this file to bash from a host this project does not
+control.
+EOF
+}
+
+banner
+
+case "${1:-}" in
+  -h|--help)
+    usage
+    exit 0
+    ;;
+esac
+
+_here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd || true)"
+if [[ -n "${_here}" && -f "${_here}/iso-builder/build-iso.sh" && -f "${_here}/AGENTS.md" ]]; then
+  printf 'This directory is a Nyxus Suxyn checkout.\n'
+  printf 'Remote: %s\n' "${REMOTE}"
+  printf '\nNext:\n'
+  printf '  preview   bash scripts/suxyn-preview.sh\n'
+  printf '  ISO       docs/BRIEF_BAKE_GUARDRAILS_2026-08-06.md §1 (do not compose a bake)\n'
+  printf '  packages  nyxus-update   (installed systems; Arch repos only)\n'
+  printf '\nChrome and the shell update when you install a newer ISO.\n'
+  printf 'This script does not overwrite ~/.config and does not bake.\n'
+  exit 0
+fi
+
+printf 'Not inside a Nyxus Suxyn checkout.\n'
+printf 'Clone the real remote, then run this script again:\n\n'
+printf '  git clone %s\n' "${REMOTE}"
+printf '  cd Nyxus-Suxyn\n'
+printf '  bash scripts/nyxus-get.sh\n'
+exit 0

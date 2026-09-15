@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# nyxus-workspace-wallpaperd
+#
+# Listen on the Hyprland IPC events socket and swap the wallpaper when
+# the active workspace changes. Mapping comes from
+# ~/.config/nyxus/workspaces.json (falls back to the system skel copy).
+#
+# This daemon is idempotent; it tracks the last applied wallpaper path
+# and skips redundant swaybg restarts.
+set -u
+
+CONF="${HOME}/.config/nyxus/workspaces.json"
+[[ -r "${CONF}" ]] || CONF="/etc/skel/.config/nyxus/workspaces.json"
+LOG="${HOME}/.cache/nyxus/workspace-wallpaperd.log"
+mkdir -p "$(dirname "${LOG}")"
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "jq missing — workspace wallpaper daemon disabled" >> "${LOG}"
+  exit 0
+fi
+
+if [[ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
+  echo "HYPRLAND_INSTANCE_SIGNATURE unset — not in a Hyprland session, exiting" >> "${LOG}"
+  exit 0
+fi
+
+SOCK="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/hypr/${HYPRLAND_INSTANCE_SIGNATURE}/.socket2.sock"
+LAST=""
+
+lookup_wallpaper() {
+  local wsid="$1"
+  # WIP-640(f). `--argjson` parses its value AS JSON, so anything that is not
+  # a bare number is a jq parse error — and Hyprland's workspace events carry
+  # NAMES, which on this build include `special:magic`. An unparseable id is
+  # simply "no mapping", not an error to shout about, so it returns here.
+  [[ "${wsid}" =~ ^-?[0-9]+$ ]] || return 0
+  jq -r --argjson id "${wsid}" \
+    '.workspaces[] | select(.id == $id) | .wallpaper // empty' "${CONF}" 2>/dev/null
+}
+
+handle_workspace() {
+  local wsid="$1"
+  local wp; wp="$(lookup_wallpaper "${wsid}")"
+  # Expand a leading tilde. Both matrices set "wall_dir": "~/.config/hypr/walls"
+  # and the skel copy of workspaces.json therefore ships LITERAL "~/..." paths.
+  # Bash does not tilde-expand the contents of a variable, so `-r "${wp}"` was
+  # testing a path that can never exist: every lookup missed, this function
+  # returned early, and the background silently never changed. Runtime regen
+  # (nyxus-sync-stations) emits absolute paths, but it only runs on a
+  # hacker-mode flip — until then, and on a first boot, this is the only thing
+  # standing between the user and a static wallpaper.
+  case "${wp}" in
+    '~')   wp="${HOME}" ;;
+    '~/'*) wp="${HOME}/${wp#\~/}" ;;
+  esac
+  if [[ -z "${wp}" || ! -r "${wp}" || "${wp}" == "${LAST}" ]]; then
+    return 0
+  fi
+  if /usr/local/bin/nyxus-set-wallpaper "${wp}" >/dev/null 2>&1; then
+    LAST="${wp}"
+    echo "[$(date -Iseconds)] ws=${wsid} -> ${wp}" >> "${LOG}"
+  fi
+}
+
+# Set the wallpaper for the workspace we boot into.
+#
+# WIP-640(f) — THE jq PARSE ERROR EVERY SESSION START LOGGED. At session
+# start this daemon can easily win the race with the compositor: `hyprctl`
+# then prints a plain-text error (or nothing) rather than JSON, and only
+# hyprctl's own stderr was redirected — so jq got that text on STDIN, failed
+# to parse it, and wrote "parse error: Invalid numeric literal" to the
+# session journal on every single boot. The pipeline is silenced and the
+# result is VALIDATED instead of trusted: if we cannot read a workspace id
+# we assume 1, which is the workspace Hyprland starts on anyway.
+INITIAL="$(hyprctl activeworkspace -j 2>/dev/null | jq -r '.id // 1' 2>/dev/null)"
+[[ "${INITIAL}" =~ ^-?[0-9]+$ ]] || INITIAL=1
+handle_workspace "${INITIAL}"
+
+# Stream events; format is "EVENT>>DATA"
+exec socat -U - UNIX-CONNECT:"${SOCK}" 2>/dev/null | while IFS= read -r line; do
+  case "${line}" in
+    workspace\>\>*)
+      wsid="${line#workspace>>}"
+      handle_workspace "${wsid}"
+      ;;
+  esac
+done

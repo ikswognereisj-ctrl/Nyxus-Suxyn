@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# nyxus-tour — guided showcase of the NYXUS desktop.   rev 2026-07-20 r1
+#
+# Walks a fresh user (or an audience) through the signature NYXUS
+# features step by step: each stop fires a rich notification explaining
+# what to press / what just happened, with optional live demonstrations.
+#
+# Usage:
+#   nyxus-tour            Run the interactive tour (notification-paced)
+#   nyxus-tour --list     Print the tour stops and exit
+#   nyxus-tour --fast     No pauses between stops (demo reel mode)
+#
+# Silent. Dark. Purely Functional.
+# © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+set -euo pipefail
+
+PAUSE=6
+FAST=0
+
+notify() {
+  command -v notify-send >/dev/null 2>&1 \
+    && notify-send -a "NYXUS Tour" "$@" || true
+}
+
+# stop <n> <title> <body>
+stop() {
+  local n="$1" title="$2" body="$3"
+  echo "[$n] ${title} — ${body}"
+  notify -u normal "◤ ${n} · ${title} ◥" "${body}"
+  (( FAST )) || sleep "${PAUSE}"
+}
+
+# ── rewritten 2026-08-05 (Q), after the owner's first hardware boot ────────
+# Every stop now describes something this build actually has. What was here
+# before was the pre-fork tour and it told a first-time user, in the product's
+# own voice, to look at "the EWW bar up top" — eww was DELETED on 2026-08-03,
+# 363 files — and to press Super+Ctrl+X for "HACKER MODE — matrix borders,
+# security stations", when there is no nyxus-hacker-mode binary anywhere in
+# this tree. The owner watched both of those arrive as notifications on his
+# first boot. A guided tour that instructs you to use a feature removed at the
+# fork reads as a broken build rather than a missing one.
+#
+# The Keybind Cheatsheet stop is kept exactly as WIP-72 left it — pointing at
+# the live Super+/ overlay rather than a docs file that does not ship.
+#
+# If you add a stop here, run the thing it describes first.
+TOUR=(
+  "Welcome|This is NYXUS, Suxyn edition — a custom Hyprland desktop. Each stop explains one thing; it takes about a minute."
+  "The Line|The bar along the bottom is the horizon. Living paint runs inside it, the dock sits on it, and the tray and clock live at its right end."
+  "Start|Press Super, or click the mark at the left of the bar, for search, pinned apps, your places and recent files."
+  "Quick Settings|Press Super+A, or click the right end of the bar, for brightness, volume, Wi-Fi, Bluetooth, Night Light and the calendar."
+  "Task View|Press Super+Tab for your desktops. They are plain numbered desktops — drag a window onto one, or click to switch."
+  "Wallpaper Studio|Start ▸ Wallpaper. Browse by category, adjust brightness, saturation and blur, set a schedule, and preview before you apply."
+  "Appearance|Start ▸ Settings ▸ Appearance re-skins the whole desktop from one accent. The bar, the lock screen and the apps all follow it."
+  "Lock Screen|Press Super+L. The lock screen carries a live clock, the weather and what is playing."
+  "The Apps|Files, Notepad, Notes, Stickies, Calculator, Clock, Calendar, Weather, Archive, Viewer, SysMon, Store and Doctor — all built for this desktop, all under Start."
+  "Keybind Cheatsheet|Lost? Press Super+/ for the live shortcut list — it reads your real Hyprland binds, so it cannot go stale like a document."
+  "Doctor|Something off? Start ▸ Doctor runs a health check on the session and offers to fix what it finds."
+  "The End|That is the surface. Everything else is in Settings. Welcome to NYXUS."
+)
+
+case "${1:-}" in
+  --list)
+    i=1
+    for t in "${TOUR[@]}"; do
+      printf '%2d. %s\n' "$i" "${t%%|*}"
+      i=$((i+1))
+    done
+    exit 0
+    ;;
+  --fast) FAST=1 ;;
+  "") ;;
+  *)
+    echo "usage: nyxus-tour [--list|--fast]" >&2
+    exit 1
+    ;;
+esac
+
+i=1
+total=${#TOUR[@]}
+for t in "${TOUR[@]}"; do
+  stop "${i}/${total}" "${t%%|*}" "${t#*|}"
+  i=$((i+1))
+done

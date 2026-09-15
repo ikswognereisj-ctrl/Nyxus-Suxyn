@@ -1,0 +1,941 @@
+#!/usr/bin/env python3
+"""
+nyxus-undo — undo the LAST TRANSACTION, not the last hour.
+
+★ WHY THIS EXISTS, and the one distinction it is built around.
+
+  This build already ships the sledgehammer. snapper is configured on the
+  btrfs install (root + home, NUMBER_LIMIT=10, timeline + cleanup timers),
+  snap-pac takes a pre/post snapshot pair around EVERY pacman transaction,
+  grub-btrfsd offers bootable snapshots, and Settings ▸ Backup lists the
+  restore points with a per-row "Roll back". That is a rollback: it throws
+  the whole system back to a moment in time and DISCARDS EVERYTHING AFTER
+  IT — the document you wrote at lunch included.
+
+  Nobody actually wants that. What a person wants is:
+
+      "that last update broke my sound — undo THAT, and leave
+       everything else I did today alone."
+
+  `snapper undochange <pre>..<post>` is exactly that, and it is not a
+  rollback: it reverts the file differences of ONE transaction and touches
+  nothing else, so work done after the update survives. This file is the
+  precise tool. Backup keeps the sledgehammer; the two sit side by side and
+  say plainly which is which.
+
+★ THE MECHANISM, VERIFIED AGAINST THE SHIPPED SNAPPER — not recalled.
+
+  Measured 2026-08-16 against snapper 0.13.1-2 / libsnapper 8.0.0, the
+  version in `packages.x86_64`, extracted from the pacman cache and run:
+
+    · `snapper undochange <n1>..<n2> [files]` exists, and its summary line
+      is `create:%d modify:%d delete:%d` ("nothing to do" when the undo
+      statistic is empty, "Invalid snapshots." when a number is bad).
+    · `snapper status <n1>..<n2>` prints one line per differing path: a
+      six-character status string then the filename. Column 1 is `+`
+      created, `-` deleted, `c` content changed, `t` type changed, `.` no
+      change. That IS the file count this page promises.
+    · `snapper --csvout list --columns <names>` is real, and the column
+      vocabulary was read out of the binary's own error message:
+      config, subvolume, number, default, active, type, date, user,
+      used-space, cleanup, description, userdata, pre-number, post-number,
+      post-date, read-only.
+    · CSV output is a header row then one row per record — measured by
+      actually running `--csvout list-configs` against a scratch root.
+
+  So this file NEVER parses snapper's human table by column position. The
+  Backup page does (`parts[5]`, `parts[6]`), and that parse silently shifts
+  the day btrfs quota is enabled and snapper grows a "Used Space" column.
+  Here every column is named on the command line and read back by header.
+
+★ THE SAFETY ORDER, which is the whole argument and is pinned by gate 13q40.
+
+  In `cmd_apply`, in this order, with nothing allowed to move ahead of it:
+
+    1. CONSENT. No `--confirm`, no undo. Returns before anything is read.
+    2. THE PLAN IS REBUILT FROM SCRATCH. The preview the person saw is not
+       trusted; every guard runs again against the system as it is NOW.
+    3. THE KERNEL GUARD. Ahead of the action, never beside it.
+    4. THE PRE-UNDO SNAPSHOT. Undo is itself a change, so the undo can be
+       undone. If the snapshot fails, NOTHING IS REVERTED — a revert with
+       no way back is the failure mode this whole file exists to avoid.
+    5. Only now, `snapper undochange`.
+    6. The initramfs regeneration, if this was a kernel transaction.
+
+★ THE KERNEL EDGE, stated because this build has already died of it once.
+
+  `nyxus-postinstall` step 3 carries the recorded lesson: a mkinitcpio fix
+  that existed on one install path and not the other shipped a machine that
+  DIED AT ITS FIRST KERNEL UPDATE. Undoing a kernel transaction is the same
+  hazard from the other side — put the old modules back under the new
+  kernel image and the machine does not boot.
+
+  Two things make it safe here, and both are CHECKED AT RUNTIME rather than
+  assumed, because only one install path is ours:
+
+    · /boot must be inside the snapshot. The Calamares layout puts the ESP
+      at /boot/efi and gives /boot no subvolume of its own, so /boot rides
+      `@` and vmlinuz + initramfs + /usr/lib/modules all come back TOGETHER.
+      The TUI/archinstall path lays out whatever the user chose, so this
+      file compares the SOURCE and FSROOT of /boot against those of /, and
+      REFUSES with the reason if /boot is outside the root snapshot.
+    · mkinitcpio must exist, and the initramfs is regenerated after the
+      revert. Absent, this file REFUSES rather than half-working.
+
+  A kernel undo is therefore either HANDLED (both conditions met, initramfs
+  regenerated) or REFUSED WITH THE REASON. There is no third path.
+
+⛔ NO TERMINAL, EVER — the owner's absolute rule (audit item 14). Everything
+   here is reached from a Settings page through pkexec, and speaks `--json`.
+
+⛔ WHAT THIS FILE WILL NOT DO
+   · It will not pick a transaction for you when there is no honest answer.
+     No pre/post pair, a pair whose "before" half has been cleaned up, a
+     last transaction that was never snapshotted at all — each is its own
+     refusal with its own exit code and its own sentence, never a spinner
+     that ends in nothing and never a fake success.
+   · It will not undo a transaction it cannot describe. The preview is
+     computed by the same function the apply re-runs; a person cannot be
+     shown one thing and given another.
+   · It will not delete a snapshot. Ever. There is no delete in this file.
+
+SURFACES
+    nyxus-undo check [--json]     the cheap, unprivileged capability report
+    nyxus-undo preview [--json]   what the last transaction was, and what
+                                  undoing it would change
+    nyxus-undo apply --confirm [--json]
+                                  do it. Refuses without --confirm.
+    --pair PRE..POST (preview/apply)
+                                  an explicit snapshot pair instead of the
+                                  newest snap-pac one. This is how
+                                  nyxus-update --rollback (CS-1053) reverts
+                                  the updater's own pre-update-/post-update-
+                                  pair through THIS engine rather than
+                                  growing a second undochange path.
+
+EXIT CODES — a page reads --json, but a shell and a log see only this
+    0   the command did what it said
+    2   usage
+    10  root is not btrfs
+    11  snapper is not installed
+    12  snapper has no configuration
+    13  no snap-pac pre/post pair exists to undo
+    14  the last transaction predates the snapshots that survive
+    15  a kernel transaction, and /boot is OUTSIDE the root snapshot
+    16  a kernel transaction, and mkinitcpio is missing
+    17  apply was called without --confirm
+    18  the pre-undo snapshot could not be taken — NOTHING was reverted
+    19  snapper undochange itself failed
+    20  the revert succeeded but the initramfs regeneration did not
+    21  a --pair named a snapshot pair that does not exist
+
+TEST HOOKS, and why they are safe
+    NYXUS_UNDO_SNAPPER      path to the snapper binary
+    NYXUS_UNDO_PACMAN_LOG   path to the pacman log
+    NYXUS_UNDO_FINDMNT      path to findmnt
+    NYXUS_UNDO_MKINITCPIO   path to mkinitcpio
+    NYXUS_UNDO_CONFIG_DIR   the snapper configs directory `check` looks in
+  They exist so the proof harness can run the REAL engine against a stubbed
+  snapper with fabricated pre/post pairs — the confined-input pattern
+  nyxus-hemera uses with NYXUS_HEMERA_HOME. They cannot be used to fool the
+  privileged path: pkexec(1) documents that it replaces the environment with
+  "a minimal known and safe environment", so nothing named here survives the
+  pkexec boundary the Settings pages call through.
+
+© 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+"""
+from __future__ import annotations
+
+import argparse
+import csv
+import io
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from datetime import datetime
+
+APP_NAME = "Undo"
+
+# ── exit codes, as named constants ───────────────────────────────────────
+# They are module-level and named because gate 13q40 asserts they are all
+# DISTINCT and all REACHED. A refusal that shares a number with another
+# refusal is a refusal a caller cannot tell apart, which is how "it just
+# didn't work" gets reported instead of the reason.
+EXIT_OK = 0
+EXIT_USAGE = 2
+EXIT_NOT_BTRFS = 10
+EXIT_NO_SNAPPER = 11
+EXIT_NO_CONFIG = 12
+EXIT_NO_PAIR = 13
+EXIT_PREDATES = 14
+EXIT_KERNEL_BOOT_SPLIT = 15
+EXIT_KERNEL_NO_MKINITCPIO = 16
+EXIT_NO_CONSENT = 17
+EXIT_SNAPSHOT_FAILED = 18
+EXIT_UNDO_FAILED = 19
+EXIT_INITRAMFS_FAILED = 20
+EXIT_PAIR_MISSING = 21
+
+# ── the refusals, in the words the page shows ────────────────────────────
+# Each key is a real code path below, each carries its own exit code, and
+# each says what is wrong AND what would make it work. "Unavailable" is not
+# an answer; it is the absence of one.
+REFUSALS = {
+    "not-btrfs": (
+        EXIT_NOT_BTRFS,
+        "Undo needs the btrfs install — this system doesn't have it.",
+        "Undoing one update means comparing two snapshots of the same "
+        "filesystem, and only the btrfs layout Suxyn installs by default "
+        "takes them. Nothing here can be undone precisely; a full "
+        "reinstall of the package is the only way back."),
+    "no-snapper": (
+        EXIT_NO_SNAPPER,
+        "snapper isn't installed.",
+        "snapper is what records the before-and-after of every update. "
+        "Install it from Backup and the next update will be undoable — "
+        "this one already isn't."),
+    "no-config": (
+        EXIT_NO_CONFIG,
+        "snapper is installed but has no configuration yet.",
+        "Nothing is being snapshotted, so there is no 'before' to go back "
+        "to. Backup can set this up; updates from then on become undoable."),
+    "no-pair": (
+        EXIT_NO_PAIR,
+        "No update has been snapshotted yet — there is nothing to undo.",
+        "snap-pac takes a pair of snapshots around every package "
+        "transaction. No pair exists on this system, so the last update "
+        "left no before-and-after to compare."),
+    "predates": (
+        EXIT_PREDATES,
+        "The last update's 'before' snapshot is already gone.",
+        "snapper keeps a limited number of restore points and the older "
+        "half of that transaction has been cleaned up, so there is nothing "
+        "left to compare it against. A full restore point from Backup is "
+        "the remaining way back."),
+    "kernel-boot-split": (
+        EXIT_KERNEL_BOOT_SPLIT,
+        "This was a kernel update, and undoing it here would leave the "
+        "machine unable to boot.",
+        "/boot is on a separate filesystem from the snapshot, so undoing "
+        "would restore the old kernel modules while the NEW kernel image "
+        "stayed in place — the exact mismatch that has already killed one "
+        "machine on this build. Refused rather than half-done."),
+    "kernel-no-mkinitcpio": (
+        EXIT_KERNEL_NO_MKINITCPIO,
+        "This was a kernel update, and the tool that rebuilds the startup "
+        "image is missing.",
+        "Putting an old kernel back without regenerating the initramfs can "
+        "leave the machine unbootable, and mkinitcpio is not on this "
+        "system to regenerate it. Refused rather than half-done."),
+    "pair-missing": (
+        EXIT_PAIR_MISSING,
+        "The named snapshot pair does not exist.",
+        "A caller asked for a specific PRE..POST pair (--pair) and at least "
+        "one of the two numbers is not a snapshot on this system, or they "
+        "are not in order. nyxus-update --rollback names the pair the "
+        "updater itself took; if snapper has since cleaned one half up, "
+        "Settings > System > Backup lists what remains."),
+    "no-consent": (
+        EXIT_NO_CONSENT,
+        "Nothing was undone — this was not confirmed.",
+        "An undo only ever runs when the person asked for it in as many "
+        "words."),
+}
+
+# ── what makes a transaction a KERNEL transaction ────────────────────────
+# Two independent signals, and the union is used, because either one alone
+# has a blind spot: a package name can be a kernel package that happened to
+# change nothing in /boot, and a path can be touched by a package whose name
+# says nothing about kernels (a DKMS module rebuild).
+#
+# The PATH signal is the authority — it is what actually changed on disk.
+KERNEL_PATH_PREFIXES = (
+    "/boot/",
+    "/usr/lib/modules/",
+    "/usr/lib/initcpio/",
+    "/usr/lib/firmware/",
+    "/etc/mkinitcpio.d/",
+)
+KERNEL_PATH_EXACT = (
+    "/etc/mkinitcpio.conf",
+    "/etc/vconsole.conf",
+)
+# The NAME signal, as regexes so a linux-6.19 flavour nobody has named yet
+# is still caught. `systemd` is here because it owns initcpio hooks; the
+# ucode packages because they are early-boot images loaded before the
+# initramfs; dkms because a rebuilt out-of-tree module is a kernel change
+# whatever the package is called.
+KERNEL_PKG_RE = re.compile(
+    r"^(linux(|-\w+)(|-headers|-docs)|"
+    r"linux-firmware(|-\w+)|"
+    r"nvidia(|-.*)|"
+    r"mkinitcpio(|-.*)|"
+    r"(|.*-)dkms|"
+    r"broadcom-wl(|-dkms)|"
+    r"intel-ucode|amd-ucode|"
+    r"systemd|systemd-libs|"
+    r"booster|dracut)$")
+
+# The pacman log's own grammar. The Updates page (`UpdatesPage._render_history`
+# in nyxus_settings_pages_system.py) reads the same file with the same shape —
+# `^\[timestamp\] ... upgraded name (versions)` — and this is deliberately the
+# only OTHER place in the build that parses it, rather than a third copy
+# inside the page for the undo feature. One parser per process: the page
+# renders what this engine reports and never re-derives it.
+PACMAN_LINE_RE = re.compile(
+    r"^\[(?P<when>[^\]]+)\]\s+\[ALPM\]\s+"
+    r"(?P<verb>installed|upgraded|removed|downgraded|reinstalled)\s+"
+    r"(?P<pkg>\S+)\s+\((?P<vers>[^)]*)\)")
+
+# Snapper's list columns, named on the command line so nothing is read by
+# position. Verified against the shipped binary's own vocabulary.
+LIST_COLUMNS = "number,type,pre-number,date,description,cleanup,userdata"
+
+
+class UndoRefused(RuntimeError):
+    """Raised when a guard says no. Carries the refusal key, nothing else.
+
+    Every raise of this ends with the system exactly as the person left it.
+    That is the entire point of the class.
+    """
+
+    def __init__(self, key: str) -> None:
+        super().__init__(key)
+        self.key = key
+
+
+# ── the tools, and the test hooks that relocate them ─────────────────────
+
+def _tool(env_name: str, default: str) -> str:
+    override = os.environ.get(env_name)
+    if override:
+        return override
+    found = shutil.which(default)
+    return found or default
+
+
+def snapper_bin() -> str:
+    return _tool("NYXUS_UNDO_SNAPPER", "snapper")
+
+
+def findmnt_bin() -> str:
+    return _tool("NYXUS_UNDO_FINDMNT", "findmnt")
+
+
+def mkinitcpio_bin() -> str:
+    return _tool("NYXUS_UNDO_MKINITCPIO", "mkinitcpio")
+
+
+def pacman_log_path() -> str:
+    return os.environ.get("NYXUS_UNDO_PACMAN_LOG", "/var/log/pacman.log")
+
+
+def config_dir_path() -> str:
+    return os.environ.get("NYXUS_UNDO_CONFIG_DIR", "/etc/snapper/configs")
+
+
+def run(argv: list, timeout: int = 120) -> tuple:
+    """(rc, stdout, stderr). Never raises on a missing binary."""
+    try:
+        p = subprocess.run(argv, capture_output=True, text=True,
+                           timeout=timeout)
+        return p.returncode, p.stdout, p.stderr
+    except FileNotFoundError:
+        return 127, "", "%s: not found" % (argv[0] if argv else "?")
+    except subprocess.TimeoutExpired:
+        return 124, "", "timed out after %ds" % timeout
+    except Exception as e:                      # pragma: no cover
+        return 1, "", str(e)
+
+
+# ── the cheap reads ──────────────────────────────────────────────────────
+
+def mount_identity(path: str) -> tuple:
+    """(source, fsroot, fstype) of whatever filesystem `path` lives on.
+
+    FSROOT is the subvolume path inside the btrfs device (`/@`, `/@home`).
+    Comparing it is how "/boot is inside the root snapshot" is decided —
+    same device AND a subvolume at or under root's — rather than guessing
+    from the installer's layout, which is only ours on one of two paths.
+    """
+    rc, out, _ = run([findmnt_bin(), "-no", "SOURCE,FSROOT,FSTYPE",
+                      "--target", path], timeout=8)
+    if rc != 0 or not out.strip():
+        return ("", "", "")
+    parts = out.strip().splitlines()[0].split()
+    while len(parts) < 3:
+        parts.append("")
+    # A btrfs SOURCE reads `/dev/sda2[/@]`; the bracket is the subvolume and
+    # FSROOT repeats it, so the device half is what we keep.
+    return (parts[0].split("[")[0], parts[1], parts[2])
+
+
+def boot_inside_root_snapshot() -> bool:
+    """True when undoing a kernel transaction brings /boot back with it."""
+    r_src, r_root, _ = mount_identity("/")
+    b_src, b_root, _ = mount_identity("/boot")
+    if not r_src or not b_src:
+        return False
+    if r_src != b_src:
+        return False
+    if b_root == r_root:
+        return True
+    prefix = r_root if r_root.endswith("/") else r_root + "/"
+    return b_root.startswith(prefix)
+
+
+def snapper_configs() -> list:
+    """The configuration names snapper knows about, or []."""
+    rc, out, _ = run([snapper_bin(), "--csvout", "list-configs",
+                      "--columns", "config"], timeout=20)
+    if rc != 0:
+        return []
+    names = []
+    for row in csv.DictReader(io.StringIO(out)):
+        name = (row.get("config") or "").strip()
+        if name:
+            names.append(name)
+    return names
+
+
+# ── snapshots ────────────────────────────────────────────────────────────
+
+def list_snapshots(config: str) -> list:
+    """Every snapshot in `config` as a dict, read BY HEADER NAME.
+
+    `--columns` names them on the command line and csv.DictReader reads
+    them back by name, so this cannot silently shift the day btrfs quota is
+    turned on and snapper grows a "Used Space" column — which is exactly
+    what a positional `line.split("|")[5]` does.
+    """
+    rc, out, err = run([snapper_bin(), "--csvout", "-c", config, "list",
+                        "--columns", LIST_COLUMNS], timeout=30)
+    if rc != 0:
+        raise UndoRefused("no-config" if "config" in (err or "").lower()
+                          else "no-pair")
+    snaps = []
+    for row in csv.DictReader(io.StringIO(out)):
+        num = (row.get("number") or "").strip()
+        if not num.isdigit() or num == "0":
+            continue            # row 0 is snapper's "current" pseudo-entry
+        snaps.append({
+            "number": int(num),
+            "type": (row.get("type") or "").strip(),
+            "pre_number": (row.get("pre-number") or "").strip(),
+            "date": (row.get("date") or "").strip(),
+            "description": (row.get("description") or "").strip(),
+            "cleanup": (row.get("cleanup") or "").strip(),
+            "userdata": (row.get("userdata") or "").strip(),
+        })
+    return snaps
+
+
+def find_last_pair(snaps: list) -> tuple:
+    """The newest complete pre/post pair, as (pre, post) dicts.
+
+    snap-pac's own record is snapper's TYPE column and its pre-number
+    linkage — not a description snap-pac happened to write, which is a
+    string that can change between releases. A `post` whose `pre-number`
+    names a snapshot that no longer exists is the cleaned-up case and gets
+    its own refusal, because "the before half is gone" and "there was never
+    a pair" are different facts with different cures.
+    """
+    by_number = {s["number"]: s for s in snaps}
+    posts = sorted((s for s in snaps if s["type"] == "post"),
+                   key=lambda s: s["number"], reverse=True)
+    if not posts:
+        raise UndoRefused("no-pair")
+    for post in posts:
+        pre_n = post["pre_number"]
+        if not pre_n.isdigit():
+            continue
+        pre = by_number.get(int(pre_n))
+        if pre is not None and pre["type"] == "pre":
+            return pre, post
+    raise UndoRefused("predates")
+
+
+def status_paths(config: str, pre: int, post: int) -> list:
+    """[(code, path)] for every path that differs between the two.
+
+    snapper status prints a six-character status string then the filename;
+    column 1 is + created, - deleted, c content, t type. That count IS the
+    "how many files would change" the page promises, so it is measured
+    here and never estimated from a package count.
+    """
+    rc, out, err = run([snapper_bin(), "-c", config, "status",
+                        "%d..%d" % (pre, post)], timeout=180)
+    if rc != 0:
+        raise UndoRefused("no-pair")
+    rows = []
+    for line in (out or "").splitlines():
+        if len(line) < 8 or " " not in line:
+            continue
+        code, _, path = line.partition(" ")
+        path = path.strip()
+        if not path.startswith("/"):
+            continue
+        rows.append((code[0], path))
+    return rows
+
+
+# ── the pacman log, for the names a person recognises ────────────────────
+
+def parse_log_time(raw: str):
+    """pacman's `2026-08-15T06:43:00-0400` timestamp, or None."""
+    raw = (raw or "").strip()
+    for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.strptime(raw, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def parse_snapper_time(raw: str):
+    """snapper's `2026-08-15 06:43:00` date column, or None."""
+    raw = (raw or "").strip()
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            return datetime.strptime(raw, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def packages_between(t0, t1) -> list:
+    """[(verb, pkg, versions)] recorded in the pacman log in that window.
+
+    Both bounds are the snapshot timestamps, so this reads exactly the
+    transaction the pair bracketed. Timezone-naive on both sides: snapper's
+    date column has no offset, pacman's has one, so the pacman side is
+    stripped to compare like with like on one machine's own clock.
+    """
+    out = []
+    if t0 is None or t1 is None:
+        return out
+    try:
+        with open(pacman_log_path(), encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                m = PACMAN_LINE_RE.match(line)
+                if not m:
+                    continue
+                when = parse_log_time(m.group("when"))
+                if when is None:
+                    continue
+                when = when.replace(tzinfo=None)
+                if t0 <= when <= t1:
+                    out.append((m.group("verb"), m.group("pkg"),
+                                m.group("vers")))
+    except OSError:
+        return out
+    return out
+
+
+# ── the kernel verdict ───────────────────────────────────────────────────
+
+def kernel_verdict(paths: list, packages: list) -> dict:
+    """Is this a kernel/initramfs transaction, and can it be handled?
+
+    The path signal is the authority — it is what actually changed. The
+    name signal catches the case where the status read was truncated or a
+    DKMS rebuild landed somewhere unexpected. The union is used because
+    being wrong in the permissive direction here is how a machine stops
+    booting.
+    """
+    hit_paths = [p for _c, p in paths
+                 if p.startswith(KERNEL_PATH_PREFIXES)
+                 or p in KERNEL_PATH_EXACT]
+    hit_pkgs = [pkg for _v, pkg, _r in packages if KERNEL_PKG_RE.match(pkg)]
+    is_kernel = bool(hit_paths) or bool(hit_pkgs)
+    verdict = {
+        "is_kernel": is_kernel,
+        "paths": sorted(set(hit_paths))[:20],
+        "packages": sorted(set(hit_pkgs)),
+        "boot_inside_snapshot": None,
+        "mkinitcpio": None,
+        "refusal": None,
+    }
+    if not is_kernel:
+        return verdict
+    verdict["boot_inside_snapshot"] = boot_inside_root_snapshot()
+    verdict["mkinitcpio"] = bool(shutil.which(mkinitcpio_bin())
+                                 or os.path.exists(mkinitcpio_bin()))
+    if not verdict["boot_inside_snapshot"]:
+        verdict["refusal"] = "kernel-boot-split"
+    elif not verdict["mkinitcpio"]:
+        verdict["refusal"] = "kernel-no-mkinitcpio"
+    return verdict
+
+
+# ── the plan: one function, so preview and apply cannot disagree ─────────
+
+def build_plan(pair=None) -> dict:
+    """Everything the person is shown, and everything apply re-checks.
+
+    `pair` is an explicit (pre, post) snapshot-number pair — the route
+    `nyxus-update --rollback` uses (CS-1053 / TRK-1313): the updater takes
+    pre-update-/post-update- snapshots around its own transaction and this
+    engine, not a second undochange path, reverts between them. Both
+    numbers must exist; a missing or misordered pair is its own refusal.
+    With pair=None the behaviour is unchanged: the newest snap-pac
+    pre/post pair, found by type and pre-number linkage.
+
+    THE PREVIEW AND THE ACTION READ THE SAME FUNCTION. That is deliberate
+    and it is the answer to "a person must never click undo and find out
+    afterwards what it meant" — there is no second, looser code path that
+    could describe the transaction differently from the one that reverts it.
+    apply calls this again rather than trusting what the page was shown, so
+    a transaction that changed underneath the window is caught.
+
+    Raises UndoRefused for every honest no.
+    """
+    _, _, root_fs = mount_identity("/")
+    if root_fs != "btrfs":
+        raise UndoRefused("not-btrfs")
+    if not (shutil.which(snapper_bin()) or os.path.exists(snapper_bin())):
+        raise UndoRefused("no-snapper")
+    configs = snapper_configs()
+    if not configs:
+        raise UndoRefused("no-config")
+    config = "root" if "root" in configs else configs[0]
+
+    snaps = list_snapshots(config)
+    if pair is not None:
+        by_number = {s["number"]: s for s in snaps}
+        pre = by_number.get(pair[0])
+        post = by_number.get(pair[1])
+        if pre is None or post is None or pair[0] >= pair[1]:
+            raise UndoRefused("pair-missing")
+    else:
+        pre, post = find_last_pair(snaps)
+    paths = status_paths(config, pre["number"], post["number"])
+    t0 = parse_snapper_time(pre["date"])
+    t1 = parse_snapper_time(post["date"])
+    packages = packages_between(t0, t1)
+    kernel = kernel_verdict(paths, packages)
+
+    counts = {"created": 0, "deleted": 0, "modified": 0, "other": 0}
+    for code, _p in paths:
+        if code == "+":
+            counts["created"] += 1
+        elif code == "-":
+            counts["deleted"] += 1
+        elif code == "c":
+            counts["modified"] += 1
+        else:
+            counts["other"] += 1
+
+    label = post["description"] or pre["description"] or "package transaction"
+    return {
+        "config": config,
+        "pre": pre["number"],
+        "post": post["number"],
+        "when": pre["date"] or post["date"],
+        "label": label,
+        "files": len(paths),
+        "counts": counts,
+        "packages": [{"verb": v, "name": n, "versions": r}
+                     for v, n, r in packages],
+        "package_count": len(packages),
+        "kernel": kernel,
+        "sample": [{"code": c, "path": p} for c, p in paths[:40]],
+    }
+
+
+# ── the three privileged steps, each its own function so the ORDER of the
+#    calls in cmd_apply is a thing a gate can read ────────────────────────
+
+def _create_pre_undo_snapshot(config: str, pre: int, post: int) -> tuple:
+    """(number, error). Taken BEFORE the revert so the undo can be undone.
+
+    `important=yes` puts it under NUMBER_LIMIT_IMPORTANT rather than the
+    ordinary NUMBER_LIMIT — both are 10 in the config this build writes
+    (nyxus-postinstall step 4b and the Calamares shellprocess twin), so the
+    way back from an undo cannot be pruned by ordinary update churn.
+    """
+    desc = "before undo of #%d..#%d" % (pre, post)
+    rc, out, err = run([
+        snapper_bin(), "-c", config, "create",
+        "--type", "single",
+        "--cleanup-algorithm", "number",
+        "--userdata", "important=yes,nyxus-undo=safety",
+        "--description", desc,
+        "--print-number"], timeout=180)
+    if rc != 0:
+        return (None, (err or out or "snapper create failed").strip())
+    num = (out or "").strip().splitlines()
+    return ((num[-1].strip() if num else ""), None)
+
+
+def _run_undochange(config: str, pre: int, post: int) -> tuple:
+    """The revert itself. The ONLY call to snapper undochange in this build.
+
+    Gate 13q40 pins that: exactly one caller (`cmd_apply`), unreachable from
+    preview or check at any depth, and the word `undochange` appears in no
+    other subprocess argv in this file.
+    """
+    rc, out, err = run([snapper_bin(), "-c", config, "undochange",
+                        "%d..%d" % (pre, post)], timeout=1800)
+    return (rc, ((out or "") + (err or "")).strip())
+
+
+def _regenerate_initramfs() -> tuple:
+    """mkinitcpio -P, after a kernel undo. Runs LAST, never instead."""
+    rc, out, err = run([mkinitcpio_bin(), "-P"], timeout=1800)
+    return (rc, ((out or "") + (err or "")).strip())
+
+
+# ── commands ─────────────────────────────────────────────────────────────
+
+def _refusal_payload(key: str) -> dict:
+    code, headline, detail = REFUSALS[key]
+    return {"ok": False, "refusal": key, "exit": code,
+            "headline": headline, "detail": detail}
+
+
+def _emit(payload: dict, as_json: bool) -> None:
+    if as_json:
+        json.dump(payload, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return
+    if payload.get("refusal"):
+        print(payload["headline"])
+        print(payload["detail"])
+        return
+    for line in payload.get("lines", []):
+        print(line)
+
+
+def cmd_check(args) -> int:
+    """The cheap capability read. Deliberately touches no snapshot.
+
+    This is what a page may call on every visit: four unprivileged facts and
+    no snapper subprocess that needs root, so opening Settings never raises
+    an authentication prompt on its own.
+    """
+    _, _, root_fs = mount_identity("/")
+    have_snapper = bool(shutil.which(snapper_bin())
+                        or os.path.exists(snapper_bin()))
+    try:
+        cfg_dir = config_dir_path()
+        configured = os.path.isdir(cfg_dir) and bool(os.listdir(cfg_dir))
+    except OSError:
+        configured = None       # unreadable without privilege — not "no"
+    payload = {
+        "ok": True,
+        "root_fs": root_fs,
+        "btrfs": root_fs == "btrfs",
+        "snapper": have_snapper,
+        "configured": configured,
+        "boot_inside_snapshot": boot_inside_root_snapshot(),
+        "mkinitcpio": bool(shutil.which(mkinitcpio_bin())),
+    }
+    if root_fs != "btrfs":
+        payload.update(_refusal_payload("not-btrfs"))
+        _emit(payload, args.json)
+        return EXIT_NOT_BTRFS
+    if not have_snapper:
+        payload.update(_refusal_payload("no-snapper"))
+        _emit(payload, args.json)
+        return EXIT_NO_SNAPPER
+    if configured is False:
+        payload.update(_refusal_payload("no-config"))
+        _emit(payload, args.json)
+        return EXIT_NO_CONFIG
+    payload["lines"] = ["undo is available on this system"]
+    _emit(payload, args.json)
+    return EXIT_OK
+
+
+def cmd_preview(args) -> int:
+    """Say what would happen. Changes nothing, and cannot: no function it
+    reaches, at any depth, creates or reverts a snapshot."""
+    try:
+        plan = build_plan(getattr(args, "pair", None))
+    except UndoRefused as r:
+        payload = _refusal_payload(r.key)
+        _emit(payload, args.json)
+        return payload["exit"]
+
+    kernel = plan["kernel"]
+    if kernel["refusal"]:
+        payload = _refusal_payload(kernel["refusal"])
+        payload["plan"] = plan
+        _emit(payload, args.json)
+        return payload["exit"]
+
+    c = plan["counts"]
+    lines = [
+        "%s" % plan["label"],
+        "ran %s · snapshots #%d → #%d" % (plan["when"], plan["pre"],
+                                          plan["post"]),
+        "%d package%s changed" % (plan["package_count"],
+                                  "" if plan["package_count"] == 1 else "s"),
+        "%d file%s would change back "
+        "(%d restored, %d removed, %d re-created)"
+        % (plan["files"], "" if plan["files"] == 1 else "s",
+           c["modified"], c["created"], c["deleted"]),
+    ]
+    if kernel["is_kernel"]:
+        lines.append("this is a kernel update — the startup image will be "
+                     "rebuilt after the undo")
+    payload = {"ok": True, "refusal": None, "plan": plan, "lines": lines}
+    _emit(payload, args.json)
+    return EXIT_OK
+
+
+def cmd_apply(args) -> int:
+    """Undo it — in the one order that is safe, and no other.
+
+    ★ THE ORDER IS THE SAFETY ARGUMENT, and gate 13q40 reads it as line
+      numbers rather than as a comment:
+
+        consent → plan → kernel guard → PRE-UNDO SNAPSHOT → revert → initramfs
+
+      Nothing may be inserted ahead of the consent return, and the revert
+      may not be reached until the snapshot that undoes it exists.
+    """
+    # 1 · CONSENT. Before any read, before any subprocess.
+    if not args.confirm:
+        payload = _refusal_payload("no-consent")
+        _emit(payload, args.json)
+        return EXIT_NO_CONSENT
+
+    # 2 · the plan, rebuilt from the system as it is NOW — never the one
+    #     the page was holding, which may be minutes old.
+    try:
+        plan = build_plan(getattr(args, "pair", None))
+    except UndoRefused as r:
+        payload = _refusal_payload(r.key)
+        _emit(payload, args.json)
+        return payload["exit"]
+
+    # 3 · THE KERNEL GUARD, ahead of the action and not beside it.
+    kernel = plan["kernel"]
+    if kernel["refusal"]:
+        payload = _refusal_payload(kernel["refusal"])
+        payload["plan"] = plan
+        _emit(payload, args.json)
+        return payload["exit"]
+
+    # 4 · THE PRE-UNDO SNAPSHOT. Undo is a change; this is the way back
+    #     from it. If it fails, NOTHING is reverted — a revert with no way
+    #     back is worse than the broken update the person came here with.
+    safety, snap_err = _create_pre_undo_snapshot(
+        plan["config"], plan["pre"], plan["post"])
+    if snap_err is not None:
+        payload = {
+            "ok": False, "refusal": "snapshot-failed",
+            "exit": EXIT_SNAPSHOT_FAILED,
+            "headline": "Nothing was undone — the safety snapshot failed.",
+            "detail": "An undo is itself a change, so a restore point is "
+                      "taken first and the undo does not run without one. "
+                      "snapper said: " + snap_err,
+            "plan": plan}
+        _emit(payload, args.json)
+        return EXIT_SNAPSHOT_FAILED
+
+    # 5 · only now, the revert.
+    rc, undo_out = _run_undochange(plan["config"], plan["pre"], plan["post"])
+    if rc != 0:
+        payload = {
+            "ok": False, "refusal": "undo-failed",
+            "exit": EXIT_UNDO_FAILED,
+            "headline": "The undo did not complete.",
+            "detail": "snapper undochange exited %d: %s. Restore point #%s "
+                      "was taken before it started." % (rc, undo_out, safety),
+            "safety_snapshot": safety, "plan": plan}
+        _emit(payload, args.json)
+        return EXIT_UNDO_FAILED
+
+    # 6 · the initramfs, if this was a kernel transaction. Last, and only
+    #     ever in addition to the revert.
+    initramfs = None
+    if kernel["is_kernel"]:
+        irc, iout = _regenerate_initramfs()
+        initramfs = {"rc": irc, "output": iout[-4000:]}
+        if irc != 0:
+            payload = {
+                "ok": False, "refusal": "initramfs-failed",
+                "exit": EXIT_INITRAMFS_FAILED,
+                "headline": "The update was undone, but the startup image "
+                            "could not be rebuilt.",
+                "detail": "DO NOT REBOOT until this is resolved. mkinitcpio "
+                          "exited %d: %s. Restore point #%s holds the state "
+                          "from before the undo." % (irc, iout[-400:], safety),
+                "safety_snapshot": safety, "initramfs": initramfs,
+                "plan": plan}
+            _emit(payload, args.json)
+            return EXIT_INITRAMFS_FAILED
+
+    payload = {
+        "ok": True, "refusal": None,
+        "headline": "Undone.",
+        "detail": "%s was reverted. Restore point #%s holds the state from "
+                  "before the undo, so this can itself be undone."
+                  % (plan["label"], safety),
+        "safety_snapshot": safety,
+        "undo_output": undo_out,
+        "initramfs": initramfs,
+        "plan": plan,
+        "lines": ["Undone: " + plan["label"],
+                  undo_out,
+                  "restore point #%s holds the state from before the undo"
+                  % safety],
+    }
+    if kernel["is_kernel"]:
+        payload["lines"].append("startup image rebuilt (mkinitcpio -P)")
+    _emit(payload, args.json)
+    return EXIT_OK
+
+
+def _pair_arg(text: str):
+    """PRE..POST as two snapshot numbers — the shape snapper itself uses."""
+    m = re.match(r"^(\d+)\.\.(\d+)$", text)
+    if not m:
+        raise argparse.ArgumentTypeError(
+            "expected PRE..POST (two snapshot numbers, e.g. 41..42)")
+    return (int(m.group(1)), int(m.group(2)))
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(
+        prog="nyxus-undo",
+        description="Undo the last package transaction — not a rollback.")
+    ap.add_argument("--json", action="store_true",
+                    help="machine-readable output for the Settings page")
+    sub = ap.add_subparsers(dest="cmd")
+
+    p_check = sub.add_parser("check", help="cheap capability report")
+    p_check.add_argument("--json", action="store_true")
+    p_check.set_defaults(func=cmd_check)
+
+    p_prev = sub.add_parser("preview", help="what undoing would change")
+    p_prev.add_argument("--json", action="store_true")
+    p_prev.add_argument("--pair", type=_pair_arg, metavar="PRE..POST",
+                        help="an explicit snapshot pair instead of the "
+                             "newest snap-pac one (nyxus-update --rollback)")
+    p_prev.set_defaults(func=cmd_preview)
+
+    p_app = sub.add_parser("apply", help="undo it (requires --confirm)")
+    p_app.add_argument("--json", action="store_true")
+    p_app.add_argument("--confirm", action="store_true",
+                       help="the person asked for this in as many words")
+    p_app.add_argument("--pair", type=_pair_arg, metavar="PRE..POST",
+                       help="an explicit snapshot pair instead of the "
+                            "newest snap-pac one (nyxus-update --rollback)")
+    p_app.set_defaults(func=cmd_apply)
+
+    args = ap.parse_args(argv)
+    if not getattr(args, "cmd", None):
+        ap.print_help()
+        return EXIT_USAGE
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

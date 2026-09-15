@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Hold the last splash frame until the greeter has started drawing.
+#
+# WIP-618 round 4 killed Plymouth in greetd's ExecStartPre — before regreet's
+# cold start — and the committed timelines measure the black gap growing
+# 4.5s → 7.2s. Owner 08-18: hold the still until the login box is up.
+#
+# Called from greetd.service ExecStartPost. The "-" prefix on that line
+# means a failure here cannot block login. After TIMEOUT seconds we quit
+# Plymouth anyway so a missing cage cannot leave the splash stuck.
+#
+# © 2026 JOSEPH A. SIERENGOWSKI - NYX-J5W-2026-SIERENGOWSKI-LOCKED
+set +e
+TIMEOUT="${NYX_PLYMOUTH_HOLD_SECS:-12}"
+start=$SECONDS
+while (( SECONDS - start < TIMEOUT )); do
+  if pgrep -x cage >/dev/null 2>&1 || pgrep -x regreet >/dev/null 2>&1; then
+    sleep 0.4
+    /usr/bin/plymouth quit --retain-splash >/dev/null 2>&1 || true
+    exit 0
+  fi
+  sleep 0.2
+done
+/usr/bin/plymouth quit --retain-splash >/dev/null 2>&1 || true
+exit 0

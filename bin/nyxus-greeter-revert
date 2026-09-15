@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Boot 1 arms. Boot 2 rescues. See alien-fix-deadman.sh for why.
+LOG=/var/log/nyxus-greeter-chain.log
+MARK=/var/lib/nyxus/greeter-trial
+BACKUP="/etc/greetd/config.toml.bak-qs-20260911-022657"
+if [ ! -e "$MARK" ]; then
+  date -Is > "$MARK"
+  echo "$(date -Is) trial boot — leaving the new greeter in place" >> "$LOG"
+  exit 0
+fi
+if [ -f "$BACKUP" ]; then
+  cp -a "$BACKUP" /etc/greetd/config.toml
+  echo "$(date -Is) second boot without disarm — restored the previous greeter" >> "$LOG"
+fi

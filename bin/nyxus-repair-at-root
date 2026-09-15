@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# Restore the DEFAULT btrfs root (@) from snapshot 169 (2026-09-11 02:00).
+#
+# You are booted on @snapshots/169. A normal reboot loads subvol=/@ —
+# that copy still has the login/boot pass that hung after splash with
+# no TTY. This copies known-good boot + greetd files from 169 onto @.
+# It does NOT enable the Quickshell greeter. It does NOT mkinitcpio.
+#
+#   sudo ~/.local/bin/nyxus-repair-at-root
+set -euo pipefail
+
+SNAP=/.snapshots/169/snapshot
+DEV=/dev/nvme0n1p1
+MNT=/tmp/nyxus-at-root
+STAMP=$(date +%Y%m%d-%H%M%S)
+# Backups land in the invoking user's data dir, not a hardcoded account.
+# SUDO_USER is set by sudo; fall back to $HOME so a root shell still works.
+OWNER_HOME=$(getent passwd "${SUDO_USER:-$USER}" | cut -d: -f6)
+OWNER_HOME=${OWNER_HOME:-$HOME}
+BAK=${OWNER_HOME}/.local/share/nyxus/lockout-backup-${STAMP}
+
+if [[ ${EUID} -ne 0 ]]; then
+  cat <<EOF
+You are on the 2am snapshot. The next normal reboot boots @, which is
+still the hung login. Restore @ from snapshot 169:
+
+  sudo $0
+
+That only copies known-good GTK greeter + initramfs + GRUB + splash
+from 169 onto @. It will not flip greetd to Quickshell.
+EOF
+  exit 1
+fi
+
+[[ -d "$SNAP/etc/greetd" ]] || { echo "missing $SNAP" >&2; exit 1; }
+[[ -s "$SNAP/boot/initramfs-linux.img" ]] || { echo "missing 169 initramfs" >&2; exit 1; }
+grep -q 'command = "/usr/local/bin/nyxus-greeter"' "$SNAP/etc/greetd/config.toml"
+
+mkdir -p "$MNT" "$BAK"
+if ! findmnt "$MNT" >/dev/null; then
+  mount -o subvol=/@ "$DEV" "$MNT"
+fi
+
+restore() {
+  local rel=$1
+  local src="$SNAP$rel"
+  local dst="$MNT$rel"
+  [[ -e "$src" ]] || { echo "SKIP missing in 169: $rel" >&2; return 0; }
+  mkdir -p "$(dirname "$dst")" "$(dirname "$BAK$rel")"
+  if [[ -e "$dst" ]]; then
+    cp -a "$dst" "$BAK$rel"
+  fi
+  cp -a "$src" "$dst"
+  echo "restored $rel"
+}
+
+restore /etc/greetd/config.toml
+restore /etc/systemd/system/greetd.service.d/plymouth-handoff.conf
+restore /usr/local/bin/nyxus-greeter
+restore /usr/local/bin/nyxus-greeter-chain
+restore /usr/local/bin/nyxus-greeter-qs
+restore /usr/local/bin/nyxus-plymouth-hold-until-greeter
+restore /etc/default/grub
+restore /boot/grub/grub.cfg
+restore /boot/initramfs-linux.img
+restore /boot/initramfs-linux-fallback.img
+restore /usr/share/plymouth/themes/suxyn/suxyn.script
+restore /usr/share/plymouth/themes/suxyn/hero.png
+
+if [[ -d "$SNAP/usr/share/grub/themes/nyxus" ]]; then
+  mkdir -p "$BAK/usr/share/grub/themes/nyxus"
+  cp -a "$MNT/usr/share/grub/themes/nyxus/." "$BAK/usr/share/grub/themes/nyxus/" 2>/dev/null || true
+  cp -a "$SNAP/usr/share/grub/themes/nyxus/." "$MNT/usr/share/grub/themes/nyxus/"
+  echo "restored /usr/share/grub/themes/nyxus"
+fi
+
+# Prove the default root is GTK login again, not the QS chain.
+cmd=$(awk '/^command =/{print; exit}' "$MNT/etc/greetd/config.toml")
+if [[ "$cmd" != *'/usr/local/bin/nyxus-greeter"' ]]; then
+  echo "ERROR: @ greetd command is not GTK nyxus-greeter: $cmd" >&2
+  umount "$MNT"
+  exit 3
+fi
+if grep -q 'ExecStartPre=.*plymouth deactivate' \
+     "$MNT/etc/systemd/system/greetd.service.d/plymouth-handoff.conf"; then
+  echo "handoff: plymouth deactivate restored (this is the known-good gap, not a hang)"
+else
+  echo "ERROR: @ handoff missing plymouth deactivate" >&2
+  umount "$MNT"
+  exit 3
+fi
+
+umount "$MNT"
+echo
+echo "OK. @ is the 2am GTK login again."
+echo "backup of the hung files: $BAK"
+echo "Next reboot: pick the normal Nyxus entry (not a snapshot)."
+echo "Do not run nyxus-finish-login-boot — that path is retired."

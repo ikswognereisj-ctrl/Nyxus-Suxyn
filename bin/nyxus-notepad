@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# NYXUS_APP_DIR lets the preview session (scripts/suxyn-session) run the copy
+# in git instead of the one installed at /opt/nyxus. On a real install the
+# variable is unset and this is exactly the path it always was.
+APP_DIR="${NYXUS_APP_DIR:-/opt/nyxus}"
+export PYTHONPATH="${APP_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
+exec python3 "${APP_DIR}/nyxus_notepad.py" "$@"

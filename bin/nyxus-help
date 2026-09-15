@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Nyxus Suxyn — raise glass Help. Never GTK nyxus_help.py.
+set -u
+if [[ "${1:-}" == "--list" ]]; then
+  exec python3 "$HOME/.config/quickshell/help-io.py" list
+fi
+if ! command -v qs >/dev/null 2>&1; then
+  echo "Help needs the desktop shell (qs)." >&2; exit 2
+fi
+if [[ -n "${1:-}" ]]; then
+  out="$(qs ipc call help at "$1" 2>&1)" || true
+else
+  out="$(qs ipc call help engage 2>&1)" || true
+fi
+if [[ "${out}" == *"Target not found."* ]]; then
+  out="$(qs ipc call nyxus help 2>&1)" || true
+fi
+printf '%s\n' "${out}"
+exit 0

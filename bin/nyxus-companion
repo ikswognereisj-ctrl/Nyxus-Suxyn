@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+echo "nyxus-companion: disabled on Suxyn" >&2
+exit 0

@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# ── THE DESKTOP LAUNCHER (committed copy) ────────────────────────────────────
+# There are TWO of these and they must agree:
+#
+#   1. this file, which ships in airootfs and is what scripts/suxyn-session puts
+#      on PATH for the preview session (REPO_BIN);
+#   2. the one build-iso.sh generates into ${LBIN} at bake time.
+#
+# On 2026-08-08 only (2) was fixed, and this one still read
+# `exec python3 "${NYXUS_APP_DIR:-/opt/nyxus}"/desktop/nyxus_desktop.py`. The
+# result: the ISO was correct and every preview session still reproduced the
+# original bug -- a 200x200 grey Adwaita toplevel floating over the wallpaper --
+# so the harness used to CHECK the fix was the one place the fix had not landed.
+#
+# WHY THE PRELOAD (see WIP-174): nyxus_desktop.py is a GTK4 layer-shell app, and
+# gtk4-layer-shell has a hard load-order contract -- the library must be in the
+# process BEFORE GTK opens its Wayland connection. From Python that is
+# impossible from inside the script: `from gi.repository import Gtk` initialises
+# GTK at import time, and the layer-shell import necessarily comes after it.
+# Loaded late the library does not raise. `init_for_window()` silently no-ops
+# and the window degrades to an ordinary toplevel.
+#
+# TRIAGE, because this will be hit again: a real layer surface appears in
+# `hyprctl layers` and NEVER in `hyprctl clients`. If `hyprctl clients` lists
+# class com.nyxus.desktop, the preload did not take.
+#
+# The path is resolved at RUNTIME rather than baked, so a soname bump cannot
+# silently disable the desktop, and any existing LD_PRELOAD is preserved.
+
+_ls_so=""
+for _c in /usr/lib/libgtk4-layer-shell.so /usr/lib64/libgtk4-layer-shell.so \
+          /usr/lib/*/libgtk4-layer-shell.so /usr/lib/libgtk4-layer-shell.so.*; do
+    [ -e "$_c" ] || continue
+    _ls_so="$_c"
+    break
+done
+
+if [ -n "$_ls_so" ]; then
+    export LD_PRELOAD="${_ls_so}${LD_PRELOAD:+:$LD_PRELOAD}"
+else
+    # Fail LOUD. Without the preload the desktop still "runs" -- it just runs as
+    # a grey box on top of everything, which is far harder to diagnose than a
+    # window that never appears.
+    echo "nyxus-desktop: libgtk4-layer-shell.so not found; the desktop will" \
+         "render as a plain window, not a layer surface. Install" \
+         "gtk4-layer-shell." >&2
+fi
+
+exec python3 "${NYXUS_APP_DIR:-/opt/nyxus}"/desktop/nyxus_desktop.py "$@"

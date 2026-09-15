@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────────────────────
+# nyxus-install-live — the live ISO's one-click route into Calamares (WIP-631)
+#
+# WHY THIS FILE EXISTS
+#
+# `install-nyxus.desktop` used to run `Exec=pkexec calamares` directly. pkexec
+# SCRUBS THE ENVIRONMENT, so root-calamares never saw WAYLAND_DISPLAY or
+# XDG_RUNTIME_DIR, fell back to Xwayland with no XAUTHORITY ("Authorization
+# required, but no authorization protocol specified"), found no usable Qt
+# platform plugin and SIGABRTed *before polkit was ever consulted* — no window,
+# no prompt, no journal line. Every session since 2026-08-08 read that silent
+# no-op as a harness fault. Two calamares coredumps from the 08-13 bake's VM
+# are the receipt (docs/proof/vm-audit-2026-08-13-rel3/, WIP-631).
+#
+# The fix proven live in that session was
+#     pkexec env WAYLAND_DISPLAY=… XDG_RUNTIME_DIR=… QT_QPA_PLATFORM=wayland calamares
+# which opened the branded installer over Wayland — but routing through
+# /usr/bin/env is WRONG as a shipped form: com.nyxus.plymouth.policy and
+# com.nyxus.loginscreen.policy both annotate exec.path=/usr/bin/env, so pkexec
+# matched one of THOSE actions and demanded an admin password. (The WIP-631 row
+# attributes that annotation to "the nyxus-welcome policy"; the two files above
+# are the real owners — corrected here, 2026-08-15, BS.)
+#
+# So the shipped form is this wrapper: its own polkit action
+# (com.nyxus.install, annotated at THIS path) plus the 49-nyxus-calamares rule
+# re-keyed to it. pkexec can then match exactly one action, the live user gets
+# no prompt, and the environment is rebuilt on the root side of the scrub.
+#
+# THE VALUES ARE DERIVED AT RUNTIME, ON PURPOSE — NEVER BAKED IN.
+# WIP-642 is the recorded trap: a literal $WAYLAND_DISPLAY was substituted at
+# CONFIG-PARSE time and pinned the wrong socket forever. The uid comes from
+# pkexec itself, the runtime dir from the uid, and the Wayland socket from
+# LOOKING at what is actually there — "wayland-1" is an observation from one
+# VM, not a constant.
+#
+# Deliberately NOT forwarded: "$@". This action is password-free for the live
+# user by design, so it must not be a way to hand arbitrary argv to a root
+# process. The desktop entry passes no arguments and neither does this.
+#
+# Owner: A / BS. Ships via airootfs (the restore loop in build-iso.sh reinstalls
+# every committed usr/local/bin launcher LAST at 0755 — the two-copy rule's one
+# inversion), so there is deliberately no nyxus-scripts twin of this file.
+# ─────────────────────────────────────────────────────────────────────────────
+set -uo pipefail
+
+_say() { printf '[nyxus-install-live] %s\n' "$*" >&2; }
+
+# ── 1. whose session is this? ────────────────────────────────────────────────
+# pkexec exports PKEXEC_UID with the CALLING user's uid; sudo exports SUDO_UID.
+# Both are read at runtime. The `nyx` lookup is the live-ISO fallback for a
+# direct root invocation (a serial console, a rescue shell); 1000 is the last
+# resort so the script still has something to try rather than dying silently.
+_uid="${PKEXEC_UID:-${SUDO_UID:-}}"
+if [[ -z "${_uid}" ]]; then
+  _uid="$(id -u nyx 2>/dev/null || true)"
+fi
+[[ -z "${_uid}" ]] && _uid=1000
+
+# ── 2. the runtime dir follows from the uid ──────────────────────────────────
+_rt="/run/user/${_uid}"
+if [[ ! -d "${_rt}" ]]; then
+  _say "no ${_rt} — falling back to XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-<unset>}"
+  _rt="${XDG_RUNTIME_DIR:-/run/user/1000}"
+fi
+
+# ── 3. the Wayland socket is FOUND, not assumed ──────────────────────────────
+# The glob also matches wayland-N.lock, which is a regular file; -S keeps only
+# the real socket. First match wins — a live session has exactly one.
+_wl=""
+for _s in "${_rt}"/wayland-*; do
+  [[ -S "${_s}" ]] || continue
+  _wl="${_s##*/}"
+  break
+done
+
+# ── 4. rebuild what pkexec scrubbed, then hand over ──────────────────────────
+export XDG_RUNTIME_DIR="${_rt}"
+if [[ -n "${_wl}" ]]; then
+  export WAYLAND_DISPLAY="${_wl}"
+  export QT_QPA_PLATFORM=wayland
+  _say "launching calamares on ${_wl} (uid ${_uid}, ${_rt})"
+else
+  # No socket to hand Qt. Say so loudly instead of forcing a platform that
+  # cannot work — an honest journal line beats another silent SIGABRT.
+  _say "WARNING: no wayland socket under ${_rt}; letting Qt pick its own platform"
+fi
+
+# ── 4b. the FDE arm switch (TRK-1370..1375, CS-1052) ─────────────────────────
+# The installer's "Encrypt system" checkbox ships HIDDEN
+# (enableLuksAutomatedPartitioning: false in partition.conf — WIP-585, owner
+# ruling: never re-offer an unwired checkbox). The wiring behind it now
+# exists, but the checkbox stays hidden until the whole path is proven
+# install→boot→unlock in a VM on BOTH firmware paths ON THIS SHA (TRK-1375).
+# This block is the arm switch for that proof and for the day the owner
+# flips it: `touch /etc/nyxus/fde-enabled` in the live session (its /etc is
+# a cow overlay; nothing persists to the medium), relaunch the installer,
+# and the checkbox appears. The file ships ABSENT and no bake creates it.
+# We run as root here (pkexec), so the sed needs no extra privilege. The
+# grep-after is the honesty check: a sed whose pattern silently matches
+# nothing must not report success (the config-clobber lesson), and gate
+# 13s81 proves at verify time that this exact pattern still bites the
+# shipped partition.conf.
+if [[ -e /etc/nyxus/fde-enabled ]]; then
+  sed -i 's/^enableLuksAutomatedPartitioning: false$/enableLuksAutomatedPartitioning: true/' \
+      /etc/calamares/modules/partition.conf 2>/dev/null || true
+  if grep -q '^enableLuksAutomatedPartitioning: true$' /etc/calamares/modules/partition.conf 2>/dev/null; then
+    _say "FDE flag present — the installer's LUKS option is armed for this session"
+  else
+    _say "WARNING: /etc/nyxus/fde-enabled is set but partition.conf could not be armed (pattern drift?) — installing WITHOUT encryption"
+  fi
+fi
+
+_cala="$(command -v calamares 2>/dev/null || true)"
+if [[ -z "${_cala}" ]]; then
+  _cala=/usr/bin/calamares
+fi
+if [[ ! -x "${_cala}" ]]; then
+  _say "FATAL: calamares is not installed at ${_cala}"
+  # Look-seat / host has the wrapper on PATH but no Calamares. pkexec of a
+  # missing /usr/local/bin copy is a silent desktop no-op (TTY1 2026-08-25:
+  # rc 127 "Error accessing ... No such file"). Once the click reaches THIS
+  # file, say so on the session bus instead of only on stderr.
+  if command -v notify-send >/dev/null 2>&1; then
+    notify-send -a "Install Nyxus Suxyn" -u critical \
+      "Installer unavailable" \
+      "Calamares is not on this session. The Install icon is for the live USB."
+  fi
+  exit 127
+fi
+
+# WIP-588: a cancelled or failed install leaves /tmp/calamares-root-* mounted.
+# The next run then hides Erase disk ("No partitions ( any-mounted? true )").
+# Unmount those trees before Calamares starts. Non-fatal: a busy mount is a
+# warn in the journal, not a reason to skip the installer.
+for _root in /tmp/calamares-root-*; do
+  [[ -e "${_root}" ]] || continue
+  _say "unmounting stale ${_root} (WIP-588)"
+  umount -R "${_root}" >/dev/null 2>&1 || true
+done
+
+exec "${_cala}"

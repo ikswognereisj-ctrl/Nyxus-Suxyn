@@ -1,0 +1,984 @@
+#!/usr/bin/env python3
+# ============================================================
+#  Nyxus Suxyn — login. The greeter. Not a still.
+#  © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+#
+#  Owner 2026-08-18, late: this plane. Not the radial orbs, not a mark,
+#  not a moon. Starlight still as the ground. Two hairline fields — name,
+#  then password. Simple, and striking because everything else is gone.
+#
+#  2026-08-26 (TRK-2981): the same two fields, now in a quiet Nyxus Glass
+#  well (Crown + Lip + Sheen + Glaze) so login matches the signed desktop
+#  instead of sitting as type on a photograph. Hairlines are glacier seams,
+#  not white-at-low-alpha. Still no orbs, no clock, no power row.
+#
+#  Stock regreet cannot draw this, so this process IS the login.
+#  nyxus-greeter launches it first; regreet stays as fallback.
+# ============================================================
+from __future__ import annotations
+
+import argparse
+import configparser
+import io
+import json
+import os
+import pwd
+import socket
+import time
+import struct
+import sys
+from pathlib import Path
+import math
+
+import cairo
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Gdk", "4.0")
+from gi.repository import Gdk, GLib, Gtk, Pango, PangoCairo  # noqa: E402
+from PIL import Image  # noqa: E402
+
+TEXT = (237 / 255, 241 / 255, 255 / 255, 1.0)
+# Resting hairline is a SEAM, not white-at-low-alpha (that is a grey;
+# HORIZON §3.5). glacier[0] at the same alpha the CSS card uses for idle
+# edges. Focus/hover stay glacier[0] solid / glacier[5] — STATE, two hues.
+SEAM = (127 / 255, 232 / 255, 255 / 255)
+CAPTION = (168 / 255, 174 / 255, 204 / 255, 1.0)  # #a8aecc
+VOID = (2 / 255, 5 / 255, 6 / 255)
+# WHICH FIELD TAKES YOUR KEYS (TRK-1462). The plane paints its own hairlines,
+# so without this the two fields were indistinguishable at rest and while
+# focused -- a keyboard user could not tell which one a keystroke would land
+# in. The FOCUSED field's hairline is glacier[0] #7fe8ff (14.50:1 on void
+# #020506, solid), the same focus stop regreet.css wears on this surface; a
+# hovered, unfocused field is glacier[5] #b7e6f2 (15.21:1). The resting
+# hairline, the text and the Starlight ground are untouched.
+#
+# The 2026-08-21 pass painted this focus line the withdrawn periwinkle mix.
+# WITHDRAWN
+# 2026-08-22 (TRK-1460): the owner rejected that colour and ordered the bake's
+# palette. The MECHANISM below is kept -- it is an accessibility fix, not a
+# colour -- and wears the bake's own focus stop. Gate 13t80 forbids the four
+# periwinkle hexes tree-wide.
+FOCUS = (127 / 255, 232 / 255, 255 / 255)    # #7fe8ff glacier[0]
+HOVER = (183 / 255, 230 / 255, 242 / 255)    # #b7e6f2 glacier[5]
+ERR = (1.0, 92 / 255, 122 / 255, 1.0)
+
+# ── TRK-3250 · THE LOGIN CARD, 2026-08-28 ────────────────────────────────
+# Owner, repeatedly: redesign the login card. The reference he gave is a
+# capture of his own desktop widgets
+# (nyxus-mockups-2026-08-27/REFERENCE-this-is-how-it-should-look.png), and
+# the material there is not glass at all:
+#
+#   an OPAQUE near-black slab (Theme.elevated #071318), a fine glacier
+#   seam, a soft outer glow, restrained ice-white text, generous internal
+#   padding, and a small coloured status pip on a tracked micro-caps label.
+#
+# WHAT WAS THERE, AND WHY IT READ WRONG. The card was a thin glass pane —
+# fill rgba(4,11,14,0.46) over the wallpaper. At that alpha the ground
+# reads straight THROUGH the card: the slab has almost no presence, the
+# labels sit on whatever the wallpaper happens to be doing behind them,
+# and the only strong shape on the screen is the focus ring. A login card
+# whose legibility depends on the picture behind it is not a designed
+# surface, it is a coincidence.
+#
+# ⚠ NOT PHOTOGRAPHED BY THIS SEAT. The rescued 08-28 draft cited a
+# before/after pair at docs/proof/login-card-0828/; that directory was
+# never created and those captures do not exist. The alpha arithmetic
+# below is arithmetic, not a render. Nobody has seen this card since it
+# changed. Say so, do not dress it up.
+#
+# The face is ~89-95% opaque composited, so what is behind it can no
+# longer change how it reads. That is the property glass could not offer.
+# ── THE FACE IS LAYERED, NOT A FLAT FILL (owner, 08-25 09:26 / TRK-3042) ──
+# "How they blend" is the whole point: a translucent paint over an OPAQUE
+# ground. Start's recipe, from Launcher.qml's Pane `id: card` and restated
+# in shell/Widgets.qml's header:
+#
+#   swellGround Rectangle UNDERNEATH   Top 0.84 / Mid 0.89 / Foot 0.93
+#   Theme.panelMid paint OVER it       alpha 0.34
+#   GlassEdge.body                     held at 0  (WIP-259: turning it on
+#                                      is the photographed "dark box on the
+#                                      wallpaper" — a measurement, not a
+#                                      preference, and still the acceptance bar)
+#   glacier[4] #4f7fa6 seam
+#
+# A FLAT SINGLE FILL DOES NOT MATCH THIS and neither does a translucent
+# panel with nothing under it. The first cut of this card was a flat opaque
+# #071318 and it was wrong in the same way for the opposite reason: right
+# colour, no blend. The ground is 84-93% opaque, so the wallpaper reads
+# through at 7-16% — present, never load-bearing.
+#
+# Values lifted from shell/Theme.qml so the greeter and the desktop are one
+# material. Do not re-derive them by eye.
+ELEVATED = (7 / 255, 19 / 255, 24 / 255)      # #071318 Theme.elevated
+SWELL_TOP = (0.006, 0.014, 0.020, 0.84)       # Theme.swellGroundTop
+SWELL_MID = (0.005, 0.011, 0.017, 0.89)       # Theme.swellGroundMid
+SWELL_FOOT = (0.004, 0.008, 0.014, 0.93)      # Theme.swellGroundFoot
+PANEL_MID = (0.010, 0.026, 0.034, 0.34)       # Theme.panelMid
+# The login card's own ground: the three swellGround stops above, lifted
+# toward the cool ground and thinned ~4pp of alpha so the card reads as lit
+# glass over the wallpaper instead of a black slab (2026-09-07, owner). The
+# widgets keep SWELL_*; only the front door is lifted, because only the front
+# door is drawn over a full-bleed photograph.
+CARD_TOP = (0.030, 0.056, 0.074, 0.80)
+CARD_MID = (0.022, 0.043, 0.059, 0.86)
+CARD_FOOT = (0.014, 0.028, 0.043, 0.90)
+SEAM_EDGE = (79 / 255, 127 / 255, 166 / 255)  # #4f7fa6 glacier[4], the seam
+ICE = (238 / 255, 252 / 255, 255 / 255, 1.0)  # #eefcff glacier[6]
+PIP_OK = (127 / 255, 232 / 255, 255 / 255, 1.0)   # glacier[0] — ready
+REF_W, REF_H = 1920.0, 1080.0
+
+# ⚠ ORDER MATTERS, AND IT CHANGED 2026-09-07 (owner: "can you make that screen
+# my main login screen when you login").
+#
+# The GRUB still used to win here, and it is NOT a login picture -- it is the
+# SHADER'S COMMITTED FIRST FRAME, kept byte-identical to `shell/lock-still.png`
+# by gate 13w45 so the session's first painted frame is the one the shell then
+# keeps. Swapping THAT file to give the login a different picture would hand
+# the login its photo and put a visible jump back into the boot handoff, which
+# is the exact defect TRK-3253 closed.
+#
+# So the login-specific paths now outrank the boot still. A file placed at
+# either of them is a deliberate choice about the LOGIN; the GRUB still remains
+# the fallback and keeps its own job.
+BG_CANDIDATES = (
+    os.environ.get("NYXUS_LOGIN_BG", ""),
+    "/etc/greetd/nyxus-login-bg.png",
+    "/var/cache/regreet/nyxus-login-bg.png",
+    "/usr/share/grub/themes/nyxus/background.png",
+)
+
+SKIP_USERS = {
+    "greeter", "nobody", "nfsnobody", "nixbld", "systemd-coredump",
+}
+
+
+def cover_rgb(path: Path, w: int, h: int) -> Image.Image:
+    im = Image.open(path).convert("RGB")
+    scale = max(w / im.width, h / im.height)
+    nw, nh = max(1, int(im.width * scale)), max(1, int(im.height * scale))
+    im = im.resize((nw, nh), Image.LANCZOS)
+    x = max(0, (nw - w) // 2)
+    y = max(0, (nh - h) // 2)
+    return im.crop((x, y, x + w, y + h))
+
+
+def rgb_surface(im: Image.Image) -> cairo.ImageSurface:
+    """PNG round-trip. create_for_data + BGRa silently destroys the stars."""
+    buf = io.BytesIO()
+    im.convert("RGBA").save(buf, format="PNG")
+    buf.seek(0)
+    return cairo.ImageSurface.create_from_png(buf)
+
+
+def human_users() -> list[str]:
+    out = []
+    for p in pwd.getpwall():
+        if p.pw_uid < 1000 or p.pw_name in SKIP_USERS:
+            continue
+        if p.pw_shell in ("/usr/bin/nologin", "/bin/nologin", "/sbin/nologin",
+                           "/usr/sbin/nologin", "/bin/false"):
+            continue
+        out.append(p.pw_name)
+    return out or [os.environ.get("USER", "nyx")]
+
+
+def wayland_sessions() -> list[tuple[str, list[str]]]:
+    found: list[tuple[str, list[str]]] = []
+    for root in ("/usr/share/wayland-sessions", "/usr/local/share/wayland-sessions"):
+        d = Path(root)
+        if not d.is_dir():
+            continue
+        for desk in sorted(d.glob("*.desktop")):
+            cfg = configparser.ConfigParser(interpolation=None)
+            try:
+                cfg.read(desk, encoding="utf-8")
+            except configparser.Error:
+                continue
+            if not cfg.has_section("Desktop Entry"):
+                continue
+            ent = cfg["Desktop Entry"]
+            if ent.get("NoDisplay", "").lower() in ("true", "1"):
+                continue
+            name = ent.get("Name") or desk.stem
+            exe = ent.get("Exec") or ""
+            cmd = [t for t in exe.replace("\t", " ").split(" ") if t and not t.startswith("%")]
+            if cmd:
+                found.append((name, cmd))
+    if not found:
+        found.append(("Nyxus Suxyn", ["nyxus-session-start"]))
+    pref = [s for s in found if "suxyn" in s[0].lower() or "suxyn" in " ".join(s[1]).lower()]
+    rest = [s for s in found if s not in pref]
+    return pref + rest
+
+
+class Greetd:
+    def __init__(self, path: str) -> None:
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.connect(path)
+
+    def send(self, obj: dict) -> dict:
+        payload = json.dumps(obj).encode()
+        self.sock.sendall(struct.pack("=I", len(payload)) + payload)
+        hdr = self._read_exact(4)
+        (n,) = struct.unpack("=I", hdr)
+        return json.loads(self._read_exact(n).decode())
+
+    def _read_exact(self, n: int) -> bytes:
+        buf = b""
+        while len(buf) < n:
+            chunk = self.sock.recv(n - len(buf))
+            if not chunk:
+                raise ConnectionError("greetd closed the socket")
+            buf += chunk
+        return buf
+
+
+class Plane(Gtk.ApplicationWindow):
+    def __init__(self, app: Gtk.Application, *, demo: bool, windowed: bool, bg: Path) -> None:
+        super().__init__(application=app, title="Nyxus")
+        self.demo = demo
+        self.bg_path = bg
+        self.users = human_users()
+        self.sessions = wayland_sessions()
+        self.session_i = 0
+        last = Path("/var/cache/regreet/radial-last-user")
+        self.user_i = 0
+        if last.is_file():
+            try:
+                name = last.read_text(encoding="utf-8").strip()
+                if name in self.users:
+                    self.user_i = self.users.index(name)
+            except OSError:
+                pass
+        last_sess = Path("/var/cache/regreet/radial-last-session")
+        if last_sess.is_file():
+            try:
+                want = last_sess.read_text(encoding="utf-8").strip().lower()
+                for i, (name, _cmd) in enumerate(self.sessions):
+                    if name.strip().lower() == want:
+                        self.session_i = i
+                        break
+            except OSError:
+                pass
+        self._session_hit = None
+        self.error = ""
+        self._wall = None
+        self._wall_wh = (0, 0)
+        self._layout = {}
+        self.greetd = None if demo else Greetd(os.environ["GREETD_SOCK"])
+
+        self.set_decorated(False)
+        self.set_default_size(1280, 800)
+        if not windowed:
+            self.fullscreen()
+
+        # ⚠ TRK-3250 · A CLAIM THAT WAS CHECKED AND FOUND FALSE. READ THIS
+        # BEFORE RAISING THIS PRIORITY AGAIN.
+        #
+        # The rescued 08-28 draft moved this provider from
+        # STYLE_PROVIDER_PRIORITY_APPLICATION to _USER, on the grounds that
+        # "PRIORITY_APPLICATION (600) loses to a theme loaded at
+        # PRIORITY_SETTINGS/THEME", citing a render of the fields coming out
+        # as stock Adwaita boxes. Neither half survives checking:
+        #
+        #   · GTK's own constants are FALLBACK 1, THEME 200, SETTINGS 400,
+        #     APPLICATION 600, USER 800. APPLICATION already outranks both
+        #     the theme and the settings provider. It cannot lose to them.
+        #   · The render was never produced. The capture it named does not
+        #     exist in this repository and no proof directory was created.
+        #
+        # So the level is back at APPLICATION, which is what a shipped app
+        # sheet is supposed to use and what every other NYXUS GTK surface
+        # uses. If the fields ever DO come out as stock Adwaita boxes on a
+        # bake, the cause is something else and the fix starts by finding it
+        # — not by climbing the priority ladder until something changes.
+        css = Gtk.CssProvider()
+        css.load_from_data(b"""
+            window, drawingarea { background-color: #000000; }
+            /* the ice well: slab-dark, one fine seam, no second lip. The
+               card is opaque #071318, so the well sits one rung under it
+               rather than showing the wallpaper through. */
+            entry, entry.flat, entry:disabled {
+                background-image: none;
+                background-color: rgba(7, 19, 24, 0.62);
+                color: #eefcff;
+                caret-color: #7fe8ff;
+                border: 1px solid rgba(79, 127, 166, 0.55);
+                border-radius: 10px;
+                outline: none;
+                box-shadow: none;
+                min-height: 34px;
+                padding: 6px 12px;
+                font-family: "Inter Display", Inter, sans-serif;
+                font-weight: 300;
+                font-size: 16px;
+                transition: border-color 160ms ease;
+            }
+            /* STATE is hue-coded, never merely brighter: glacier[5] hover
+               vs glacier[0] focus, exactly as regreet.css does it. The 2px
+               halo is gone -- it was the loudest thing on the screen. */
+            entry:hover { border-color: #b7e6f2; }
+            entry:focus, entry:focus-within, entry:focus-visible {
+                border-color: #7fe8ff;
+                outline: none;
+                box-shadow: none;
+            }
+            entry selection {
+                background-color: rgba(183, 230, 242, 0.28);
+                color: #020506;
+            }
+        """)
+        Gtk.StyleContext.add_provider_for_display(
+            Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
+
+        overlay = Gtk.Overlay()
+        self.area = Gtk.DrawingArea()
+        self.area.set_hexpand(True)
+        self.area.set_vexpand(True)
+        self.area.set_draw_func(self._draw)
+        overlay.set_child(self.area)
+
+        self.user_entry = Gtk.Entry()
+        self.user_entry.set_text(self.users[self.user_i])
+        self.user_entry.set_placeholder_text("")
+        self.user_entry.set_halign(Gtk.Align.CENTER)
+        self.user_entry.set_valign(Gtk.Align.START)
+        self.user_entry.select_region(0, 0)
+        self.user_entry.connect("activate", lambda *_: self.secret_entry.grab_focus())
+
+        self.secret_entry = Gtk.Entry()
+        self.secret_entry.set_visibility(False)
+        self.secret_entry.set_placeholder_text("")
+        self.secret_entry.set_halign(Gtk.Align.CENTER)
+        self.secret_entry.set_valign(Gtk.Align.START)
+        self.secret_entry.connect("activate", lambda *_: self._submit())
+        # The hairlines are painted by _draw, so a focus or hover change on
+        # either field has to ask the plane to repaint; GTK only redraws the
+        # entry itself otherwise and the focus line would lag a click.
+        for _e in (self.user_entry, self.secret_entry):
+            _e.connect("state-flags-changed", lambda *_: self.area.queue_draw())
+
+        overlay.add_overlay(self.user_entry)
+        overlay.add_overlay(self.secret_entry)
+        # USB 08-26: Gtk-WARNING snapshot GtkEntry without a current
+        # allocation on first paint (entries overlaid before _place_entries).
+        # Hidden until the first draw has given them a size.
+        self._entries_ready = False
+        self.user_entry.set_visible(False)
+        self.secret_entry.set_visible(False)
+        self.set_child(overlay)
+
+        keys = Gtk.EventControllerKey()
+        keys.connect("key-pressed", self._key)
+        self.add_controller(keys)
+        click = Gtk.GestureClick()
+        click.connect("released", self._click_session)
+        self.area.add_controller(click)
+        self.area.connect("resize", lambda *_: self._invalidate_bg())
+        self.connect("realize", self._make_opaque)
+
+    def _make_opaque(self, *_a) -> None:
+        surface = self.get_surface()
+        if surface is None:
+            return
+        w = max(1, self.get_width())
+        h = max(1, self.get_height())
+        try:
+            surface.set_opaque_region(cairo.Region(cairo.RectangleInt(0, 0, w, h)))
+        except (AttributeError, TypeError, cairo.Error):
+            pass
+
+    def _scale(self, w: int, h: int) -> float:
+        return min(w / REF_W, h / REF_H)
+
+    def _ensure_bg(self, w: int, h: int) -> None:
+        if w <= 1 or h <= 1:
+            return
+        if self._wall is not None and self._wall_wh == (w, h):
+            return
+        self._wall = rgb_surface(cover_rgb(self.bg_path, w, h))
+        self._wall_wh = (w, h)
+        self._make_opaque()
+
+    def _invalidate_bg(self) -> None:
+        self._wall = None
+        self.area.queue_draw()
+
+    def _focus_password(self):
+        self.user_entry.select_region(0, 0)
+        self.secret_entry.grab_focus()
+        return False
+
+    def _metrics(self, w: int, h: int):
+        s = self._scale(w, h)
+        col = max(280, int(420 * s))
+        # TRK-3250: "generous internal padding" is one of the properties the
+        # reference capture is built on — its cards run 20-24px of padding on
+        # a 348px card. Scaled to this 420px column that is 52/56, up from
+        # 48/44. The card grows; nothing inside it moves relative to
+        # anything else.
+        pad_x = max(40, int(56 * s))
+        pad_y = max(36, int(52 * s))
+        cap = max(12, int(13 * s))
+        field_h = max(30, int(36 * s))
+        cap_gap = max(6, int(10 * s))
+        gap = max(22, int(32 * s))
+        # the eyebrow row (pip + NYXUS SUXYN + session readout) and the rule
+        # under it, which is what turns a form into a card with a head.
+        eyebrow_h = max(13, int(14 * s))
+        eyebrow_gap = max(18, int(24 * s))
+        # the footer row: a rule and the machine name under it. Given its own
+        # height here rather than drawn into the bottom padding, because the
+        # padding is what keeps the last FIELD off the card edge -- borrowing
+        # it puts type inside the password box.
+        foot_gap = max(14, int(18 * s))
+        foot_h = max(11, int(12 * s))
+        inner_h = (eyebrow_h + eyebrow_gap
+                   + cap + cap_gap + field_h + gap + cap + cap_gap + field_h
+                   + foot_gap + foot_h)
+        card_w = col + 2 * pad_x
+        card_h = inner_h + 2 * pad_y
+        card_x = (w - card_w) / 2.0
+        card_y = (h - card_h) * 0.42
+        edge = max(36, int(40 * s))
+        card_y = max(float(edge), min(card_y, h - card_h - edge))
+        x0 = card_x + pad_x
+        eyebrow_y = card_y + pad_y
+        # the hairline rule that separates the head from the form
+        head_rule_y = eyebrow_y + eyebrow_h + eyebrow_gap * 0.5
+        name_y = eyebrow_y + eyebrow_h + eyebrow_gap
+        line1_y = name_y + cap + cap_gap + field_h
+        login_y = line1_y + gap
+        line2_y = login_y + cap + cap_gap + field_h
+        foot_rule_y = line2_y + foot_gap * 0.55
+        foot_y = line2_y + foot_gap + foot_h
+        return {
+            "s": s, "col": col, "x0": x0,
+            "eyebrow_y": eyebrow_y, "head_rule_y": head_rule_y,
+            "name_y": name_y, "line1_y": line1_y,
+            "login_y": login_y, "line2_y": line2_y,
+            "foot_rule_y": foot_rule_y, "foot_y": foot_y,
+            "card_x": card_x, "card_y": card_y,
+            "card_w": card_w, "card_h": card_h,
+            "radius": max(12.0, 16.0 * s),
+        }
+
+    def _cycle_session(self, step: int = 1) -> None:
+        if len(self.sessions) <= 1:
+            return
+        self.session_i = (self.session_i + step) % len(self.sessions)
+        self.area.queue_draw()
+
+    def _click_session(self, _g, _n, x, y) -> None:
+        hit = self._session_hit
+        if not hit or len(self.sessions) <= 1:
+            return
+        hx, hy, hw, hh = hit
+        if hx <= x <= hx + hw and hy <= y <= hy + hh:
+            self._cycle_session(1)
+
+    def _key(self, _c, keyval, _code, _mod) -> bool:
+        if keyval == Gdk.KEY_Escape:
+            self.secret_entry.set_text("")
+            self.error = ""
+            self.area.queue_draw()
+            return True
+        if len(self.sessions) > 1:
+            ctrl = bool(_mod & Gdk.ModifierType.CONTROL_MASK)
+            shift = bool(_mod & Gdk.ModifierType.SHIFT_MASK)
+            cycle = False
+            step = -1 if shift else 1
+            if keyval == Gdk.KEY_F2:
+                cycle = True
+            elif ctrl and keyval in (Gdk.KEY_Tab, Gdk.KEY_ISO_Left_Tab):
+                cycle = True
+                if keyval == Gdk.KEY_ISO_Left_Tab:
+                    step = -1
+            elif ctrl and keyval in (Gdk.KEY_Left, Gdk.KEY_Right):
+                cycle = True
+                if keyval == Gdk.KEY_Left:
+                    step = -1
+            if cycle:
+                self._cycle_session(step)
+                return True
+        return False
+
+    def _clear_error(self):
+        self.error = ""
+        self.area.queue_draw()
+        return False
+
+    def _submit(self) -> None:
+        user = self.user_entry.get_text().strip() or self.users[self.user_i]
+        password = self.secret_entry.get_text()
+        cmd = self.sessions[self.session_i][1]
+        if self.demo:
+            self.error = f"demo · {user}"
+            self.area.queue_draw()
+            GLib.timeout_add(1200, self._clear_error)
+            return
+        try:
+            self._greetd_login(user, password, cmd)
+        except Exception as exc:  # noqa: BLE001 — show it, do not crash the greeter
+            self.error = str(exc).split("\n")[0][:80]
+            self.secret_entry.set_text("")
+            self.area.queue_draw()
+
+    def _greetd_login(self, user: str, password: str, cmd: list[str]) -> None:
+        assert self.greetd is not None
+        try:
+            self.greetd.send({"type": "cancel_session"})
+        except (OSError, ConnectionError, json.JSONDecodeError):
+            pass
+        msg = self.greetd.send({"type": "create_session", "username": user})
+        while True:
+            t = msg.get("type")
+            if t == "success":
+                msg = self.greetd.send({"type": "start_session", "cmd": cmd})
+                if msg.get("type") == "success":
+                    Path("/var/cache/regreet/radial-last-user").write_text(
+                        user, encoding="utf-8"
+                    )
+                    try:
+                        Path("/var/cache/regreet/radial-last-session").write_text(
+                            self.sessions[self.session_i][0], encoding="utf-8"
+                        )
+                    except OSError:
+                        pass
+                    self.get_application().quit()
+                    return
+                raise RuntimeError(msg.get("description") or "session failed")
+            if t == "auth_message":
+                kind = msg.get("auth_message_type")
+                if kind in ("secret", "visible"):
+                    msg = self.greetd.send(
+                        {"type": "post_auth_message_response", "response": password}
+                    )
+                else:
+                    msg = self.greetd.send({"type": "post_auth_message_response"})
+                continue
+            if t == "error":
+                raise RuntimeError(msg.get("description") or "auth failed")
+            raise RuntimeError(f"unexpected greetd message {t}")
+
+    def _label(self, cr, x, y, text, size, rgba=None):
+        layout = PangoCairo.create_layout(cr)
+        layout.set_font_description(
+            Pango.FontDescription(f"Inter Display Light {size}")
+        )
+        layout.set_text(text, -1)
+        cr.set_source_rgba(*(rgba or CAPTION))
+        cr.move_to(x, y)
+        PangoCairo.show_layout(cr, layout)
+        return layout.get_pixel_extents()[1]
+
+    def _place_entries(self, m) -> None:
+        col = int(m["col"])
+        s = m["s"]
+        self.user_entry.set_size_request(col, max(28, int(32 * s)))
+        self.secret_entry.set_size_request(col, max(28, int(32 * s)))
+        # Typed value sits on the hairline, under the caption — never on it.
+        self.user_entry.set_margin_top(int(m["line1_y"] - 32 * s))
+        self.secret_entry.set_margin_top(int(m["line2_y"] - 32 * s))
+        if not self._entries_ready:
+            self._entries_ready = True
+            self.user_entry.set_visible(True)
+            self.secret_entry.set_visible(True)
+            GLib.idle_add(self._focus_password)
+
+    @staticmethod
+    def _hairline(entry) -> tuple:
+        flags = entry.get_state_flags()
+        if entry.has_focus() or (flags & Gtk.StateFlags.FOCUS_WITHIN):
+            return (*FOCUS, 1.0)
+        if flags & Gtk.StateFlags.PRELIGHT:
+            return (*HOVER, 0.85)
+        return (*SEAM, 0.22)
+
+    @staticmethod
+    def _rrect(cr, x, y, w, h, r) -> None:
+        r = min(r, w / 2.0, h / 2.0)
+        cr.new_sub_path()
+        cr.arc(x + w - r, y + r, r, -math.pi / 2, 0)
+        cr.arc(x + w - r, y + h - r, r, 0, math.pi / 2)
+        cr.arc(x + r, y + h - r, r, math.pi / 2, math.pi)
+        cr.arc(x + r, y + r, r, math.pi, 3 * math.pi / 2)
+        cr.close_path()
+
+    def _draw_glass(self, cr, x, y, w, h, r) -> None:
+        """The opaque slab of the reference capture — TRK-3250.
+
+        Outermost first: the outer glow, the slab, one restrained sheen on
+        the upper face, then the seam. There is no Crown, no Lip and no
+        Glaze any more: those four stacked translucent layers were the
+        thin-pane GLASS recipe, and this surface is not glass.
+
+        THE CROWN IS GONE AND THAT IS DELIBERATE. It was a five-stop sweep
+        running glacier -> #2a1157 -> #55127a -> #a63fa1, i.e. two thirds of
+        a 1px line spent on purple, on the product's front door, under a
+        standing "no purple" order. It was also invisible: at 1px over a
+        busy wallpaper nobody has ever seen it. Identity is carried by the
+        eyebrow and the pip now, which are legible.
+        """
+        cr.save()
+
+        # ── the soft outer glow ──────────────────────────────────────────
+        # Cage gives us no compositor blur, so the glow is drawn: six
+        # concentric rounded strokes stepping out from the slab, each
+        # fainter and wider. Cheap, and it survives software rendering
+        # (WLR_RENDERER=pixman is a real fallback path in nyxus-greeter).
+        for i in range(6, 0, -1):
+            spread = i * 3.0
+            cr.set_line_width(spread * 1.6)
+            cr.set_source_rgba(*SEAM_EDGE, 0.030 * (1.0 - i / 7.0) + 0.012)
+            self._rrect(cr, x - spread / 2.0, y - spread / 2.0,
+                        w + spread, h + spread, r + spread / 2.0)
+            cr.stroke()
+
+        # ── the face: panelMid paint FIRST, swellGround ramp OVER it ─────
+        # Two passes, bottom-most first, exactly as Start composites them —
+        # and the order here is the opposite of what the rescued 08-28 draft
+        # had. `Launcher.qml`'s Pane `id: card` carries `fill: Theme.panelMid`
+        # as the Pane's OWN BACKGROUND; the swellGround Rectangle is an early
+        # CHILD of that Pane, and in QML a child draws ABOVE its parent's
+        # background. `shell/Widgets.qml` calls the Rectangle "UNDER the
+        # paint", meaning under GlassEdge and the content — not under the
+        # Pane fill. Reading it the other way puts the 0.34 paint on top of
+        # a 0.84-0.93 ground, which is not what Start draws.
+        #
+        # `nyxus_glass.py`'s widget_face() is the same stack in CSS and agrees:
+        # swellGround is listed first there, and GTK CSS paints the first
+        # listed layer TOPMOST. Do not re-derive either by eye.
+        self._rrect(cr, x, y, w, h, r)
+        cr.clip_preserve()
+        cr.set_source_rgba(*PANEL_MID)
+        cr.fill_preserve()
+        # 2026-09-07, owner: the card read as a dark slab against the
+        # wallpaper. The ground stops keep their swellGround ROLES and their
+        # order; each one is lifted a few points toward the same cool ground
+        # the widgets sit on, and each drops ~4pp of alpha so a little of the
+        # photograph comes through the foot of the card. Measured on the demo
+        # frame (1280x720, docs/proof/showcase-0907/): card face mean
+        # luminance 11.1 -> 16.3 of 255, and the quiet band under the fields,
+        # which carries no text or hairline, 2.0 -> 6.6. The wallpaper outside
+        # the card is unchanged at 2.2 in the same pair of frames — the lift
+        # is on the card only, and the photograph is not washed out.
+        # This is a LIFT, not a sheen: no whitish strip on the upper face,
+        # which the owner removed from every plate on 08-25 (TRK-3056).
+        ground = cairo.LinearGradient(x, y, x, y + h)
+        ground.add_color_stop_rgba(0.0, *CARD_TOP)
+        ground.add_color_stop_rgba(0.5, *CARD_MID)
+        ground.add_color_stop_rgba(1.0, *CARD_FOOT)
+        cr.set_source(ground)
+        cr.fill()
+
+        # GlassEdge.body stays 0 — no full-surface veil. WIP-259 photographed
+        # exactly that and it read as a dark box on the wallpaper.
+        #
+        # AND NOTHING ELSE GOES ON THE FACE. The rescued 08-28 draft added a
+        # glacier[5] sheen over the top 40% here and a matching gradient in
+        # regreet.css. `widget_face()` has no such layer, and the owner took
+        # the whitish strip off every plate on 08-25 10:02/10:03 (TRK-3056);
+        # re-adding a soft version of it on the login card would have put it
+        # back on the first surface he sees. The face is the two layers above
+        # and the seam below, the same as every widget and every app window.
+        cr.restore()
+
+        # ── the fine glacier seam ────────────────────────────────────────
+        cr.save()
+        self._rrect(cr, x + 0.5, y + 0.5, w - 1, h - 1, r)
+        # CARD_SEAM from nyxus_glass.py — glacier[4], the same edge every
+        # widget and app window wears (TRK-3270). Not a brighter cut: the
+        # COLOUR is unchanged, the alpha goes 0.55 -> 0.72 so the outline
+        # survives the busy wallpaper it is drawn over. Measured on the demo
+        # frame, brightest seam pixel on the card's left edge: 70.9 -> 91.7.
+        cr.set_source_rgba(*SEAM_EDGE, 0.72)
+        cr.set_line_width(1.0)
+        cr.stroke()
+        cr.restore()
+
+        # ── the crown: the lit top edge ──────────────────────────────────
+        # The crown came off because it was a five-stop sweep two thirds of
+        # which was purple, under a standing no-purple order. That was the
+        # objection — the PURPLE, not the lit edge. This one is a single
+        # colour, glacier #7fe8ff (SEAM, the same ink as the eyebrow), one
+        # hairline riding the top edge and both shoulders, faded to nothing
+        # at the ends by a horizontal ramp so it never terminates in a hard
+        # stub. Light on the edge, the surface stays dark: the house rule.
+        # Measured across the top edge (x 600..700, the row the crown lands
+        # on): mean luminance 64.1 -> 147.3 of 255, and the row below it falls
+        # straight back to the card face — it is a hairline, not a sheen.
+        cr.save()
+        cr.new_path()
+        cr.arc(x + r, y + r, r - 0.6, math.pi, 1.5 * math.pi)
+        cr.line_to(x + w - r, y + 0.6)
+        cr.arc(x + w - r, y + r, r - 0.6, -math.pi / 2, 0.0)
+        crown = cairo.LinearGradient(x, y, x + w, y)
+        crown.add_color_stop_rgba(0.00, *SEAM, 0.00)
+        crown.add_color_stop_rgba(0.18, *SEAM, 0.30)
+        crown.add_color_stop_rgba(0.50, *SEAM, 0.55)
+        crown.add_color_stop_rgba(0.82, *SEAM, 0.30)
+        crown.add_color_stop_rgba(1.00, *SEAM, 0.00)
+        cr.set_source(crown)
+        cr.set_line_width(1.4)
+        cr.stroke()
+        cr.restore()
+
+    def _caps_on(self) -> bool:
+        """Is Caps Lock on right now?
+
+        ⚠ THE MOST USEFUL THING A LOGIN CARD CAN SAY, and this one did not say
+        it. A password field shows dots, so a stuck Caps Lock is invisible
+        until the login fails -- and on this greeter a failure costs a full
+        PAM round trip. Read from the seat's keyboard rather than tracked
+        through key events, so it is correct even when the lock was set
+        before the greeter started.
+
+        Wrapped: a seat with no keyboard is possible on a machine mid-boot,
+        and a greeter that crashes because it asked about Caps Lock is worse
+        than one that does not mention it.
+        """
+        try:
+            disp = Gdk.Display.get_default()
+            if disp is None:
+                return False
+            seat = disp.get_default_seat()
+            kbd = seat.get_keyboard() if seat is not None else None
+            return bool(kbd is not None and kbd.get_caps_lock_state())
+        except Exception:
+            return False
+
+    def _draw_eyebrow(self, cr, m) -> None:
+        """The tracked micro-caps label and its status pip.
+
+        Straight off the reference capture: every card there opens with a
+        small coloured pip, a tracked upper-case glacier label on the left,
+        and a quiet right-hand readout. Here the readout is the session the
+        Enter key will actually start, so the line is information rather
+        than decoration — the owner can see WHICH session he is about to
+        log into before he types his password, which the card never showed.
+        """
+        s = m["s"]
+        x0, y = m["x0"], m["eyebrow_y"]
+        rad = max(3.0, 3.5 * s)
+        cy = y + rad + 1
+        cr.save()
+        cr.arc(x0 + rad, cy, rad, 0, 2 * math.pi)
+        cr.set_source_rgba(*PIP_OK)
+        cr.fill()
+        # the pip's own halo, so it reads as lit rather than printed
+        cr.arc(x0 + rad, cy, rad * 2.4, 0, 2 * math.pi)
+        cr.set_source_rgba(*PIP_OK[:3], 0.16)
+        cr.fill()
+        cr.restore()
+
+        size = max(10, int(11 * s))
+        layout = PangoCairo.create_layout(cr)
+        fd = Pango.FontDescription(f"Inter Display {size}")
+        layout.set_font_description(fd)
+        layout.set_text("NYXUS SUXYN", -1)
+        attrs = Pango.AttrList()
+        # ⚠ Pango letter-spacing is in Pango units (1024 per px), NOT in
+        # hundredths and NOT in em. The first draft of this line read
+        # `int(1.6 * Pango.SCALE * 100)` — 163,840 units, i.e. 160px between
+        # glyphs — and the render showed "N  Y Y  N X" strewn across the
+        # wallpaper on both sides of the card. Caught by looking at the
+        # picture, not by reading the code: it compiles, it runs, and the
+        # number is wrong by two orders of magnitude.
+        attrs.insert(Pango.attr_letter_spacing_new(int(1.6 * Pango.SCALE)))
+        layout.set_attributes(attrs)
+        cr.set_source_rgba(*SEAM, 1.0)
+        cr.move_to(x0 + rad * 2 + max(8, 9 * s), y)
+        PangoCairo.show_layout(cr, layout)
+
+        # Right-hand readout. The first draft put the session name here and
+        # the render showed "NYXUS SUXYN" twice on one line, because the only
+        # session on the image is called Nyxus Suxyn — a readout that repeats
+        # the eyebrow is decoration, not information. The machine name is the
+        # thing that actually differs between two of these cards, and it
+        # answers "which box am I about to log into". The session is still
+        # named when it is NOT the product's own, which is the only case
+        # where that word carries anything.
+        try:
+            name = self.sessions[self.session_i][0]
+            # One session: hostname is the useful readout (the product name
+            # would just repeat the left label). Two or more: the session
+            # name is the thing that actually changes — F2 / Ctrl+Tab / click.
+            if len(self.sessions) <= 1 and name.strip().lower() in (
+                "nyxus suxyn", "nyxus", "suxyn"
+            ):
+                name = socket.gethostname()
+        except Exception:
+            name = ""
+        self._session_hit = None
+        if name:
+            r_layout = PangoCairo.create_layout(cr)
+            r_layout.set_font_description(fd)
+            r_layout.set_text(name.upper(), -1)
+            r_layout.set_attributes(attrs)
+            tw = r_layout.get_pixel_extents()[1].width
+            # ⚠ MEASURED COLLISION, NOT A HYPOTHETICAL. On a host called
+            # `nyx-cosmic` the two labels sit apart; on `gowski-alienware`
+            # they touch, because the readout is right-aligned to a fixed
+            # column and nothing checked whether the left label had already
+            # reached it. Photographed on his machine before this guard.
+            lw = layout.get_pixel_extents()[1].width
+            left_end = (rad * 2 + max(8, 9 * s)) + lw
+            avail = m["col"] - left_end - max(12, 14 * s)
+            if tw > avail and avail > 0:
+                # Host: gowski-alienware -> GOWSKI. Session: Blast From The
+                # Past -> BLAST. A truncated word still answers the question;
+                # a 6px word answers nothing.
+                if len(self.sessions) > 1:
+                    short = name.split()[0]
+                else:
+                    short = name.split(".")[0].split("-")[0]
+                r_layout.set_text(short.upper(), -1)
+                tw = r_layout.get_pixel_extents()[1].width
+            if tw <= m["col"] - left_end:
+                rx = x0 + m["col"] - tw
+                cr.set_source_rgba(*CAPTION[:3], 0.75)
+                cr.move_to(rx, y)
+                PangoCairo.show_layout(cr, r_layout)
+                if len(self.sessions) > 1:
+                    rh = max(14, int(16 * s))
+                    self._session_hit = (rx - 8, y - 4, tw + 16, rh + 8)
+
+    def _draw(self, _area, cr: cairo.Context, w: int, h: int) -> None:
+        self._ensure_bg(w, h)
+        cr.set_source_rgb(*VOID[:3])
+        cr.paint()
+        if self._wall is not None:
+            cr.set_source_surface(self._wall, 0, 0)
+            cr.paint()
+
+        m = self._metrics(w, h)
+        self._layout = m
+        s, col, x0 = m["s"], m["col"], m["x0"]
+        self._place_entries(m)
+
+        self._draw_glass(
+            cr, m["card_x"], m["card_y"], m["card_w"], m["card_h"], m["radius"]
+        )
+
+        self._draw_eyebrow(cr, m)
+        # the head rule — a seam, resting, no state (accent.json
+        # _tokens.edges: seams divide surfaces and are exempt from the
+        # contrast floor per WCAG 1.4.11).
+        cr.save()
+        cr.set_line_width(1.0)
+        cr.set_source_rgba(*SEAM_EDGE, 0.34)
+        cr.move_to(x0, m["head_rule_y"] + 0.5)
+        cr.line_to(x0 + col, m["head_rule_y"] + 0.5)
+        cr.stroke()
+        cr.restore()
+
+        size = max(11, int(12 * s))
+        self._label(cr, x0, m["name_y"], "Username", size)
+        self._label(cr, x0, m["login_y"], "Password", size)
+
+        # ⚠ CAPS LOCK — right-aligned on the Password row, and drawn ONLY when
+        # it is on. A permanent "Caps Lock: off" is noise the eye learns to
+        # skip, which is how it stops being read on the one night it matters.
+        # Magma because this is the palette's "this matters" rung and nothing
+        # else on a resting login card uses it.
+        if self._caps_on():
+            cr.save()
+            cr.select_font_face("Inter", cairo.FONT_SLANT_NORMAL,
+                                cairo.FONT_WEIGHT_BOLD)
+            cr.set_font_size(max(9, int(10 * s)))
+            caps = "CAPS LOCK"
+            ext = cr.text_extents(caps)
+            cr.set_source_rgba(1.0, 0.470, 0.278, 0.92)   # magma #ff7847
+            cr.move_to(x0 + col - ext.width - ext.x_bearing,
+                       m["login_y"])
+            cr.show_text(caps)
+            cr.restore()
+
+        # ── the footer: a seam, then the machine ────────────────────────
+        # On a build meant to be installed on more than one box, "which
+        # machine am I signing into" is a real question and the card was
+        # silent about it. It sits in its OWN row (see _metrics) with a seam
+        # above it, so it reads as a foot rather than as a stray label.
+        cr.save()
+        cr.set_line_width(1.0)
+        cr.set_source_rgba(*SEAM_EDGE, 0.22)
+        cr.move_to(x0, m["foot_rule_y"] + 0.5)
+        cr.line_to(x0 + col, m["foot_rule_y"] + 0.5)
+        cr.stroke()
+        cr.restore()
+        # ⚠ THE FIRST VERSION OF THIS FOOTER PRINTED THE HOSTNAME -- which the
+        # eyebrow above already falls back to, so the card said
+        # `GOWSKI-ALIENWARE` and then `gowski-alienware` twelve pixels apart.
+        # Caught by photographing it on his machine, not by reading it.
+        #
+        # The date is the thing a login screen can say that nothing else on
+        # this card says. It is also the one line here that proves the machine
+        # is awake and its clock is right, before you have typed anything.
+        try:
+            stamp = time.strftime("%A, %-d %B  ·  %H:%M")
+        except Exception:
+            stamp = ""
+        if stamp:
+            self._label(cr, x0, m["foot_y"], stamp,
+                        max(9, int(10 * s)), (*ICE[:3], 0.34))
+
+        cr.set_line_width(1.0)
+        for entry, y in ((self.user_entry, m["line1_y"]),
+                         (self.secret_entry, m["line2_y"])):
+            cr.set_source_rgba(*self._hairline(entry))
+            cr.move_to(x0, y)
+            cr.line_to(x0 + col, y)
+            cr.stroke()
+
+        if self.error:
+            self._label(
+                cr, x0, m["line2_y"] + 22 * s, self.error, size, ERR
+            )
+
+
+class App(Gtk.Application):
+    def __init__(self, args: argparse.Namespace, bg: Path) -> None:
+        super().__init__(application_id="app.nyxus.PlaneGreeter")
+        self._args = args
+        self._bg = bg
+
+    def do_activate(self) -> None:  # noqa: N802 — Gtk override
+        win = Plane(self, demo=self._args.demo, windowed=self._args.windowed, bg=self._bg)
+        win.present()
+
+
+def resolve_bg(explicit: str | None) -> Path:
+    for c in ((explicit or ""),) + BG_CANDIDATES:
+        if c and Path(c).is_file():
+            return Path(c)
+    raise SystemExit("nyxus-radial-greeter: no login background (nyxus-login-bg.png)")
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Nyxus Suxyn login")
+    ap.add_argument("--demo", action="store_true", help="no greetd; do not reboot")
+    ap.add_argument("--windowed", action="store_true")
+    ap.add_argument("--bg", default="")
+    args = ap.parse_args()
+    if not args.demo and not os.environ.get("GREETD_SOCK"):
+        args.demo = True
+    # USB 08-26: greetd passwd HOME=/ so GTK/wlroots write //.cache and
+    # gkr-pam writes /.local/share/keyrings. Match nyxus-greeter. PAM
+    # still reads passwd — customize usermod is the account fix.
+    os.environ.setdefault("HOME", "/var/lib/greetd")
+    os.environ.setdefault("XDG_CACHE_HOME", "/var/cache/regreet")
+    os.environ.setdefault(
+        "XDG_DATA_HOME",
+        os.path.join(os.environ.get("HOME", "/var/lib/greetd"), ".local/share"),
+    )
+    bg = resolve_bg(args.bg)
+    os.environ.setdefault("GTK_THEME", "adw-gtk3-dark")
+    app = App(args, bg)
+    return app.run([sys.argv[0]])
+
+
+if __name__ == "__main__":
+    sys.exit(main())

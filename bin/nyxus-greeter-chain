@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# greetd runs THIS. It tries the Quickshell greeter and falls through to the
+# greeter that was working before if anything at all goes wrong.
+#
+# Order matters and is deliberate: ReGreet first because it is what he has been
+# using and is known good on this machine; tuigreet and agreety after it because
+# a text login is still a login. The last line can only be reached if all four
+# are broken, which would be a far larger problem than this change.
+LOG=/var/log/nyxus-greeter-chain.log
+echo "$(date -Is) starting quickshell greeter" >>"$LOG" 2>&1
+
+if /usr/local/bin/nyxus-greeter-qs >>"$LOG" 2>&1; then
+  exit 0
+fi
+
+echo "$(date -Is) quickshell greeter FAILED (rc=$?) — falling back to regreet" >>"$LOG" 2>&1
+exec /usr/local/bin/nyxus-greeter

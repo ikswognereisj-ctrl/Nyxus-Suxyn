@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Nyxus Suxyn — raise glass Files. Never GTK nyxus_files.py.
+set -u
+if ! command -v qs >/dev/null 2>&1; then
+  echo "Files needs the desktop shell (qs)." >&2
+  exit 2
+fi
+if [[ -n "${1:-}" ]]; then
+  out="$(qs ipc call files at "$1" 2>&1)" || true
+else
+  out="$(qs ipc call files engage 2>&1)" || true
+fi
+if [[ "${out}" == *"Target not found."* ]]; then
+  out="$(qs ipc call nyxus files 2>&1)" || true
+fi
+if [[ "${out}" == *"Target not found."* ]]; then
+  echo "Files is not in the running shell." >&2
+  printf '%s\n' "${out}" >&2
+  exit 2
+fi
+printf '%s\n' "${out}"
+exit 0

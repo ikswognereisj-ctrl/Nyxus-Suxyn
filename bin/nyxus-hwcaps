@@ -1,0 +1,772 @@
+#!/usr/bin/env python3
+"""nyxus-hwcaps — the hardware capability probe + writer behind Settings ▸ Hardware.
+
+TRK-3730. The Hardware page was the one genuinely-dead settings page: it calls
+`HardwareCaps` (shell/HardwareCaps.qml), which runs THIS script, and it was
+never written — so every control sat at "Reading…"/"Unavailable" forever. This
+is that missing backend.
+
+TWO MODES, exactly the contract HardwareCaps.qml expects:
+
+  nyxus-hwcaps --json
+      Probe /sys and print ONE JSON document (the schema below). The QML reads
+      it as `caps.doc.*`; this script IS the schema. Exit 0 on success. Exit 127
+      is what the shell reads as "not installed" — so simply existing and
+      printing JSON is what turns the page on.
+
+  nyxus-hwcaps set <target> <value>
+      Apply one change. Targets (from SetPageHardware.qml): backlight,
+      platform-profile, epp, governor, fan, kbd-led, battery-end. If the write
+      needs root, the script RE-EXECS ITSELF through pkexec — the page never
+      builds a pkexec line (one privilege path for the whole build). After a
+      write the page always re-probes and reads back, so we only need to write.
+
+Everything is read straight from /sys; nothing is assumed. A subsystem the
+machine does not have becomes an empty list / absent block, never an error —
+"no fans" and "did not look" are different, and the page distinguishes them by
+`probed`, which the QML sets from a clean exit.
+"""
+import glob
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+
+
+def _read(path):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
+def _read_int(path):
+    v = _read(path)
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _writable(path):
+    return os.access(path, os.W_OK)
+
+
+# ── fan modes ────────────────────────────────────────────────────────────────
+# TRK-3962. This control used to offer "auto" and "full" only, because the
+# percentages that preceded them were a fiction: nobody had measured what this
+# hardware does with a duty cycle. It has now been measured, on the owner's
+# Alienware (dell_smm, pwm1 + pwm2, 7 s settle per step, both fans moving
+# together):
+#
+#     pwm raw   fan1 rpm   fan2 rpm
+#         128       2458       2424
+#         160       2457       2423
+#         191       2458       2423
+#         223       6395       6369
+#         255       6740       6794
+#
+# **That is not a percentage scale.** 128, 160 and 191 all land on the same
+# ~2450 rpm — the controller quantises the register into a handful of real
+# steps. A 50 / 75 / 100 picker therefore cannot be honest on this hardware
+# however carefully it is written, which is why the earlier one was deleted
+# rather than repaired.
+#
+# ── and the step table above is itself only PART of the truth ────────────────
+# The first implementation of this read "three steps: 128 / 223 / 255" straight
+# off that table and shipped a Low / High / Maximum picker. Verifying it on the
+# same machine caught the rest: writing 223 and reading `pwm1` back returns
+# **255**. dell-smm-hwmon does not store a duty at all — it stores a fan LEVEL
+# and converts, `level = round(pwm * fan_max / 255)`, so with two levels above
+# rest, 223 rounds up into the same level as 255. The 6395-vs-6740 difference
+# in the original measurement was the fan still spinning UP at the 7 s mark,
+# not a second step: re-measured with the register read back beside the
+# tachometer, 223 and 255 are one speed, ~6800 rpm.
+#
+# So "High" would have been a segment that silently does what "Maximum" does —
+# the same defect as the percentages, one rung further in. The ladder below is
+# therefore CANDIDATES, not the answer. The answer is whatever the controller
+# gives back when each candidate is written (`_fan_ladder`), which is measured
+# once per boot on the machine in front of us and needs no device table. On
+# this Alienware that yields Automatic / Low / Maximum; on a board with a real
+# 8-bit pwm all three survive.
+#
+# FAN_MIN_DUTY is a floor with teeth: a stopped fan is the one outcome here
+# that damages hardware, so no path in this file may write a pwm value below
+# it, and any value that is not one of these is refused before a node is
+# opened rather than falling through to manual.
+FAN_MIN_DUTY = 128
+# MEASURED on the Alienware 15 DA15265, 2026-09-08, all three written and the
+# tachometer read back 22s later:
+#     low  -> pwm 128 -> 2417 rpm
+#     high -> pwm 255 -> 6770 rpm      <- NOT 223
+#     max  -> pwm 255 -> 6807 rpm
+# dell-smm does not take a duty. It takes a fan LEVEL, and the driver quantises
+# whatever you write onto one of its few levels; 223 rounds up to the same top
+# level as 255, so "high" and "max" were two names for one fan. The owner said
+# so before the test did. It is an alias now rather than a deletion, because an
+# older deployed shell still sends the word and must keep working.
+FAN_MODES = {"low": 128, "max": 255}
+# Accepted spellings. "full" is kept because it is what the pre-TRK-3962 page
+# sent and what an older deployed shell still sends; it means the same thing.
+FAN_ALIASES = {"full": "max", "maximum": "max", "automatic": "auto",
+               "high": "max"}
+FAN_ORDER = ("low", "max")
+
+# Where the discovered step map lives. /run because it is a fact about the
+# hardware as the running kernel presents it, not a preference: tmpfs, root
+# writes it (the calibration happens inside the already-elevated write path),
+# every uid reads it, and it is re-derived after a reboot rather than going
+# stale in someone's home directory. Absent simply means "not discovered yet",
+# and the page then shows every candidate.
+FAN_STEPS_PATH = "/run/nyxus/fan-steps.json"
+
+
+def _fan_normalise(value):
+    """Map a requested fan value onto 'auto' or a key of FAN_MODES, else None."""
+    v = str(value if value is not None else "").strip().lower()
+    v = FAN_ALIASES.get(v, v)
+    if v == "auto" or v in FAN_MODES:
+        return v
+    return None
+
+
+FAN_DUTY_SLOP = 2
+
+
+def _fan_steps_load():
+    """The discovered candidate-duty → effective-duty map, or {}."""
+    try:
+        with open(FAN_STEPS_PATH) as f:
+            d = json.load(f)
+        if not isinstance(d, dict):
+            return {}
+        return {int(k): int(v) for k, v in d.items()}
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+def _fan_ladder():
+    """The modes this machine really has: [(name, duty, effective), …] ascending.
+
+    Two candidates that the controller collapses onto the same effective duty
+    are the SAME SPEED, and offering both is the percentage bug in a smaller
+    box. When that happens the surviving name is the one whose configured duty
+    IS the effective duty — the honest name for that step — so a controller
+    that rounds 223 up to 255 keeps "Maximum" and drops "High", rather than
+    keeping "High" and understating what the fans are about to do.
+
+    Before anything has been discovered every candidate survives: that is our
+    best knowledge, not a claim, and the first write refines it.
+    """
+    eff = _fan_steps_load()
+    out = []
+    seen = {}
+    for name in FAN_ORDER:
+        d = FAN_MODES[name]
+        e = eff.get(d, d)
+        if e in seen:
+            prev = seen[e]
+            if d == e and FAN_MODES[prev] != e:
+                out = [row for row in out if row[0] != prev]
+                seen[e] = name
+                out.append((name, d, e))
+            continue
+        seen[e] = name
+        out.append((name, d, e))
+    out.sort(key=lambda row: row[2])
+    return out
+
+
+def _fan_mode_for_duty(duty):
+    """Which mode a raw pwm reading is, or None if it is not one of ours.
+
+    Matched against the EFFECTIVE duty of each surviving mode — the number the
+    register actually reads back — with ±FAN_DUTY_SLOP for a controller that
+    rounds. Deliberately not a nearest-neighbour split: the midpoint between
+    128 and 223 is 175.5, so 191 would be reported as "High" while the table
+    above shows 191 running at 2458 rpm, which is the LOW step. We know what
+    our own duties do and nothing about anyone else's, so a duty we did not
+    write reads back as unknown and the page says so in words.
+    """
+    if duty is None or duty < FAN_MIN_DUTY:
+        return None
+    for name, _d, e in _fan_ladder():
+        if abs(duty - e) <= FAN_DUTY_SLOP:
+            return name
+    return None
+
+
+# ── the rpm those modes actually produce, learned on THIS machine ────────────
+# The table above is the owner's laptop. Printing those numbers on somebody
+# else's screen would be exactly the hardcoded device knowledge this page
+# exists to avoid (HardwareCaps.qml header: "a device table would be a lie the
+# day after it was written"). So the page shows rpm only where rpm has been
+# OBSERVED here: while Settings is open the probe runs every few seconds, and
+# whenever the fans have been sitting in a known manual mode it records what
+# the tachometers read. A mode nobody has run yet simply carries no number.
+#
+# The stability guard (`_mode` / `_since`) is what keeps the ramp out of the
+# cache: a reading is kept only once the mode has held for FAN_SETTLE seconds,
+# which is why the measurement above used a 7 s settle per step.
+FAN_SETTLE = 6.0
+
+
+def _fan_cache_path():
+    base = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+    return os.path.join(base, "nyxus", "fan-rpm.json")
+
+
+def _fan_rpm_load():
+    try:
+        with open(_fan_cache_path()) as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _fan_rpm_note(mode, rpm):
+    """Record `rpm` for `mode` once the mode has held long enough to settle.
+
+    Returns the observed-rpm map to publish. Every failure is swallowed: a
+    cache that cannot be written must never take the probe down with it.
+    """
+    cache = _fan_rpm_load()
+    obs = cache.get("observed")
+    if not isinstance(obs, dict):
+        obs = {}
+    try:
+        now = time.time()
+        prev_mode = cache.get("_mode")
+        since = cache.get("_since")
+        if prev_mode != mode or not isinstance(since, (int, float)):
+            since = now
+        dirty = (prev_mode != mode) or (since != cache.get("_since"))
+        if (mode in FAN_MODES and rpm and rpm > 0
+                and now - since >= FAN_SETTLE and obs.get(mode) != rpm):
+            obs[mode] = rpm
+            dirty = True
+        if dirty:
+            path = _fan_cache_path()
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            tmp = path + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump({"observed": obs, "_mode": mode, "_since": since}, f)
+            os.replace(tmp, path)
+    except OSError:
+        pass
+    return obs
+
+
+# ── the probe ────────────────────────────────────────────────────────────────
+def probe_machine():
+    d = "/sys/class/dmi/id"
+    return {
+        "vendor": _read(f"{d}/sys_vendor") or "",
+        "product": _read(f"{d}/product_name") or "",
+        "board": _read(f"{d}/board_name") or "",
+        "bios": _read(f"{d}/bios_version") or "",
+    }
+
+
+def probe_backlight():
+    out = []
+    for bl in sorted(glob.glob("/sys/class/backlight/*")):
+        cur = _read_int(f"{bl}/brightness")
+        mx = _read_int(f"{bl}/max_brightness")
+        if mx is None:
+            continue
+        bpath = f"{bl}/brightness"
+        out.append({
+            "name": os.path.basename(bl),
+            "value": cur if cur is not None else 0,
+            "max": mx,
+            "writable": _writable(bpath),
+            "root_writable": os.path.exists(bpath),
+            "provider": os.path.basename(bl),
+        })
+    return out
+
+
+def probe_thermal():
+    fans, temps, pwm, pwm_writable, hottest = [], [], [], [], None
+    for hw in sorted(glob.glob("/sys/class/hwmon/hwmon*")):
+        label = _read(f"{hw}/name") or os.path.basename(hw)
+        for fan in sorted(glob.glob(f"{hw}/fan*_input")):
+            rpm = _read_int(fan)
+            if rpm is not None:
+                fans.append({"name": f"{label}:{os.path.basename(fan)}",
+                             "rpm": rpm})
+        for tp in sorted(glob.glob(f"{hw}/temp*_input")):
+            milli = _read_int(tp)
+            if milli is not None:
+                c = round(milli / 1000.0, 1)
+                lbl = _read(tp.replace("_input", "_label")) or \
+                    f"{label}:{os.path.basename(tp)}"
+                temps.append({"name": lbl, "c": c})
+                hottest = c if hottest is None else max(hottest, c)
+        for pw in sorted(glob.glob(f"{hw}/pwm[0-9]")):
+            val = _read_int(pw)
+            enable = f"{pw}_enable"
+            entry = {"name": f"{label}:{os.path.basename(pw)}",
+                     "value": val,
+                     "enable": _read_int(enable),
+                     "path": pw}
+            pwm.append(entry)
+            if os.path.exists(enable) and (_writable(pw) or os.path.exists(pw)):
+                pwm_writable.append(entry["name"])
+
+    # ── read-back ────────────────────────────────────────────────────────
+    # TRK-3962. Deriving the current mode HERE, not in the QML, because this
+    # script is the schema and the duty→mode split is the same arithmetic the
+    # writer uses — two copies of it would drift the first time a duty moved.
+    #
+    # The empty read is the part that had everyone fooled. On dell_smm, `pwm1`
+    # reads back correctly (255) while the channel is in MANUAL, and reads
+    # EMPTY under firmware control — so `_read_int` returns None and any code
+    # that judged the mode by the duty alone saw "unknown" every time the fans
+    # were doing the normal thing. `pwm*_enable` is the authority: 2 means the
+    # firmware owns the fan and the duty is not ours to interpret, whatever it
+    # reads. Only when enable says manual does the duty decide which step.
+    #
+    # `""` means a state this control cannot name (enable 0, an unreadable
+    # enable, or manual at a duty below our floor). The page then shows NOTHING
+    # selected rather than guessing — highlighting a wrong segment is the same
+    # lie the old static "Automatic" was.
+    mode = ""
+    manual_unknown = False
+    for entry in pwm:
+        en = entry.get("enable")
+        if en == 2:
+            mode = "auto"
+        elif en == 1:
+            named = _fan_mode_for_duty(entry.get("value"))
+            mode = named or ""
+            manual_unknown = named is None
+        break
+
+    hottest_rpm = max((f["rpm"] for f in fans), default=0)
+    observed = _fan_rpm_note(mode, hottest_rpm) if pwm else {}
+
+    return {"fans": fans, "temps": temps, "pwm": pwm,
+            "pwm_writable": pwm_writable, "hottest": hottest,
+            "fan_mode": mode,
+            "fan_manual_unknown": manual_unknown,
+            "fan_rpm_now": hottest_rpm,
+            # The mode table, published so the page never hardcodes a duty or
+            # a step count. "auto" is always first and always there; the rest
+            # is `_fan_ladder()` — the candidates this controller was found to
+            # tell apart, with the rpm each was measured producing HERE.
+            "fan_modes": ([{"value": "auto", "duty": None, "rpm": None}]
+                          + [{"value": name, "duty": d, "effective": e,
+                              "rpm": observed.get(name)}
+                             for name, d, e in _fan_ladder()]),
+            "fan_steps_probed": bool(_fan_steps_load()),
+            "fan_min_duty": FAN_MIN_DUTY}
+
+
+def probe_leds():
+    kbd = []
+    for led in sorted(glob.glob("/sys/class/leds/*")):
+        name = os.path.basename(led).lower()
+        if "kbd" in name or "keyboard" in name or "backlight" in name:
+            mx = _read_int(f"{led}/max_brightness")
+            if mx is None:
+                continue
+            bpath = f"{led}/brightness"
+            kbd.append({
+                "name": os.path.basename(led),
+                "value": _read_int(bpath) or 0,
+                "max": mx,
+                "writable": _writable(bpath),
+                "root_writable": os.path.exists(bpath),
+            })
+    return {"keyboard": kbd}
+
+
+def probe_battery():
+    out = []
+    for bat in sorted(glob.glob("/sys/class/power_supply/BAT*")):
+        cap = _read_int(f"{bat}/capacity")
+        end = _read_int(f"{bat}/charge_control_end_threshold")
+        endpath = f"{bat}/charge_control_end_threshold"
+        out.append({
+            "name": os.path.basename(bat),
+            "capacity": cap,
+            "status": _read(f"{bat}/status") or "",
+            "end_threshold": end,
+            "end_writable": os.path.exists(endpath),
+        })
+    return out
+
+
+def probe_cpufreq():
+    base = "/sys/devices/system/cpu/cpu0/cpufreq"
+    epp = _read(f"{base}/energy_performance_preference")
+    gov = _read(f"{base}/scaling_governor")
+    epp_avail = _read(f"{base}/energy_performance_available_preferences")
+    gov_avail = _read(f"{base}/scaling_available_governors")
+    # TRK-3745. `driver` and `policies` are added because the Hardware page
+    # has always tried to print them ("N CPU policies, all set together ·
+    # amd_pstate_epp") and nothing emitted them, so that sub-line rendered
+    # `undefined`. `user_writable` is added beside the existing `writable`
+    # because the two are NOT the same question and the page needs both:
+    # `writable` here means the node exists (a write can be attempted, via
+    # pkexec), `user_writable` means this uid may write it with no elevation.
+    # Both are pure reads; nothing about the write path changed.
+    return {
+        "epp": epp,
+        "governor": gov,
+        "epp_available": epp_avail.split() if epp_avail else [],
+        "governor_available": gov_avail.split() if gov_avail else [],
+        "driver": _read(f"{base}/scaling_driver") or "",
+        "policies": len(glob.glob("/sys/devices/system/cpu/cpu*/cpufreq")),
+        "writable": os.path.exists(f"{base}/scaling_governor"),
+        "user_writable": _writable(f"{base}/scaling_governor"),
+    }
+
+
+def probe_platform_profile():
+    p = "/sys/firmware/acpi/platform_profile"
+    choices = _read("/sys/firmware/acpi/platform_profile_choices")
+    if not os.path.exists(p):
+        return None
+    return {
+        "current": _read(p),
+        "choices": choices.split() if choices else [],
+        # As in probe_cpufreq: exists-vs-may-write are different facts.
+        "writable": os.path.exists(p),
+        "user_writable": _writable(p),
+    }
+
+
+def probe_vendor():
+    # Vendor hwmon/led modules that unlock fan/RGB/profile control.
+    known = ("dell_smm_hwmon", "dell_laptop", "asus_wmi", "asus_nb_wmi",
+             "hp_wmi", "thinkpad_acpi", "msi_ec", "msi_wmi",
+             "alienware_wmi", "nvidia", "amdgpu")
+    loaded = set()
+    mods = _read("/proc/modules") or ""
+    first = {line.split()[0] for line in mods.splitlines() if line.strip()}
+    for k in known:
+        if k in first:
+            loaded.add(k)
+    return {"modules": sorted(loaded)}
+
+
+def build_providers(doc):
+    # Which subsystem gives which capability — the page lists these.
+    p = {}
+    if doc["backlight"]:
+        p.setdefault(doc["backlight"][0]["provider"], []).append("brightness")
+    if doc["thermal"]["fans"]:
+        p.setdefault("hwmon", []).append("fan readings")
+    if doc["thermal"]["pwm_writable"]:
+        p.setdefault("hwmon", []).append("fan control")
+    if doc["leds"]["keyboard"]:
+        p.setdefault("leds", []).append("keyboard light")
+    if doc["platform_profile"]:
+        p.setdefault("acpi", []).append("power profile")
+    if doc["cpufreq"]["epp"] or doc["cpufreq"]["governor"]:
+        p.setdefault("cpufreq", []).append("cpu scaling")
+    if any(b["end_threshold"] is not None for b in doc["battery"]):
+        p.setdefault("power_supply", []).append("charge limit")
+    return p
+
+
+def do_json():
+    doc = {
+        "machine": probe_machine(),
+        "tools": {"pkexec": shutil.which("pkexec") is not None},
+        "backlight": probe_backlight(),
+        "thermal": probe_thermal(),
+        "leds": probe_leds(),
+        "battery": probe_battery(),
+        "cpufreq": probe_cpufreq(),
+        "platform_profile": probe_platform_profile(),
+        "vendor": probe_vendor(),
+    }
+    doc["providers"] = build_providers(doc)
+    print(json.dumps(doc))
+    return 0
+
+
+# ── the writer ───────────────────────────────────────────────────────────────
+def _needs_root(path):
+    return os.path.exists(path) and not os.access(path, os.W_OK)
+
+
+def _first_glob(pattern):
+    g = sorted(glob.glob(pattern))
+    return g[0] if g else None
+
+
+def _target_path(target):
+    """Return the /sys path a target writes to (first match), or None."""
+    if target == "backlight":
+        return _first_glob("/sys/class/backlight/*/brightness")
+    if target == "platform-profile":
+        return "/sys/firmware/acpi/platform_profile"
+    if target == "epp":
+        return "/sys/devices/system/cpu/cpu0/cpufreq/energy_performance_preference"
+    if target == "governor":
+        return "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
+    if target == "kbd-led":
+        for led in sorted(glob.glob("/sys/class/leds/*")):
+            n = os.path.basename(led).lower()
+            if "kbd" in n or "keyboard" in n:
+                return f"{led}/brightness"
+        return None
+    if target == "battery-end":
+        return _first_glob("/sys/class/power_supply/BAT*/charge_control_end_threshold")
+    return None  # "fan" handled specially
+
+
+def _apply_write(target, value):
+    """Perform the actual /sys write(s). Runs as whatever uid we are now."""
+    if target == "fan":
+        # ── TRK-3745 · the thermal one ───────────────────────────────────
+        # This block used to read `mode = "2" if value == "auto" else "1"` and
+        # write a duty cycle only `if value == "full"`. Two things follow from
+        # that, and the second is dangerous:
+        #
+        #   * every unrecognised value fell through to MANUAL (enable=1),
+        #   * and only the literal "full" ever wrote a speed.
+        #
+        # The Settings page offered "50" / "75" / "100" and could not send
+        # "full", so on a machine with writable pwm — the owner's Alienware
+        # has two — choosing a fan speed took the fans away from the firmware
+        # and then set no speed at all, leaving the PWM register at whatever
+        # it happened to hold, while the page reported success. Fans that stop
+        # cooking a laptop is not a defect class this build gets to have.
+        #
+        # So: exactly two values exist, anything else is REFUSED before a
+        # single node is touched, and the manual path can never end without a
+        # duty cycle — if the duty write fails, the channel is put straight
+        # back under firmware control and the whole call reports failure.
+        #
+        # TRK-3962 extends this from two values to named speed steps —
+        # Automatic plus whatever of Low / High / Maximum this controller can
+        # actually tell apart. The guard is unchanged in kind and stronger in
+        # fact: the set of legal values is derived from FAN_MODES rather than
+        # spelled out, the duty is looked up rather than typed, and it is
+        # re-checked against FAN_MIN_DUTY immediately before the write so that
+        # no future edit to the table can put a stalling duty on a fan.
+        want = _fan_normalise(value)
+        if want is None:
+            sys.stderr.write(
+                "nyxus-hwcaps: fan takes 'auto' (firmware control) or one of "
+                + "/".join(sorted(FAN_MODES, key=FAN_MODES.get))
+                + f"; refusing '{value}' rather than leaving the fans in "
+                "manual with no speed set\n")
+            return 2
+        mode = "2" if want == "auto" else "1"
+        duty = None
+        if want != "auto":
+            duty = FAN_MODES[want]
+            if duty < FAN_MIN_DUTY:
+                sys.stderr.write(
+                    f"nyxus-hwcaps: refusing a fan duty of {duty} — below the "
+                    f"{FAN_MIN_DUTY} floor, which can stop the fan\n")
+                return 2
+        wrote = False
+        failed = False
+        calibrate = duty is not None and not _fan_steps_load()
+        for hw in sorted(glob.glob("/sys/class/hwmon/hwmon*")):
+            for en in sorted(glob.glob(f"{hw}/pwm[0-9]_enable")):
+                try:
+                    with open(en, "w") as f:
+                        f.write(mode)
+                except OSError:
+                    continue
+                if duty is not None:
+                    pw = en[:-len("_enable")]
+                    # ── discover the real steps, once ────────────────────
+                    # Done HERE and nowhere else because this is the only
+                    # place that is already root, already in manual, and
+                    # already about to move the fans. Each probe is a register
+                    # write plus a read-back — no settle, no waiting on a
+                    # tachometer — and the requested duty is written last, so
+                    # the state this call leaves behind is exactly the state
+                    # it would have left without calibrating. Every candidate
+                    # is >= FAN_MIN_DUTY, so no intermediate value can stop a
+                    # fan. It runs only when nothing has been discovered yet.
+                    if calibrate:
+                        found = {}
+                        for cand in sorted(set(FAN_MODES.values())):
+                            try:
+                                with open(pw, "w") as f:
+                                    f.write(str(cand))
+                                time.sleep(0.05)
+                                back = _read_int(pw)
+                            except OSError:
+                                back = None
+                            found[cand] = back if back is not None else cand
+                        try:
+                            os.makedirs(os.path.dirname(FAN_STEPS_PATH),
+                                        exist_ok=True)
+                            with open(FAN_STEPS_PATH, "w") as f:
+                                json.dump({str(k): v for k, v in found.items()}, f)
+                            os.chmod(FAN_STEPS_PATH, 0o644)
+                        except OSError:
+                            pass
+                        calibrate = False
+                    try:
+                        with open(pw, "w") as f:
+                            f.write(str(duty))
+                    except OSError:
+                        # Never leave this channel manual-with-no-duty. The
+                        # recovery is FIRMWARE CONTROL, not the previous
+                        # enable value: if the previous value was itself
+                        # manual we cannot know the register still holds a
+                        # safe duty, and "hand it back to the firmware" is the
+                        # only state that is safe without knowing.
+                        try:
+                            with open(en, "w") as f:
+                                f.write("2")
+                        except OSError:
+                            pass
+                        failed = True
+                        continue
+                wrote = True
+        if not wrote:
+            sys.stderr.write(
+                "nyxus-hwcaps: could not set a fan duty cycle on this machine "
+                "— the fans were left under firmware control\n"
+                if failed else
+                "nyxus-hwcaps: no writable fan control on this machine\n")
+            return 1
+        if failed:
+            sys.stderr.write("nyxus-hwcaps: one or more fans would not take a "
+                             "duty cycle and were handed back to the firmware\n")
+            return 1
+        return 0
+
+    if target == "governor":
+        # governor is per-cpu — write it to every cpu.
+        wrote = False
+        for g in glob.glob("/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor"):
+            try:
+                with open(g, "w") as f:
+                    f.write(value)
+                wrote = True
+            except OSError:
+                pass
+        return 0 if wrote else 1
+
+    if target == "epp":
+        wrote = False
+        for e in glob.glob("/sys/devices/system/cpu/cpu*/cpufreq/"
+                           "energy_performance_preference"):
+            try:
+                with open(e, "w") as f:
+                    f.write(value)
+                wrote = True
+            except OSError:
+                pass
+        return 0 if wrote else 1
+
+    path = _target_path(target)
+    if not path or not os.path.exists(path):
+        sys.stderr.write(f"nyxus-hwcaps: {target} is not available on this machine\n")
+        return 1
+
+    # TRK-3745. Brightness and the keyboard LED are the two targets where the
+    # page's number and the kernel's number are in DIFFERENT UNITS. The page
+    # has always sent a percentage (its sliders are 5-100 and 0-100); the
+    # write went straight into /sys, which counts in the device's own range —
+    # 65535 on the owner's amdgpu panel, and 2 or 3 on most keyboard LEDs. So
+    # "set brightness to 60%" wrote 60 of 65535 and blacked the screen. The
+    # percentage is the contract, and this is where it is converted.
+    if target in ("backlight", "kbd-led"):
+        mx = _read_int(os.path.join(os.path.dirname(path), "max_brightness"))
+        try:
+            pct = int(round(float(value)))
+        except (TypeError, ValueError):
+            sys.stderr.write(f"nyxus-hwcaps: {target} takes a percentage 0-100\n")
+            return 2
+        pct = max(0, min(100, pct))
+        if mx and mx > 0:
+            raw = int(round(pct * mx / 100.0))
+            # A backlight of 0 is a black screen with no way back from the
+            # page that set it; the slider starts at 5% for the same reason.
+            if target == "backlight" and pct > 0:
+                raw = max(1, raw)
+            value = str(raw)
+        else:
+            value = str(pct)
+
+    try:
+        with open(path, "w") as f:
+            f.write(value)
+        return 0
+    except OSError as e:
+        sys.stderr.write(f"nyxus-hwcaps: could not write {target}: {e}\n")
+        return 1
+
+
+def _write_needs_root(target):
+    if target in ("fan", "governor", "epp"):
+        # if ANY of the target files is not user-writable, we need root
+        pats = {
+            "fan": "/sys/class/hwmon/hwmon*/pwm[0-9]_enable",
+            "governor": "/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor",
+            "epp": "/sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference",
+        }[target]
+        for p in glob.glob(pats):
+            if _needs_root(p):
+                return True
+        return False
+    path = _target_path(target)
+    return bool(path) and _needs_root(path)
+
+
+def do_set(target, value):
+    valid = ("backlight", "platform-profile", "epp", "governor", "fan",
+             "kbd-led", "battery-end")
+    if target not in valid:
+        sys.stderr.write(f"nyxus-hwcaps: unknown target '{target}'\n")
+        return 2
+
+    # TRK-3745 — refuse a bad fan value HERE, before the pkexec re-exec below.
+    # The check exists twice on purpose: this copy stops a doomed write from
+    # raising a polkit prompt for something that can never be applied, and the
+    # copy in _apply_write is the one that holds when this script is invoked
+    # as root directly. A value that cannot be applied must never reach a node.
+    if target == "fan" and _fan_normalise(value) is None:
+        sys.stderr.write(
+            "nyxus-hwcaps: fan takes 'auto' (firmware control) or one of "
+            + "/".join(sorted(FAN_MODES, key=FAN_MODES.get))
+            + f"; refusing '{value}'\n")
+        return 2
+
+    # Already root, or the write is user-permitted → do it directly.
+    if os.geteuid() == 0 or not _write_needs_root(target):
+        return _apply_write(target, value)
+
+    # Needs root and we're not — re-exec THIS script through pkexec. The page
+    # never builds a pkexec line; the one privilege path lives here.
+    pkexec = shutil.which("pkexec")
+    if not pkexec:
+        sys.stderr.write("nyxus-hwcaps: this change needs administrator rights, "
+                         "and pkexec is not available\n")
+        return 1
+    return subprocess.call([pkexec, os.path.abspath(__file__), "set", target, value])
+
+
+def main():
+    args = sys.argv[1:]
+    if not args or args[0] in ("--json", "json", "-j"):
+        return do_json()
+    if args[0] == "set" and len(args) >= 3:
+        return do_set(args[1], args[2])
+    sys.stderr.write("usage: nyxus-hwcaps --json | set <target> <value>\n")
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

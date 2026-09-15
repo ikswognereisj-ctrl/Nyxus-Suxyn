@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+"""nyxus-brain-pack — index a body of CODE as its own swappable pack.
+
+    nyxus-brain-pack nyxus  ~/Nyxus-Suxyn/shell
+    nyxus-brain-pack jett   ~/Projects/jeTT/src
+    nyxus-brain-pack --list
+    nyxus-brain-pack --drop jett
+
+── WHY PACKS RATHER THAN ONE BIG INDEX ────────────────────────────────────
+This is the "load part of its brain when I need it" idea, done the cheap way.
+Each pack is a separate directory of vectors. Querying can use one, several, or
+all of them, so asking about Jett does not drag in every QML file in NYXUS
+competing for the same twelve retrieval slots.
+
+That competition is the real reason to split. Retrieval returns a fixed number
+of chunks; the more unrelated material shares the index, the more of those slots
+go to near-misses. Packs are not an organisational nicety, they are precision.
+
+── WHY CODE IS CHUNKED DIFFERENTLY FROM PROSE ─────────────────────────────
+Prose survives being cut mid-paragraph; the surrounding sentences still carry
+the meaning. Code does not — half a function is not a smaller function, it is
+nonsense, and an embedding of it matches nothing useful.
+
+So this splits on TOP-LEVEL DEFINITIONS where it can find them (fn/def/class/
+component blocks) and only falls back to fixed windows when it cannot. Every
+chunk also carries its file and line, because the most common code question is
+"where is this", and an answer without a location does not answer it.
+"""
+import json
+import os
+import re
+import sys
+import time
+import urllib.request
+
+OLLAMA = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
+EMBED_MODEL = os.environ.get("NYXUS_BRAIN_EMBED", "nomic-embed-text")
+ROOT = os.path.expanduser(os.environ.get("NYXUS_BRAIN_DIR", "~/.local/share/nyxus-brain"))
+PACKS = os.path.join(ROOT, "packs")
+
+CODE_EXT = (".rs", ".py", ".qml", ".sh", ".js", ".ts", ".c", ".h", ".cpp",
+            ".go", ".java", ".frag", ".vert", ".glsl", ".toml", ".conf",
+            # .qmltypes is the API SURFACE of a QML module — every type,
+            # property, signal and method with its real signature. For a niche
+            # library like Quickshell this is the single most valuable thing to
+            # index: it is the difference between the model writing a real
+            # property name and inventing a plausible one.
+            ".qmltypes", ".qmldir", ".pri", ".pro")
+SKIP = {".git", "node_modules", "target", "__pycache__", ".venv", ".venv-train",
+        "build", "dist", "models", ".cache", "render-scratch"}
+
+# Boundaries that usually start a new unit of meaning in the languages he uses.
+DEF = re.compile(
+    r"^(?:\s*)(?:pub\s+)?(?:async\s+)?(?:fn|def|class|impl|struct|enum|trait)\s+\w+"
+    r"|^\s*[A-Z]\w+\s*\{"                 # QML component blocks
+    r"|^\s*(?:function|const|let|var)\s+\w+\s*[=(]"
+    r"|^\s*\w+\s*\(\)\s*\{",              # shell functions
+    re.M)
+
+MAXCHUNK = 2400   # bigger than prose: a function is worth keeping whole
+MINCHUNK = 60
+
+
+def post(path, payload):
+    req = urllib.request.Request(OLLAMA + path, data=json.dumps(payload).encode(),
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=120) as r:
+        return json.loads(r.read())
+
+
+def split_code(text, path):
+    """Split on definition boundaries, falling back to windows for long blobs."""
+    lines = text.splitlines(keepends=True)
+    starts = [0]
+    off = 0
+    for i, ln in enumerate(lines):
+        if i and DEF.match(ln):
+            starts.append(i)
+    starts.append(len(lines))
+
+    out = []
+    for a, b in zip(starts, starts[1:]):
+        block = "".join(lines[a:b])
+        if len(block.strip()) < MINCHUNK:
+            continue
+        if len(block) <= MAXCHUNK:
+            out.append((block, a + 1))
+        else:
+            # A single definition longer than the cap: window it, but keep the
+            # first lines on every piece so each chunk still knows what it is
+            # part of. Without that header a mid-function window is unlabelled.
+            head = "".join(lines[a:a + 3])
+            step = MAXCHUNK - 400
+            for j in range(0, len(block), step):
+                piece = block[j:j + MAXCHUNK]
+                if len(piece.strip()) < MINCHUNK:
+                    continue
+                out.append((head + "\n...\n" + piece if j else piece,
+                            a + 1 + block.count("\n", 0, j)))
+    return out
+
+
+def gather(root):
+    docs = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in SKIP and not d.startswith(".")]
+        for fn in filenames:
+            if not fn.endswith(CODE_EXT):
+                continue
+            p = os.path.join(dirpath, fn)
+            try:
+                if os.path.getsize(p) > 400_000:
+                    continue
+                with open(p, "r", encoding="utf-8", errors="replace") as f:
+                    text = f.read()
+            except Exception:
+                continue
+            for block, line in split_code(text, p):
+                docs.append({"text": block, "source": p, "line": line, "kind": "code"})
+    return docs
+
+
+def build(name, path):
+    path = os.path.expanduser(path)
+    if not os.path.isdir(path):
+        print(f"not a directory: {path}"); return 1
+    print(f"pack '{name}' <- {path}")
+    docs = gather(path)
+    if not docs:
+        print("  nothing indexable found"); return 1
+    print(f"  {len(docs)} chunks from {len(set(d['source'] for d in docs))} files")
+
+    out = os.path.join(PACKS, name)
+    os.makedirs(out, exist_ok=True)
+    vecs, meta = [], []
+    t0 = time.time()
+    for i, d in enumerate(docs, 1):
+        try:
+            vecs.append(post("/api/embeddings",
+                             {"model": EMBED_MODEL, "prompt": d["text"]})["embedding"])
+            meta.append(d)
+        except Exception as e:
+            print(f"  ! {d['source']}: {e}")
+        if i % 100 == 0 or i == len(docs):
+            r = i / max(time.time() - t0, .001)
+            print(f"  {i}/{len(docs)}  {r:.0f}/s  eta {(len(docs)-i)/max(r,.001)/60:.1f}m",
+                  flush=True)
+
+    import numpy as np
+    arr = np.array(vecs, dtype="float32")
+    nrm = np.linalg.norm(arr, axis=1, keepdims=True); nrm[nrm == 0] = 1
+    np.save(os.path.join(out, "vectors.npy"), arr / nrm)
+    json.dump(meta, open(os.path.join(out, "meta.json"), "w"))
+    json.dump({"name": name, "source": path, "chunks": len(meta),
+               "built_at": time.strftime("%F %T")},
+              open(os.path.join(out, "pack.json"), "w"), indent=2)
+    print(f"  done: {len(meta)} chunks in {time.time()-t0:.0f}s -> {out}")
+    return 0
+
+
+def main():
+    if "--list" in sys.argv:
+        if not os.path.isdir(PACKS):
+            print("no packs"); return 0
+        for n in sorted(os.listdir(PACKS)):
+            info = os.path.join(PACKS, n, "pack.json")
+            if os.path.exists(info):
+                d = json.load(open(info))
+                print(f"  {d['name']:12} {d['chunks']:>6} chunks  {d['source']}")
+        return 0
+    if "--drop" in sys.argv:
+        import shutil
+        n = sys.argv[sys.argv.index("--drop") + 1]
+        shutil.rmtree(os.path.join(PACKS, n), ignore_errors=True)
+        print(f"dropped {n}"); return 0
+    if len(sys.argv) < 3:
+        print(__doc__); return 1
+    return build(sys.argv[1], sys.argv[2])
+
+
+if __name__ == "__main__":
+    sys.exit(main())

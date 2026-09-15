@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Nyxus Suxyn — screensaver launcher.
+# Shows the idle screen fullscreen: the rose wall, a pane of glass, the time,
+# the date and one line in this build's voice — nyxus_screensaver.py. Launched
+# by hypridle at idle; torn down by hypridle on-resume via
+# `pkill -f nyxus_screensaver`. Any activity resumes the session (hypridle
+# kills the saver), so the user can never get trapped behind it.
+#
+# WIP-122: this header used to describe "the urban-alien wallpaper hero (clock
+# + NYXUS mark over a dimmed alien skyline)", and the payload really did render
+# the forked build's wordmark and tagline. Both are gone. The matrix-rain saver
+# it also mentioned has been deleted outright rather than merely un-pointed-at.
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/1000}"
+export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"
+export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}"
+
+# Pin the idle screensaver to this build's wall (the saver falls back to the
+# other staged walls only if this file is missing).
+export NYXUS_SCREENSAVER_WALL="${NYXUS_SCREENSAVER_WALL:-/usr/share/backgrounds/nyxus/suxyn-starlight-galaxy.png}"
+
+# single-instance guard
+if pgrep -f nyxus_screensaver >/dev/null 2>&1; then
+    exit 0
+fi
+
+# The payload lives in skel at ~/.config/nyxus/, but nyxus_install.sh deploys
+# app python into ~/.nyxus/ (-> /opt/nyxus). Hard-coding one of the three meant
+# a single missing copy made the idle screen do nothing at all, silently, with
+# hypridle reporting success. Take the first that exists.
+for _saver in "$HOME/.config/nyxus/nyxus_screensaver.py" \
+              "$HOME/.nyxus/nyxus_screensaver.py" \
+              "/opt/nyxus/nyxus_screensaver.py"; do
+    [ -f "$_saver" ] && exec python3 "$_saver"
+done
+echo "nyxus-screensaver: nyxus_screensaver.py not found in ~/.config/nyxus, ~/.nyxus or /opt/nyxus" >&2
+exit 1

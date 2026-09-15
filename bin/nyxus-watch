@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# nyxus-watch — explain why Netflix will not play in Chromium.
+#
+# Chromium is the default browser (HANDOFF) and ships with no Widevine CDM.
+# Baking the CDM onto the ISO is redistribution, which Google's licence
+# forbids (WIP-500). Owner 2026-08-20: Chromium only; do not launch Firefox.
+# Users fetch Widevine on this machine themselves (AUR chromium-widevine
+# pattern: Chrome's .deb, extract the CDM). This helper opens Help.
+#
+# The in-page banner (usr/share/nyxus/chromium-eme) hands the URL here via
+# x-scheme-handler/nyxus-watch. The URL is accepted and ignored — the tab
+# stays in Chromium; Help is the honest next click.
+set -u
+
+raw="${1:-}"
+raw="${raw#nyxus-watch://}"
+raw="${raw#nyxus-watch:}"
+# Chromium percent-encodes the inner URL when it is the scheme payload.
+# Unquote so a later on-machine CDM helper can receive it unchanged.
+if command -v python3 >/dev/null 2>&1 && [[ -n "$raw" ]]; then
+  raw=$(python3 -c 'import sys,urllib.parse; print(urllib.parse.unquote(sys.argv[1]))' "$raw")
+fi
+: "${raw:=}"
+
+if command -v notify-send >/dev/null 2>&1; then
+  notify-send --app-name=NYXUS "This Chromium cannot play this video" \
+    "Netflix needs Widevine. This image cannot ship it. Help explains how to get the CDM on this machine."
+fi
+
+if command -v nyxus-help >/dev/null 2>&1; then
+  exec nyxus-help installing-apps
+fi
+
+exit 1

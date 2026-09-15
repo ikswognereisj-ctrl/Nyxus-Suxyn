@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Nyxus Suxyn — raise glass Notes (Notes.qml). Never GTK nyxus_notes.py.
+#
+#   nyxus-notes           → qs ipc call notes engage
+#   nyxus-notes <file>    → qs ipc call notes at <file>
+#
+# Success is the returned string, not the exit code (qs ipc exits 0 even
+# when the target is missing).
+set -u
+
+if ! command -v qs >/dev/null 2>&1; then
+  echo "Notes needs the desktop shell (qs)." >&2
+  exit 2
+fi
+
+FILE="${1:-}"
+if [[ -z "${FILE}" ]]; then
+  out="$(qs ipc call notes engage 2>&1)" || true
+else
+  out="$(qs ipc call notes at "${FILE}" 2>&1)" || true
+fi
+if [[ "${out}" == *"Target not found."* ]]; then
+  echo "Notes is not in the running shell." >&2
+  printf '%s\n' "${out}" >&2
+  exit 2
+fi
+printf '%s\n' "${out}"
+exit 0

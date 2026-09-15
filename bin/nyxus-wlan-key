@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# ============================================================================
+#  NYXUS Suxyn — the wireless key.
+#
+#  KEY_WLAN (238) arrives as XF86WLAN and was doing nothing at all. The key is
+#  printed with a wireless glyph on the lid, so it should toggle the radio, and
+#  now it does.
+#
+#  NetworkManager FIRST, rfkill only as a fallback, and the order matters. If
+#  the radio is soft-blocked at the rfkill layer while NetworkManager still
+#  believes wifi is enabled, the two disagree and the applet shows a state the
+#  hardware is not in. Asking NetworkManager to do it keeps one authority over
+#  the radio; rfkill is there for a machine where NetworkManager is not running
+#  at all, which is the ISO's live shell before the network is configured.
+#
+#  HARD BLOCK IS REPORTED, NOT FOUGHT. A hardware switch or a firmware block is
+#  not something a keypress can clear, and silently trying and failing is how a
+#  key earns a reputation for being broken. If it is hard blocked the key says
+#  so out loud and stops.
+# ============================================================================
+set -uo pipefail
+
+notify() {
+  # ON SCREEN, like the volume keys — not a corner notification. nyxus-osd
+  # talks to the same OSD plate shell/Osd.qml already draws for volume and
+  # brightness, and falls back on its own if the shell is not running.
+  # glyph below is U+F1EB (wifi), a literal character rather than an
+  # escape: printf %b does not decode \\u and shipped tofu once.
+  nyxus-osd "" "$1" "network-wireless"
+}
+
+if rfkill list wifi 2>/dev/null | grep -qi "Hard blocked: yes"; then
+  notify "The wireless radio is blocked by a hardware switch."
+  exit 1
+fi
+
+if command -v nmcli >/dev/null && nmcli radio wifi >/dev/null 2>&1; then
+  if [[ "$(nmcli radio wifi 2>/dev/null)" == "enabled" ]]; then
+    nmcli radio wifi off >/dev/null 2>&1 \
+      && notify "Wireless off" \
+      || notify "Could not turn the wireless off."
+  else
+    nmcli radio wifi on >/dev/null 2>&1 \
+      && notify "Wireless on" \
+      || notify "Could not turn the wireless on."
+  fi
+  exit 0
+fi
+
+# No NetworkManager — go straight at the radio.
+if rfkill list wifi 2>/dev/null | grep -qi "Soft blocked: yes"; then
+  rfkill unblock wifi 2>/dev/null && notify "Wireless on"
+else
+  rfkill block wifi 2>/dev/null && notify "Wireless off"
+fi

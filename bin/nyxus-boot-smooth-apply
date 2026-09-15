@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+# Install the boot-smoothness payloads (plymouth hold, handoff, ice splash
+# text, optional GRUB keep-payload + plymouth.ignore-serial-consoles).
+#
+# Needs root. This script does not invoke sudo — run it as root:
+#
+#   sudo nyxus-boot-smooth-apply
+#
+# Does NOT: unmask getty@tty1, edit greetd default_session, remove quiet/splash,
+# set WLR_NO_HARDWARE_CURSORS, or rebuild hero.png.
+#
+# Then reboot to verify the remaining flashes listed in /tmp/nyxus-boot-gap.md
+# 2026-09-11: mkinitcpio + dropping plymouth deactivate hung the boot.
+if [[ "${NYXUS_I_MEAN_IT:-}" != "1" ]]; then
+  echo "REFUSED: nyxus-boot-smooth-apply is parked after the splash hang." >&2
+  echo "Use: sudo nyxus-repair-at-root" >&2
+  exit 2
+fi
+
+set -euo pipefail
+
+# sudo resets HOME to /root; these assets live in the invoking user's
+# tree. Resolve it, never a hardcoded account (idiom from
+# nyxus-repair-at-root).
+OWNER_HOME=$(getent passwd "${SUDO_USER:-$USER}" | cut -d: -f6)
+OWNER_HOME=${OWNER_HOME:-$HOME}
+SRC="${OWNER_HOME}/.local/share/nyxus-boot-smooth"
+HOLD_SRC="$SRC/nyxus-plymouth-hold-until-greeter"
+HAND_SRC="$SRC/plymouth-handoff.conf"
+SCRIPT_SRC="$SRC/suxyn.script"
+
+HOLD_DST=/usr/local/bin/nyxus-plymouth-hold-until-greeter
+HAND_DST=/etc/systemd/system/greetd.service.d/plymouth-handoff.conf
+SCRIPT_DST=/usr/share/plymouth/themes/suxyn/suxyn.script
+GRUB=/etc/default/grub
+
+stamp() { date +%Y%m%d-%H%M%S; }
+
+if [[ ${EUID} -ne 0 ]]; then
+  cat >&2 <<EOF
+root required. Exact commands:
+
+  sudo $0
+
+What that does:
+  1. install $HOLD_DST          (wait for cage|regreet|qs, then quit --retain-splash)
+  2. install $HAND_DST          (drop ExecStartPre plymouth deactivate)
+  3. install $SCRIPT_DST        (status/LUKS ice #b7e6f2 / #eefcff)
+  4. add plymouth.ignore-serial-consoles to GRUB_CMDLINE_LINUX_DEFAULT
+     (does not remove quiet/splash) and GRUB_GFXPAYLOAD_LINUX=keep
+  5. grub-mkconfig -o /boot/grub/grub.cfg
+  6. mkinitcpio -P              (theme dir is copied into every initramfs)
+  7. systemctl daemon-reload
+
+Does not touch /etc/greetd/config.toml default_session.
+Does not unmask getty@tty1.
+EOF
+  exit 1
+fi
+
+for f in "$HOLD_SRC" "$HAND_SRC" "$SCRIPT_SRC"; do
+  [[ -s "$f" ]] || { echo "missing payload: $f" >&2; exit 2; }
+done
+
+bak=$(stamp)
+backup() {
+  local dst=$1
+  [[ -e "$dst" ]] || return 0
+  cp -a "$dst" "${dst}.bak-boot-smooth-${bak}"
+  echo "backup ${dst}.bak-boot-smooth-${bak}"
+}
+
+backup "$HOLD_DST"
+install -m 0755 "$HOLD_SRC" "$HOLD_DST"
+echo "installed $HOLD_DST"
+
+backup "$HAND_DST"
+install -m 0644 "$HAND_SRC" "$HAND_DST"
+echo "installed $HAND_DST"
+
+backup "$SCRIPT_DST"
+install -m 0644 "$SCRIPT_SRC" "$SCRIPT_DST"
+echo "installed $SCRIPT_DST"
+
+# ── kernel cmdline: keep quiet/splash, add ignore-serial-consoles ──
+if [[ -f "$GRUB" ]]; then
+  backup "$GRUB"
+  python3 - "$GRUB" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+text = p.read_text()
+orig = text
+key = "plymouth.ignore-serial-consoles"
+if key not in text:
+    # Insert after splash if present, else append inside the default quotes.
+    if 'splash' in text and 'GRUB_CMDLINE_LINUX_DEFAULT=' in text:
+        text = text.replace("splash", "splash plymouth.ignore-serial-consoles systemd.show_status=false", 1)
+    else:
+        raise SystemExit("refusing to edit GRUB: no splash in GRUB_CMDLINE_LINUX_DEFAULT")
+if "GRUB_GFXPAYLOAD_LINUX=" not in text:
+    if not text.endswith("\n"):
+        text += "\n"
+    text += "GRUB_GFXPAYLOAD_LINUX=keep\n"
+if "quiet" not in text or "splash" not in text:
+    raise SystemExit("refusing to write GRUB: quiet/splash would be lost")
+if text != orig:
+    p.write_text(text)
+    print("updated", p)
+else:
+    print("grub already has ignore-serial-consoles and GFXPAYLOAD")
+PY
+  grub-mkconfig -o /boot/grub/grub.cfg
+  echo "grub-mkconfig done"
+else
+  echo "no $GRUB — skipped kernel cmdline" >&2
+fi
+
+echo "rebuilding initramfs (plymouth copies the whole suxyn theme dir)…"
+mkinitcpio -P
+
+systemctl daemon-reload
+echo "daemon-reload done"
+
+# Safety assertions — login path must still be the one we found.
+if [[ "$(readlink -f /etc/systemd/system/getty@tty1.service)" != /dev/null ]]; then
+  echo "WARNING: getty@tty1 is not masked (left as found, not changed)" >&2
+fi
+if grep -q 'command = "/usr/local/bin/nyxus-greeter"' /etc/greetd/config.toml; then
+  echo "greetd default_session command untouched"
+else
+  echo "NOTE: greetd default_session is not nyxus-greeter (not edited here)" >&2
+fi
+if grep -q 'ExecStartPre=.*plymouth deactivate' "$HAND_DST"; then
+  echo "ERROR: deactivate still in handoff" >&2
+  exit 3
+fi
+echo
+echo "applied. reboot to verify GRUB→splash→login. remaining flashes: /tmp/nyxus-boot-gap.md"

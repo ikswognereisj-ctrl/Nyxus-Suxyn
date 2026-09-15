@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# NYXUS crash-report launcher (TRK-1232). build-iso.sh installs the payload at
+# /opt/nyxus/nyxus-crash-report.py (it is the one non-`nyxus_*.py` file the
+# "GTK apps → /opt/nyxus" stage copies by name) and writes a heredoc stub that
+# execs exactly that — but the committed-launcher restore loop re-installs THIS
+# file last, so this is what ships. It used to exec $HOME/.nyxus/…, which only
+# resolves through the per-user skel symlink farm and ignored NYXUS_APP_DIR
+# (the preview / relocated-install hook every other launcher honours).
+exec python3 "${NYXUS_APP_DIR:-/opt/nyxus}/nyxus-crash-report.py" "$@"

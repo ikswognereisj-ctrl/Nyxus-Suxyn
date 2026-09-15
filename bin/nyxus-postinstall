@@ -1,0 +1,340 @@
+#!/usr/bin/env bash
+# ============================================
+# NYXUS — nyxus-postinstall · runs INSIDE chroot of new install
+# Copyright © 2026 Joseph A. Sierengowski
+# NYX-J5W-2026-SIERENGOWSKI-LOCKED
+# ============================================
+#
+# Invoked by `nyxus-install` via `arch-chroot /mnt /usr/local/bin/nyxus-postinstall`.
+# Idempotent — safe to re-run.
+#
+# Responsibilities:
+#   1. Install the NYXUS hardware-enablement package set into the new
+#      root, independent of which archinstall profile the user chose.
+#   2. Drop the NYXUS-locked /etc/mkinitcpio.conf + /etc/modprobe.d/nvidia.conf
+#      into the chroot BEFORE regenerating initramfs, so MODULES=(i915
+#      nvidia ...) early-KMS actually takes effect on first boot.
+#   3. Enable hardware services.
+#   4. Install NYXUS apps + chrome from the offline cache at /opt/nyxus-cache,
+#      with NYXUS_OFFLINE_DIR set so no online fetches happen during the
+#      install — guarantees deterministic chroot installs even with no net.
+
+set -e -u
+B=$'\e[1m'; R=$'\e[0m'; CYAN=$'\e[38;5;51m'; PURPLE=$'\e[38;5;177m'; GOLD=$'\e[38;5;220m'; PINK=$'\e[38;5;201m'
+step() { printf "\n${PURPLE}▌${R} ${B}%s${R}\n" "$*"; }
+ok()   { printf "  ${CYAN}✓${R}  %s\n" "$*"; }
+warn() { printf "  ${GOLD}!${R}  %s\n" "$*"; }
+fail() { printf "  ${PINK}✗${R}  %s\n" "$*" >&2; }
+
+# ── 0. Sanity: must be root in a chroot ─────────────────────────────────
+if [[ $EUID -ne 0 ]]; then
+  fail "must run as root"
+  exit 1
+fi
+
+# ── 1. Hardware-enablement packages — install regardless of archinstall ─
+# Fail-loud here: if these can't be installed, the system won't be usable
+# on the MSI GS77 target.
+step "installing NYXUS hardware-enablement package set"
+HW_PKGS=(
+  # NVIDIA hybrid stack (TRK-1347 / TRK-1450 — same dkms flavour as
+  # packages.x86_64; was nvidia-dkms/proprietary, now nvidia-open-dkms)
+  linux-headers nvidia-open-dkms nvidia-utils nvidia-settings
+  lib32-nvidia-utils opencl-nvidia egl-wayland libva-nvidia-driver
+  # Intel iGPU + Vulkan
+  intel-media-driver libva-intel-driver libva-utils
+  vulkan-intel lib32-vulkan-intel
+  vulkan-icd-loader lib32-vulkan-icd-loader lib32-vulkan-radeon vulkan-tools
+  intel-gpu-tools mesa lib32-mesa mesa-utils
+  # AMD + hybrid (TRK-1205 / CS-1058, 2026-08-22 — mirror of the
+  # packages.x86_64 "GPU drivers — AMD" block; mesa above already carries
+  # radeonsi GL + AMD VA-API)
+  vulkan-radeon switcheroo-control
+  # Audio firmware (required for MSI GS77)
+  sof-firmware alsa-firmware alsa-ucm-conf
+  pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber
+  # Power / thermal
+  thermald acpid upower power-profiles-daemon lm_sensors nvtop powertop
+  # Bluetooth, print, webcam
+  bluez bluez-utils bluez-obex blueman
+  cups cups-pdf system-config-printer v4l-utils
+  # Networking
+  networkmanager network-manager-applet
+  # Plymouth (so our boot splash works on the installed system too)
+  plymouth
+)
+# Refresh dbs first; --needed skips already-installed
+pacman -Sy --noconfirm --needed "${HW_PKGS[@]}" || {
+  fail "pacman failed to install hardware package set"
+  fail "check /var/log/pacman.log inside the new system; you may need internet"
+  exit 1
+}
+ok "hardware package set installed"
+
+# ── 2. Drop NYXUS-locked kernel + nvidia config into the chroot ────────
+# The customize_airootfs.sh stage only puts these into the LIVE ISO at
+# /etc/mkinitcpio.conf etc. They are NOT carried over to the installed
+# root by archinstall. We must explicitly stage them here.
+step "staging NYXUS kernel + NVIDIA config into installed root"
+
+# These same files exist on the LIVE ISO (we are running INSIDE the chroot
+# at /mnt of the live ISO, but the live ISO's airootfs is mounted at /run/
+# archiso/airootfs. We use /run/archiso/airootfs as the source.)
+LIVE_ROOT="/run/archiso/airootfs"
+if [[ ! -d "$LIVE_ROOT" ]]; then
+  # Fallback: maybe we're called outside arch-chroot; try /
+  LIVE_ROOT=""
+fi
+
+stage_config() {
+  local src="$1" dst="$2"
+  if [[ -f "$LIVE_ROOT$src" ]]; then
+    install -Dm644 "$LIVE_ROOT$src" "$dst"
+    ok "staged $dst"
+  elif [[ -f "$src" ]]; then
+    # already in chroot from package — leave it alone
+    ok "$dst already present (from package)"
+  else
+    warn "could not find source for $dst — leaving package default"
+  fi
+}
+
+stage_config "/etc/mkinitcpio.conf"        "/etc/mkinitcpio.conf"
+stage_config "/etc/modprobe.d/nvidia.conf" "/etc/modprobe.d/nvidia.conf"
+stage_config "/etc/pacman.conf"            "/etc/pacman.conf"
+
+# ── 3. Regenerate initramfs with NYXUS MODULES order ────────────────────
+step "regenerating initramfs (mkinitcpio -P)"
+if command -v mkinitcpio >/dev/null 2>&1; then
+  mkinitcpio -P || { fail "mkinitcpio -P failed"; exit 1; }
+  ok "initramfs rebuilt with i915→nvidia early-KMS order"
+else
+  warn "mkinitcpio not found — bootloader may need manual regen"
+fi
+
+# ── 4. Enable hardware + system services ────────────────────────────────
+step "enabling system services"
+for svc in \
+  NetworkManager.service \
+  greetd.service \
+  bluetooth.service \
+  thermald.service \
+  power-profiles-daemon.service \
+  switcheroo-control.service \
+  cups.service \
+  acpid.service \
+  chronyd.service \
+  ; do
+  systemctl enable "$svc" 2>/dev/null && ok "enabled $svc" || warn "skip $svc (not installed)"
+done
+# chrony and systemd-timesyncd conflict — keep chrony only.
+systemctl disable systemd-timesyncd.service 2>/dev/null || true
+
+# ── greetd hardening for INSTALLED systems (rev 2026-07-09) ────────────
+# greetd is the sole display manager (enabled above; the old sddm enable
+# + greetd disable pair is what used to leave installs with no login
+# screen — sddm was never in packages.x86_64). The live-ISO safety-net
+# [initial_session] autologin block must NOT survive onto an installed
+# system, otherwise every boot would auto-log the live user in without
+# a password. Strip it; default_session (nyxus-greeter chain) remains.
+GREETD_CONF=/etc/greetd/config.toml
+if [[ -f "${GREETD_CONF}" ]] && grep -q '^\[initial_session\]' "${GREETD_CONF}"; then
+  sed -i '/^\[initial_session\]/,/^\[/{/^\[initial_session\]/d;/^\[/!d}' "${GREETD_CONF}"
+  ok "greetd: stripped live-ISO [initial_session] autologin"
+fi
+
+# fstrim weekly for SSD longevity
+systemctl enable fstrim.timer 2>/dev/null && ok "enabled fstrim.timer" || true
+
+# NVIDIA suspend/resume/hibernate hooks (ship with nvidia-utils ≥435)
+for svc in nvidia-suspend.service nvidia-resume.service nvidia-hibernate.service; do
+  systemctl enable "$svc" 2>/dev/null && ok "enabled $svc" || true
+done
+
+# ── 4b. Configure snapper if archinstall laid out a btrfs root (GAP-1) ──
+# archinstall drives its own disk step; NYXUS does not control the layout on
+# this TUI path the way Calamares's mount.conf does. But whatever the user
+# picked, nothing here ever configured snapper on top of it — the same "ships
+# a package, never runs it" gap as the Calamares path, just for a different
+# reason (there Calamares laid out subvolumes and nothing initialised them;
+# here archinstall may or may not have done btrfs at all). Guarded the same
+# way: skip cleanly, never fail the install, if root is not btrfs.
+step "configuring snapper (btrfs installs only)"
+if ! command -v snapper >/dev/null 2>&1; then
+  warn "snapper not installed — skipping snapshot setup"
+elif [[ "$(findmnt -no FSTYPE / 2>/dev/null)" != "btrfs" ]]; then
+  warn "root is not btrfs — skipping snapshot setup"
+else
+  if [[ ! -f /etc/snapper/configs/root ]]; then
+    # Unlike the Calamares path, archinstall's own btrfs preset (when chosen)
+    # already owns /.snapshots however IT laid it out; do not assume a
+    # pre-mounted subvolume is there to protect, just let create-config do
+    # its normal thing.
+    if snapper --no-dbus -c root create-config /; then
+      snapper --no-dbus -c root set-config \
+        TIMELINE_CREATE=yes TIMELINE_CLEANUP=yes NUMBER_CLEANUP=yes \
+        NUMBER_LIMIT=10 NUMBER_LIMIT_IMPORTANT=10 \
+        TIMELINE_LIMIT_HOURLY=5 TIMELINE_LIMIT_DAILY=7 \
+        TIMELINE_LIMIT_WEEKLY=4 TIMELINE_LIMIT_MONTHLY=3 TIMELINE_LIMIT_YEARLY=0
+      ok "snapper root config created (5 hourly / 7 daily / 4 weekly / 3 monthly, capped at 10)"
+    else
+      warn "snapper -c root create-config failed — no rollback config on this install"
+    fi
+  else
+    ok "snapper root config already present"
+  fi
+  if [[ -d /home ]] && [[ "$(findmnt -no FSTYPE /home 2>/dev/null)" == "btrfs" ]] && [[ ! -f /etc/snapper/configs/home ]]; then
+    if snapper --no-dbus -c home create-config /home; then
+      snapper --no-dbus -c home set-config \
+        TIMELINE_CREATE=yes TIMELINE_CLEANUP=yes NUMBER_CLEANUP=yes \
+        NUMBER_LIMIT=10 NUMBER_LIMIT_IMPORTANT=10 \
+        TIMELINE_LIMIT_HOURLY=0 TIMELINE_LIMIT_DAILY=7 \
+        TIMELINE_LIMIT_WEEKLY=4 TIMELINE_LIMIT_MONTHLY=3 TIMELINE_LIMIT_YEARLY=0
+      ok "snapper home config created (7 daily / 4 weekly / 3 monthly, capped at 10)"
+    else
+      warn "snapper -c home create-config failed"
+    fi
+  fi
+  if [[ -f /etc/snapper/configs/root ]]; then
+    snapper --no-dbus -c root create --type single --cleanup-algorithm number \
+      --description "initial installation" 2>/dev/null \
+      && ok "initial root snapshot taken" \
+      || warn "initial snapshot failed (non-fatal)"
+  fi
+  if command -v grub-mkconfig >/dev/null 2>&1 && [[ -f /boot/grub/grub.cfg ]]; then
+    grub-mkconfig -o /boot/grub/grub.cfg >/dev/null 2>&1 \
+      && ok "GRUB regenerated — rollback entry present at first boot" \
+      || warn "grub-mkconfig failed — rollback entry may not appear until next kernel update"
+  elif command -v bootctl >/dev/null 2>&1; then
+    warn "systemd-boot detected — grub-btrfs rollback entries need grub; snapper config is still active"
+  fi
+  if ! pacman -Qi snap-pac >/dev/null 2>&1; then
+    warn "snap-pac not installed — pacman transactions will not take automatic pre/post snapshots"
+  else
+    ok "snap-pac present — pacman transactions snapshot automatically"
+  fi
+fi
+
+# ── 4c. THE HEMERA BASELINE — install-time default-on (WIP-653) ─────────
+# The owner's ruling, verbatim: "flip it". Firewall + AppArmor enable
+# here on the TUI/archinstall path exactly as Calamares's
+# shellprocess.conf enables them on the desktop path — the GAP-1
+# two-path precedent: a protection that exists on one install path and
+# not the other is a machine shipped unprotected half the time. Runs
+# through the same engine everything else uses (nyxus-secure; systemctl
+# enable works in a chroot, en_apparmor adds the lsm= kernel line and
+# regenerates grub itself). Degrade-safe like 4b: warns, never fails
+# the install. The first-run wizard's Protection step is now the
+# opt-out surface — a dead wizard can no longer strip protections.
+# Gate 13q23 holds this block and its Calamares twin together.
+step "enabling the Hemera baseline (firewall + AppArmor)"
+if [[ -x /usr/local/bin/nyxus-secure ]]; then
+  if /usr/local/bin/nyxus-secure apply firewall=on apparmor=on; then
+    ok "Hemera baseline: firewall + AppArmor enabled on the installed target"
+  else
+    warn "Hemera baseline: nyxus-secure reported a failure (unit absent?) — install continues"
+  fi
+else
+  warn "/usr/local/bin/nyxus-secure missing — Hemera baseline not applied"
+fi
+
+# ── 4d. Remove the live `nyx` account (TRK-1033 / WIP-615 TUI path) ─────
+# Calamares already calls nyxus-remove-live-user from shellprocess.conf
+# (gate 13q17). This TUI/archinstall path never did, so a `sudo nyxus-install`
+# left uid 1000 / password `nyx` on the target. Run BEFORE the cache install
+# so NUSER below is the real account, not leftover nyx.
+step "removing the live nyx account (unless that is the installed user)"
+_keep=""
+while IFS=: read -r _u _x _uid _; do
+  [[ "${_uid}" -ge 1000 && "${_uid}" -lt 65534 && "${_u}" != nobody ]] || continue
+  if [[ "${_u}" != nyx ]]; then
+    _keep="${_u}"
+    break
+  fi
+done < /etc/passwd
+if [[ -z "${_keep}" ]]; then
+  _keep="nyx"
+fi
+if [[ -x /usr/local/bin/nyxus-remove-live-user ]]; then
+  /usr/local/bin/nyxus-remove-live-user "${_keep}" \
+    && ok "live-account scrub ran (keep=${_keep})" \
+    || warn "live-account scrub returned non-zero — install continues"
+else
+  warn "nyxus-remove-live-user missing — live nyx may survive this TUI install"
+fi
+
+# ── 4e. HIBERNATE WIRING — same block on BOTH installer paths (CS-1059) ─
+# The Calamares path runs this as shellprocess@hibernate between grubcfg
+# and bootloader; here it runs after the configs are staged and before
+# first boot, for the same reason as 4c: a capability that exists on one
+# install path and not the other ships broken half the time (the GAP-1
+# precedent). nyxus-hibernate --setup reads the target's /etc/fstab and
+# writes resume= (+ resume_offset= for a swapfile) into the kernel
+# command line, guarantees the `resume` initramfs hook, and strips stale
+# resume= tokens when there is no disk-backed swap. Idempotent and
+# degrade-safe: it warns and exits 0 rather than failing the install.
+# Gate 13s23 holds this block and its Calamares twin together.
+step "wiring hibernation resume (nyxus-hibernate --setup)"
+if [[ -x /usr/local/bin/nyxus-hibernate ]]; then
+  /usr/local/bin/nyxus-hibernate --setup \
+    && ok "hibernate wiring done (see lines above for what was found)" \
+    || warn "nyxus-hibernate --setup reported a problem — hibernate may be unavailable; run 'nyxus-hibernate --check' on the installed system"
+else
+  warn "/usr/local/bin/nyxus-hibernate missing — resume= not configured; hibernate will be unavailable"
+fi
+
+# ── 5. NYXUS apps + chrome from offline cache (deterministic / no net) ──
+step "installing NYXUS apps from offline cache"
+NUSER=$(awk -F: '$3 >= 1000 && $3 < 65534 {print $1; exit}' /etc/passwd)
+if [[ -z "$NUSER" ]]; then
+  warn "no regular user found yet — apps will install on first boot via nyxus-bootstrap"
+elif [[ ! -d /opt/nyxus-cache ]]; then
+  warn "/opt/nyxus-cache absent — first boot will use online bootstrap fallback"
+else
+  # Run the installer as the user, with NYXUS_OFFLINE_DIR pointing at the
+  # baked cache so it does NOT reach for the network. Granting passwordless
+  # sudo for this single invocation only.
+  if [[ -x /opt/nyxus-cache/nyxus_install.sh ]]; then
+    ok "running nyxus_install.sh as $NUSER (offline mode)"
+    chown -R "$NUSER:$NUSER" /opt/nyxus-cache 2>/dev/null || true
+    # Allow passwordless sudo for nyxus_install.sh duration
+    echo "$NUSER ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/99-nyxus-install
+    sudo -u "$NUSER" -H \
+      env NYXUS_OFFLINE_DIR=/opt/nyxus-cache HOME="/home/$NUSER" \
+      bash -c "cd /opt/nyxus-cache && ./nyxus_install.sh" \
+      || warn "nyxus_install.sh returned non-zero (apps will retry on first boot)"
+    rm -f /etc/sudoers.d/99-nyxus-install
+  else
+    warn "/opt/nyxus-cache/nyxus_install.sh missing — bootstrap will fetch on first boot"
+  fi
+
+  # Mark bootstrap complete so nyxus-wait-bootstrap doesn't re-run on first login
+  if [[ -d /home/$NUSER/.nyxus ]]; then
+    sudo -u "$NUSER" touch "/home/$NUSER/.nyxus/.bootstrapped"
+    ok "marked ~/.nyxus/.bootstrapped"
+  fi
+fi
+
+# ── 6. Retire the installer from the installed system ───────────────────
+# (WIP-451, 2026-08-12.) "Install NYXUS · Suxyn" is a live-session thing. The
+# installed root inherits /usr/share/applications/install-nyxus.desktop and
+# /etc/skel/Desktop/install-nyxus.desktop from the ISO, so without this an
+# installed machine offers to install itself, forever.
+#
+# This is the TUI path (nyxus-install → here). The Calamares path does the same
+# removal from etc/calamares/modules/shellprocess.conf. BOTH are needed and
+# that is the whole point: the mkinitcpio bug directly above this file's step 3
+# was exactly one fix that existed on one install path and not the other, and
+# it shipped a machine that died at its first kernel update. Same shape, so:
+# same fix, both paths, and gate 13uz checks both are present.
+step "retiring the installer from the installed system"
+rm -f /usr/share/applications/install-nyxus.desktop \
+      /etc/skel/Desktop/install-nyxus.desktop
+rm -f /home/*/Desktop/install-nyxus.desktop /root/Desktop/install-nyxus.desktop 2>/dev/null || true
+ok "install-nyxus.desktop removed (system, skel and every user Desktop)"
+
+step "post-install complete"
+ok "Hardware: Intel + AMD + NVIDIA GPU stacks + sof-firmware + Vulkan + gaming stack installed."
+ok "Initramfs: i915 → nvidia early-KMS active on next boot."
+ok "Services: bluetooth, thermald, power-profiles, cups, fstrim, nvidia-{suspend,resume,hibernate} enabled."
+ok "Reboot to drop into NYXUS."

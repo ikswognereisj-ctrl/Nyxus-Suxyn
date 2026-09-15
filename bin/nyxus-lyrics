@@ -1,0 +1,936 @@
+#!/usr/bin/env python3
+r"""NYXUS Suxyn — the synced-lyric fetcher.                          TRK-3812
+
+Given a track (artist, title, duration) this writes ONE small JSON file into
+the user's cache and prints its path. The bar reads that file once per song
+and then walks an array; nothing here runs per frame, and nothing here ever
+touches the player.
+
+    nyxus-lyrics --artist "Sir Mix-A-Lot" --title "Baby Got Back" --duration 262
+    /home/you/.cache/nyxus/lyrics/3f2a....json
+
+⚠ FLAGS, NOT POSITIONALS, AND `--duration` IS IN SECONDS. Three positional
+words are silently rejected by argparse, and MPRIS reports `mpris:length` in
+MICROseconds — hand it `274000000` and every lookup misses, because duration
+is part of both the query and the cache key. Divide by 1e6 first. The shell
+does (`Math.round(src.lengthSec)`); a person testing by hand usually does not,
+and it has cost two sessions.
+
+── the five constraints this file was written against ────────────────────
+1. IT CANNOT AFFECT PLAYBACK. This process only ever READS strings it was
+   handed on argv (or, for hand testing, from `playerctl metadata`). It never
+   holds the player's D-Bus name, never seeks, never pauses. The shell runs it
+   detached and reads the file it names. Worst case is no lyrics.
+2. ONE LOOKUP PER TRACK, EVER. The answer — including "there is no answer" —
+   is cached on disk under a hash of the normalised artist+title+duration. A
+   negative result is cached too, or an obscure track re-queries on every
+   play, which is the exact shape of the leak this feature must not be.
+3. IT FAILS INVISIBLY. No network, no match, a malformed body, a timeout, a
+   DNS failure: the file is written as a MISS, the path is printed, exit 0.
+   There is no error path that reaches a surface, and nothing is logged to the
+   owner's face. `--debug` prints to stderr for a person debugging by hand and
+   is off in every shipped call site.
+4. ONLY artist + title + duration LEAVE THIS MACHINE. That is the entire
+   payload. No album (LRCLIB accepts `album_name` and it is optional — it is
+   deliberately NOT sent), no identity, no listening history, no timestamps of
+   what was played when, no MPRIS bus name, no cookies, no persistent id.
+   The User-Agent is the fixed string below: urllib's default would announce
+   the machine's Python version, which is strictly more than a product name.
+   Query cleaning only ever REMOVES text ("(Official Video)" and friends), so
+   the cleaned query is a subset of what the page already published.
+5. THE EMPTY CASE IS THE COMMON CASE. LRCLIB's catalogue is far smaller than
+   YouTube Music's; remixes, live cuts, long mixes and anything obscure return
+   nothing. Every code path below is written so that "no words" is a normal,
+   quiet, cached outcome, not an error.
+
+── ⚠ WORD TIMINGS ARE USUALLY AN ESTIMATE, AND THE FILE SAYS WHICH ────────
+The renderer groups these words into short PHRASES. LRC is timestamped PER
+LINE. So each word carries an `exact` flag and there are two routes:
+
+  · EXACT (`exact` = 1) — Enhanced LRC / "A2", where `<mm:ss.xx>` markers sit
+    INSIDE the line. When they are there they are used, because they are the
+    real thing.
+  · ESTIMATED (`exact` = 0) — the common case. The line's stamp and the NEXT
+    line's stamp bound an interval, and the words are spread across it
+    weighted by syllable count plus a small length term, because "the" and
+    "unbelievable" are not sung for the same length of time.
+
+An estimated word time WILL drift audibly on a fast line. This build's owner
+listens to hip-hop; dense fast lines are the NORMAL case here, not the edge.
+Nothing in this file pretends otherwise, which is why `exact` is per word and
+not a property of the document.
+
+── ⚠ SCHEMA 2 · THE FIFTH FIELD IS `anchor`, AND IT IS NOT `exact` ────────
+A word is `[start, end, text, exact, anchor]`.
+
+  `exact`   1 when an A2 marker gave this word BOTH its ends.
+  `anchor`  1 when this word's START is a LITERAL TIMESTAMP off the file —
+            the first word of an LRC line, or the first word after an A2
+            marker. Everything else inherits a start computed by the
+            syllable spread above.
+
+They are different questions and the second is the one a phrase renderer
+needs. On the owner's own test track (Kendrick Lamar, "Not Like Us", 905
+words) `exact` is 1 for ZERO words — LRCLIB's record carries no A2 at all —
+while `anchor` is 1 for 105 of them. A renderer that starts each phrase on
+an anchored word therefore starts on a real stamp far more often than one
+that starts on an arbitrary word, and the number is measurable rather than
+asserted. See MediaSource.qml § THE PHRASE.
+
+⚠ `anchor` is why SCHEMA moved 1 → 2. A v1 document has four fields and no
+way to recover the fifth, and `cached()` already refuses a document whose
+`v` does not match, so the bump re-fetches once per track and no migration
+code is needed.
+
+── where the LRC parsing came from ───────────────────────────────────────
+`parse_lrc_lines()` below is derived from `parse_lrc()` in
+`artifacts/api-server/nyxus-scripts/nyxus_media.py` (~line 2037) — same
+`[mm:ss.xx]` shape, same sort, same "a line that does not stamp is skipped"
+rule. It is a COPY rather than an import because importing that module pulls
+in GTK4/GStreamer through `gi.require_version`, which a one-shot cache filler
+must not pay for. Two differences, both deliberate, and BOTH are defects in
+the original worth reporting rather than silently working around:
+
+  · nyxus_media.py's regex is `\[(\d+):(\d+(?:\.\d+)?)\](.*)` and puts
+    EVERYTHING after the first `]` into the text, so an Enhanced-LRC line
+    reaches its label as the literal string
+    `<00:12.34>I <00:12.61>like <00:12.90>big` — markers and all, rendered
+    raw. It does not use A2 timings and it does not strip them.
+  · the same regex takes only the FIRST stamp, so an LRC line carrying repeat
+    stamps (`[00:12.34][01:44.10] chorus line`) is shown once and missed on
+    the repeat.
+
+Both are recorded in CHECKLIST.md against nyxus_media.py's owner. This file
+handles both; it does not edit that one.
+
+── audit item 15 ─────────────────────────────────────────────────────────
+`nyxus_media.py`'s `find_lrc()` carries the docstring "Local sidecar only. No
+network — audit item 15." Item 15 (scripts/audit.sh) bans *fetching CODE*:
+`urlretrieve`, live strings naming the retired replit host, and live strings
+that are URLs ending in `.py`. Its own comment says so in as many words —
+"What is banned is fetching CODE, not touching the network" — and it
+deliberately spares `urlopen`, naming `nyxus_weather.py`'s API read as the
+precedent. A JSON lyric lookup is data over HTTP, exactly that precedent. So
+this file does not violate item 15, and item 15 is not weakened to admit it.
+`find_lrc()`'s stricter promise is about THAT function and stays true: it is
+untouched and still looks only beside the file.
+
+── the consent gate ──────────────────────────────────────────────────────
+`lyrics_online` in ~/.config/nyxus/settings.json. Absent or false — the
+shipped state — and this script makes no request, writes no cache and prints
+nothing. The check is the first thing `main()` does, before any lookup call.
+Audit item 45 asserts that ordering from the source, so it cannot be
+reordered quietly.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import sys
+import time
+import unicodedata
+from pathlib import Path
+from urllib.parse import unquote, urlencode, urlparse
+
+SCHEMA = 2
+UA = "nyxus-lyrics/1.0 (+NYXUS Suxyn desktop)"
+API = "https://lrclib.net/api"
+HTTP_TIMEOUT = 4.0          # seconds, hard. A slow host is a miss.
+MISS_TTL = 14 * 24 * 3600   # re-ask about an unknown track once a fortnight
+MAX_LINE_SPAN = 12.0        # an "instrumental" gap is not a held word
+MAX_WORD_HOLD = 3.0         # nor is the last word of a verse a banner
+
+_DEBUG = False
+
+
+def dbg(msg: str) -> None:
+    if _DEBUG:
+        sys.stderr.write("nyxus-lyrics: %s\n" % msg)
+
+
+# ── the consent gate ──────────────────────────────────────────────────────
+def settings_path() -> Path:
+    return Path(os.path.expanduser("~/.config/nyxus/settings.json"))
+
+
+def consent_enabled() -> bool:
+    """True only when the owner has switched `lyrics_online` on himself.
+
+    Every failure mode answers False: no file, bad JSON, wrong type, an
+    unreadable home. The default is not "try anyway".
+    """
+    try:
+        doc = json.loads(settings_path().read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    return doc.get("lyrics_online") is True
+
+
+# ── the cache ─────────────────────────────────────────────────────────────
+def cache_dir() -> Path:
+    base = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+    return Path(base) / "nyxus" / "lyrics"
+
+
+def norm_key(s: str) -> str:
+    """Normalisation for the CACHE KEY ONLY — never for what is sent.
+
+    Case-folded, accent-flattened, punctuation dropped, whitespace collapsed,
+    so "Baby Got Back" and "baby  got back!" are one cache entry instead of
+    two lookups.
+    """
+    s = unicodedata.normalize("NFKD", s or "")
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    s = s.casefold()
+    s = re.sub(r"[^\w\s]+", " ", s, flags=re.UNICODE)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def track_key(artist: str, title: str, duration: int) -> str:
+    raw = "%s\n%s\n%d" % (norm_key(artist), norm_key(title), int(duration))
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+
+# ── query cleaning: it only ever REMOVES ──────────────────────────────────
+# YouTube titles carry a lot that no lyric database has ever indexed. Each
+# pattern below deletes text; none adds any, so the cleaned query is always a
+# subset of what the page itself published.
+_JUNK = re.compile(
+    r"\s*[\(\[]\s*(?:official\s*)?(?:music\s*)?"
+    r"(?:video|audio|lyrics?|lyric\s*video|visualizer|visualiser|hd|hq|"
+    r"remaster(?:ed)?(?:\s*\d{4})?|explicit|clean|mv|"
+    # audit 2026-09-08: YouTube/MPRIS titles carry these too, and LRCLIB
+    # indexes the bare title. "Wanna Be (Extended)" missed every lookup.
+    r"extended(?:\s*(?:version|mix|edit))?|remix(?:es)?|live|acoustic|"
+    r"slowed(?:\s*(?:\+|and|&|n)\s*reverb)?|sped\s*up|nightcore|"
+    r"radio\s*edit|single\s*version|album\s*version|deluxe|bonus\s*track|"
+    r"(?:feat|ft|featuring)\.?\s[^\)\]]*)\s*[\)\]]"
+    # trailing " - Extended" / " feat. X" without brackets
+    r"|\s+-\s+(?:extended|remix|live|acoustic|radio\s*edit|remaster(?:ed)?(?:\s*\d{4})?)\s*$"
+    r"|\s+(?:feat|ft)\.?\s.*$",
+    re.I,
+)
+# audit 2026-09-08: "GloRilla & Megan Thee Stallion" never matches LRCLIB's
+# artist field; the lead artist does. Used for the last-resort retry.
+_ARTIST_SPLIT = re.compile(r"\s*(?:&|,|;|/|\bx\b|\bvs\.?\b|\bfeat\.?\b|\bft\.?\b|\bfeaturing\b|\bwith\b|\band\b)\s+", re.I)
+_PAREN = re.compile(r"\s*[\(\[][^\)\]]*[\)\]]")
+
+
+def lead_artist(artist: str) -> str:
+    parts = _ARTIST_SPLIT.split(artist or "", maxsplit=1)
+    return parts[0].strip() if parts else artist
+_TOPIC = re.compile(r"\s*-\s*topic\s*$", re.I)
+_VEVO = re.compile(r"\s*\|\s*vevo\s*$", re.I)
+
+
+# ⚠ ON CHROMIUM THE ARTIST IS THE CHANNEL, NOT THE ARTIST. Measured on his
+# machine: MPRIS reports xesam:artist = "inimeg" with the title
+# "Lil Yachty - From The D To The A 2 (feat. Tee Grizzley) [prod. Jetsonmade]".
+# lrclib can never match that, because the artist it is handed is an uploader's
+# handle. That is a large part of why 685 of the 997 documents in his cache are
+# misses.
+#
+# So when the TITLE already carries "Artist - Title" and the reported artist
+# does not appear in it, the title is trusted and split. This is query
+# cleaning, not a new data source: no new endpoint, nothing extra is sent, and
+# the consent gate this file is built around is untouched.
+_SPLIT = re.compile(r"^\s*(?P<a>.{2,60}?)\s+[-–—]\s+(?P<t>.{1,120})\s*$")
+
+
+def split_channel_title(artist: str, title: str):
+    """Return (artist, title), splitting "Artist - Title" when it helps.
+
+    Only fires when the reported artist is NOT already present in the title —
+    a track legitimately named "Something - Reprise" by an artist the title
+    names is left exactly as it is.
+    """
+    a = (artist or "").strip()
+    ti = (title or "").strip()
+    if not ti:
+        return artist, title
+    if a and a.lower() in ti.lower():
+        return artist, title
+    m = _SPLIT.match(ti)
+    if not m:
+        return artist, title
+    return m.group("a").strip(), m.group("t").strip()
+
+
+def clean_title(title: str) -> str:
+    t = _JUNK.sub("", title or "")
+    t = re.sub(r"\s{2,}", " ", t)
+    return t.strip(" -–—\t")
+
+
+def clean_artist(artist: str) -> str:
+    a = _TOPIC.sub("", artist or "")
+    a = _VEVO.sub("", a)
+    return a.strip()
+
+
+# ── LRC parsing ───────────────────────────────────────────────────────────
+# Derived from nyxus_media.py's parse_lrc() (~line 2037). See the header for
+# the two things this one does that the original does not, and why that is
+# reported rather than fixed here.
+_STAMP = re.compile(r"\[(\d+):(\d+(?:[.:]\d+)?)\]")
+_A2 = re.compile(r"<(\d+):(\d+(?:[.:]\d+)?)>")
+
+
+def _secs(mm: str, ss: str) -> float:
+    return int(mm) * 60 + float(ss.replace(":", "."))
+
+
+def parse_lrc_lines(text: str) -> list[tuple[float, str]]:
+    """[(start_seconds, raw_line_text)], sorted, repeat stamps expanded.
+
+    `raw_line_text` still carries any `<mm:ss.xx>` A2 markers — the word
+    splitter below is what consumes them, so nothing is thrown away here.
+    """
+    out: list[tuple[float, str]] = []
+    for raw in (text or "").splitlines():
+        stamps = list(_STAMP.finditer(raw))
+        if not stamps:
+            continue
+        # Only a run of stamps at the START of the line is a stamp; a `[...]`
+        # later in the line is part of the words.
+        run_end = 0
+        for m in stamps:
+            if m.start() != run_end:
+                break
+            run_end = m.end()
+        if run_end == 0:
+            continue
+        body = raw[run_end:].strip()
+        for m in stamps:
+            if m.end() > run_end:
+                break
+            out.append((_secs(m.group(1), m.group(2)), body))
+    out.sort(key=lambda p: p[0])
+    return out
+
+
+# ── word timing ───────────────────────────────────────────────────────────
+_VOWELS = re.compile(r"[aeiouy]+", re.I)
+
+
+def syllables(word: str) -> int:
+    """A cheap vowel-group count. Wrong on plenty of words and that is fine —
+    it is a WEIGHT, not a claim, and it only has to rank "unbelievable" above
+    "the"."""
+    w = re.sub(r"[^A-Za-z]+", "", word)
+    if not w:
+        return 1
+    n = len(_VOWELS.findall(w))
+    if w.lower().endswith("e") and n > 1:
+        n -= 1
+    return max(1, n)
+
+
+def weight(word: str) -> float:
+    """Syllables carry the estimate; a small length term separates two words
+    the vowel counter reads as equal ("strength" vs "so")."""
+    return syllables(word) + 0.2 * len(re.sub(r"\s+", "", word))
+
+
+def words_for_line(body: str, start: float, end: float
+                   ) -> list[tuple[float, float, str, int, int]]:
+    """One line → [(start, end, word, exact, anchor)].
+
+    A2 markers win when present. Otherwise the words are spread across
+    [start, end) weighted by `weight()`.
+
+    ⚠ `anchor` marks the words whose START came off the file rather than out
+    of the spread: the first word of the line, and the first word after each
+    A2 marker. It is the only field that says WHERE THE TRUTH IS, and the
+    phrase builder in MediaSource.qml groups on it.
+    """
+    marks = list(_A2.finditer(body))
+    out: list[tuple[float, float, str, int, int]] = []
+
+    if marks:
+        # EXACT. A marker stamps the text that FOLLOWS it, up to the next
+        # marker. Anything before the first marker inherits the line's stamp.
+        segs: list[tuple[float, str]] = []
+        lead = body[:marks[0].start()].strip()
+        if lead:
+            segs.append((start, lead))
+        for i, m in enumerate(marks):
+            nxt = marks[i + 1].start() if i + 1 < len(marks) else len(body)
+            txt = body[m.end():nxt].strip()
+            if txt:
+                segs.append((_secs(m.group(1), m.group(2)), txt))
+        for i, (t0, txt) in enumerate(segs):
+            t1 = segs[i + 1][0] if i + 1 < len(segs) else end
+            for k, w in enumerate(txt.split()):
+                # Only the FIRST word of a segment sits on the marker; a
+                # segment carrying three words gives the other two the same
+                # start, which is a shared stamp and not an anchor each.
+                out.append((t0, min(t1, t0 + MAX_WORD_HOLD), w, 1,
+                            1 if k == 0 else 0))
+        return [t for t in out if t[1] > t[0]]
+
+    # ESTIMATED.
+    plain = _A2.sub(" ", body)
+    words = [w for w in plain.split() if w]
+    if not words:
+        return []
+    span = max(0.0, end - start)
+    if span <= 0:
+        return []
+    span = min(span, MAX_LINE_SPAN)
+    total = sum(weight(w) for w in words) or 1.0
+    t = start
+    for i, w in enumerate(words):
+        dur = span * (weight(w) / total)
+        t1 = start + span if i == len(words) - 1 else t + dur
+        # The line's own stamp is real; every start after it is arithmetic.
+        out.append((t, min(t1, t + MAX_WORD_HOLD), w, 0, 1 if i == 0 else 0))
+        t = t1
+    return [x for x in out if x[1] > x[0]]
+
+
+def build_timeline(synced: str, track_len: float
+                   ) -> list[tuple[float, float, str, int, int]]:
+    lines = parse_lrc_lines(synced)
+    words: list[tuple[float, float, str, int, int]] = []
+    for i, (t0, body) in enumerate(lines):
+        if i + 1 < len(lines):
+            t1 = lines[i + 1][0]
+        elif track_len and track_len > t0:
+            t1 = min(track_len, t0 + MAX_LINE_SPAN)
+        else:
+            t1 = t0 + MAX_LINE_SPAN
+        words.extend(words_for_line(body, t0, t1))
+    words.sort(key=lambda w: w[0])
+    return words
+
+
+# ── ⚠ THE SIDECAR, AND THE CRASH THAT PAID FOR IT ─────────── TRK-3978 ──
+#
+# On 2026-09-08 `shell/MediaSource.qml` grew a `--file` argument, on the
+# reasonable belief that this program read the `.lrc` sitting beside a local
+# track. IT DID NOT. argparse rejected the unknown flag, printed a usage
+# message to a stderr nobody was reading and exited 2 — so NOTHING reached
+# stdout, the shell saw no path, and every track on the machine read as "no
+# lyrics" for a whole night while the owner said four times that lyrics were
+# not showing. Reverting that one file fixed it in a single restart.
+#
+# Two things come out of that and both are here:
+#
+#   1. THE FLAG IS REAL NOW. `--file` takes the track's own location (a path
+#      or a `file://` URL) and the `.lrc` beside it wins outright: it is
+#      exact to the line, it is offline, and 188 of them already sit in his
+#      library. NO NEW ENDPOINT AND NO NEW REQUEST — this is a local file
+#      read that happens strictly BEFORE the network is considered, so the
+#      best case is now that nothing goes on the wire at all.
+#
+#   2. ⚠ AND AN UNKNOWN FLAG CAN NEVER AGAIN KILL THIS PROGRAM. `main()`
+#      uses `parse_known_args`, so a caller ahead of a deployed helper
+#      degrades to the lookup it would have done anyway instead of exiting
+#      2 with no output. Rule 3 of this file's own header — "IT FAILS
+#      INVISIBLY … there is no error path that reaches a surface" — was
+#      never true of its argument parser, and that is exactly the gap the
+#      night fell through.
+def local_path(where: str) -> str:
+    """A `--file` argument as an actual path on this machine, or "".
+
+    MPRIS publishes `xesam:url`, which is percent-encoded and may name a
+    host that is not this one. Anything that is not a local file is "" —
+    a stream has no sidecar and must not be guessed at.
+    """
+    s = (where or "").strip()
+    if not s:
+        return ""
+    if s.startswith("file://"):
+        u = urlparse(s)
+        if u.netloc not in ("", "localhost"):
+            return ""                    # someone else's disk
+        s = unquote(u.path)
+    if not s.startswith("/"):
+        return ""                        # http(s), data:, a bare title
+    return s
+
+
+def sidecar_lrc(where: str) -> str:
+    """The `.lrc` beside a local track, or "".
+
+    ⚠ THE SAME THREE NAMES `nyxus_media.py`'s `find_lrc()` LOOKS FOR, in the
+    same order. The Music app and this helper are both reading the owner's
+    library at the same moment on the same machine; two different ideas of
+    which file is "the" sidecar would show up as two different lyric sheets
+    for one song.
+    """
+    p = local_path(where)
+    if not p:
+        return ""
+    try:
+        f = Path(p)
+        stem, folder = f.stem, f.parent
+        for name in ("%s.lrc" % stem, "%s.LRC" % stem, "lyrics.lrc"):
+            cand = folder / name
+            if cand.is_file():
+                return str(cand)
+    except OSError:
+        return ""
+    return ""
+
+
+# ── the one place that touches the network ────────────────────────────────
+def _http_json(path: str, params: dict) -> object | None:
+    """GET one JSON document. Every failure is None; nothing raises out."""
+    # Imported here rather than at module scope so that the import itself
+    # cannot happen on a run that never reaches consent.
+    from urllib.request import Request, urlopen
+
+    url = "%s/%s?%s" % (API, path, urlencode(params))
+    dbg("GET %s" % url)
+    try:
+        req = Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
+        with urlopen(req, timeout=HTTP_TIMEOUT) as r:
+            if getattr(r, "status", 200) != 200:
+                return None
+            body = r.read(2 * 1024 * 1024)
+        return json.loads(body.decode("utf-8", "replace"))
+    except Exception as exc:                       # noqa: BLE001 — see rule 3
+        dbg("lookup failed quietly: %r" % (exc,))
+        return None
+
+
+def lookup(artist: str, title: str, duration: int) -> dict | None:
+    """Best synced-lyric record for this track, or None.
+
+    ⚠ THE PAYLOAD IS THE WHOLE ARGUMENT LIST. `album_name` is an accepted
+    LRCLIB parameter and is deliberately not sent.
+    """
+    if duration > 0:
+        rec = _http_json("get", {"artist_name": artist,
+                                 "track_name": title,
+                                 "duration": duration})
+        if isinstance(rec, dict) and rec.get("syncedLyrics"):
+            return rec
+        if isinstance(rec, dict) and rec.get("instrumental"):
+            return rec
+
+    hits = _http_json("search", {"artist_name": artist, "track_name": title})
+    if not isinstance(hits, list):
+        return None
+    best, best_gap = None, None
+    near, near_gap = None, None
+    for h in hits:
+        if not isinstance(h, dict) or not h.get("syncedLyrics"):
+            continue
+        gap = abs(float(h.get("duration") or 0) - duration) if duration else 0.0
+        if duration and gap > 5.0:
+            # audit 2026-09-08: a YouTube upload is rarely the album length
+            # (184 s vs 176 s here). Keep the closest synced hit within 15 %
+            # or 30 s as a fallback instead of reporting "no lyrics".
+            if gap <= max(30.0, 0.15 * duration) and (near_gap is None or gap < near_gap):
+                near, near_gap = h, gap
+            continue
+        if best_gap is None or gap < best_gap:
+            best, best_gap = h, gap
+    return best or near
+
+
+# ── the document ──────────────────────────────────────────────────────────
+def miss_doc(artist: str, title: str, duration: int, why: str) -> dict:
+    return {"v": SCHEMA, "source": "lrclib", "miss": True, "why": why,
+            "instrumental": False, "exact": False, "fetched": int(time.time()),
+            "track": {"artist": artist, "title": title, "duration": duration},
+            "words": []}
+
+
+def words_json(words: list) -> list:
+    """The on-disk projection of the timeline. ⚠ ONE PLACE, and the selftest
+    runs it.
+
+    This function exists because of the bug it now prevents. The line it
+    replaces was inline in `main()` and read `for (a, b, c, d) in words`;
+    schema 2 added the fifth field to `build_timeline()` and that unpacking
+    raised on every real fetch. Because this program is built to FAIL
+    INVISIBLY — no output, exit 0, "there are no lyrics" — nothing surfaced.
+    A silent-failure design does not get to have an untested serialiser.
+    """
+    return [[round(w[0], 3), round(w[1], 3), w[2], int(w[3]), int(w[4])]
+            for w in words]
+
+
+def write_doc(path: Path, doc: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, path)          # the reader never sees a half-written file
+
+
+def cached(path: Path) -> dict | None:
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(doc, dict) or doc.get("v") != SCHEMA:
+        return None
+    if doc.get("miss") and (time.time() - float(doc.get("fetched") or 0)) > MISS_TTL:
+        return None                # a fortnight on, LRCLIB may have it now
+    return doc
+
+
+# ── playerctl, for hand testing only ──────────────────────────────────────
+def from_playerctl() -> tuple[str, str, int]:
+    import subprocess
+    def one(fmt: str) -> str:
+        try:
+            r = subprocess.run(["playerctl", "metadata", "--format", fmt],
+                               capture_output=True, text=True, timeout=3)
+            return r.stdout.strip() if r.returncode == 0 else ""
+        except Exception:
+            return ""
+    artist = one("{{xesam:artist}}")
+    title = one("{{xesam:title}}")
+    length = one("{{mpris:length}}")
+    try:
+        dur = int(int(length) / 1_000_000)
+    except Exception:
+        dur = 0
+    return artist, title, dur
+
+
+# ── the offline self-test the gate runs ───────────────────────────────────
+def selftest() -> int:
+    """Executes the real timeline builder. No network, no cache, no HOME.
+
+    Audit item 45 runs this: a gate that greps for `MAX_WORD_HOLD` proves
+    nothing, and a gate that RUNS the interpolation over a fixture and asserts
+    the invariants is the regression test the estimate deserves.
+    """
+    fails: list[str] = []
+
+    def say(cond: bool, msg: str) -> None:
+        if not cond:
+            fails.append(msg)
+
+    # 1 · plain LRC → estimated words, monotonic, non-overlapping, in-span
+    plain = ("[00:10.00] I like big butts and I cannot lie\n"
+             "[00:14.00] You other brothers can't deny\n")
+    w = build_timeline(plain, 200.0)
+    say(len(w) == 13, "plain LRC yielded %d words, expected 13" % len(w))
+    say(all(x[3] == 0 for x in w), "plain LRC produced a word marked exact")
+    say(all(w[i][0] <= w[i + 1][0] for i in range(len(w) - 1)),
+        "estimated word starts are not monotonic")
+    say(all(w[i][1] <= w[i + 1][0] + 1e-6 for i in range(len(w) - 1)),
+        "estimated words overlap")
+    first = [x for x in w if x[0] < 14.0]
+    say(abs(first[0][0] - 10.0) < 1e-6, "first word does not start on its line")
+    say(first[-1][1] <= 14.0 + 1e-6, "a line's words run past the next line")
+
+    # 1b · ANCHORS. Exactly one word per line carries a start off the file,
+    # and it is the first one. This is the field the phrase builder groups
+    # on, so a change that silently anchors every word — or none — has to
+    # fail here rather than surface as a phrase that ignores line breaks.
+    say(all(len(x) == 5 for x in w), "a word is not a 5-tuple — schema 2 adds `anchor`")
+    say(sum(x[4] for x in w) == 2,
+        "plain LRC anchored %d words across 2 lines, expected 2" % sum(x[4] for x in w))
+    say(w[0][4] == 1 and first[-1][4] == 0,
+        "the anchor is not on the first word of each line")
+    say(all(abs(x[0] - 10.0) < 1e-6 or abs(x[0] - 14.0) < 1e-6
+            for x in w if x[4] == 1),
+        "an anchored word does not start on a literal line stamp")
+
+    # 2 · the weighting is NOT uniform — the whole reason it exists
+    a = build_timeline("[00:00.00] the unbelievable\n[00:03.00] x\n", 60.0)
+    say(len(a) == 3, "weighting fixture yielded %d words, expected 3" % len(a))
+    if len(a) == 3:
+        d_the = a[0][1] - a[0][0]
+        d_unb = a[1][1] - a[1][0]
+        say(d_unb > d_the * 1.5,
+            "'unbelievable' (%.2fs) is not held meaningfully longer than "
+            "'the' (%.2fs) — the weighting is doing nothing" % (d_unb, d_the))
+
+    # 3 · Enhanced LRC (A2) wins and is marked exact
+    a2 = "[00:10.00] <00:10.00>I <00:10.50>like <00:11.90>big\n[00:13.00] x\n"
+    e = build_timeline(a2, 60.0)
+    ex = [x for x in e if x[0] < 13.0]
+    say(len(ex) == 3, "A2 line yielded %d words, expected 3" % len(ex))
+    say(all(x[3] == 1 for x in ex), "A2 words are not marked exact")
+    if len(ex) == 3:
+        say(abs(ex[1][0] - 10.5) < 1e-6,
+            "A2 word start %.2f ignores its own marker (10.50)" % ex[1][0])
+    # Every A2 word here is its segment's only word, so every one is anchored
+    # — an A2 line is the case where `exact` and `anchor` DO coincide, and
+    # the two flags must not be quietly collapsed into one.
+    say(all(x[4] == 1 for x in ex),
+        "a one-word A2 segment is not anchored on its own marker")
+    a2m = build_timeline("[00:10.00] <00:10.00>I like big <00:11.90>now\n"
+                         "[00:13.00] x\n", 60.0)
+    seg = [x for x in a2m if x[0] < 13.0]
+    say(sum(x[4] for x in seg) == 2,
+        "a 2-segment A2 line anchored %d words, expected 2 (one per marker)"
+        % sum(x[4] for x in seg))
+
+    # 4 · repeat stamps expand (nyxus_media.py's parse_lrc takes only the first)
+    rep = build_timeline("[00:05.00][01:00.00] chorus\n[01:30.00] x\n", 200.0)
+    say(len([x for x in rep if abs(x[0] - 5.0) < 1e-6]) == 1
+        and len([x for x in rep if abs(x[0] - 60.0) < 1e-6]) == 1,
+        "a repeat-stamped line did not expand to both times")
+
+    # 5 · an instrumental gap does not hold a word on screen for a minute
+    gap = build_timeline("[00:00.00] one\n[02:00.00] two\n", 200.0)
+    say(gap[0][1] - gap[0][0] <= MAX_WORD_HOLD + 1e-6,
+        "a word before a 2-minute gap is held for %.1fs" % (gap[0][1] - gap[0][0]))
+
+    # 5b · THE SERIALISER IS RUN. See words_json()'s own header: the field
+    # that made this necessary was added to the builder and not to the
+    # writer, and the program's own fail-invisibly contract hid it.
+    ser = words_json(build_timeline(plain, 200.0))
+    say(len(ser) == len(w), "words_json dropped rows: %d of %d" % (len(ser), len(w)))
+    say(all(len(r) == 5 for r in ser),
+        "a serialised word is not 5 fields — the document and the builder disagree")
+    say(all(isinstance(r[3], int) and isinstance(r[4], int) for r in ser),
+        "the flags did not serialise as integers")
+    say(json.dumps({"v": SCHEMA, "words": ser}) is not None,
+        "the document does not serialise to JSON")
+
+    # 6 · the empty case is quiet, not an exception
+    say(build_timeline("", 200.0) == [], "empty lyrics did not yield an empty timeline")
+    say(build_timeline("no stamps at all\n", 200.0) == [],
+        "unstamped text produced words")
+
+    # 7 · cache keys normalise, and duration is part of the identity
+    say(track_key("Sir Mix-A-Lot", "Baby Got Back", 262)
+        == track_key("sir mix-a-lot", " Baby  Got Back! ", 262),
+        "cache key is not normalisation-stable")
+    say(track_key("a", "b", 262) != track_key("a", "b", 263),
+        "cache key ignores duration")
+
+    # 8 · cleaning only ever removes
+    t = clean_title("Baby Got Back (Official Music Video)")
+    say(t == "Baby Got Back", "title cleaning produced %r" % t)
+    say(clean_artist("Sir Mix-A-Lot - Topic") == "Sir Mix-A-Lot",
+        "artist cleaning did not drop the YouTube ' - Topic' suffix")
+
+    # 9 · ⚠ THE SIDECAR PATH, AND THE FLAG THAT ONCE KILLED THIS PROGRAM.
+    #     TRK-3978. `--file` was passed by the shell for a night while this
+    #     program had never heard of it; argparse exited 2 and nothing
+    #     reached stdout. Both halves of the fix are asserted here: the URL
+    #     really decodes to a path, and a `.lrc` beside a file really becomes
+    #     words. Neither assertion can pass without the code being present.
+    say(local_path("file:///home/x/My%20Song.flac") == "/home/x/My Song.flac",
+        "a percent-encoded file:// URL did not decode to a path")
+    say(local_path("/home/x/plain.flac") == "/home/x/plain.flac",
+        "a bare path was not accepted")
+    say(local_path("https://example.com/a.mp3") == "",
+        "an http URL was treated as a local file — a stream has no sidecar")
+    say(local_path("file://otherbox/home/x/a.flac") == "",
+        "a file:// URL naming ANOTHER host was treated as local")
+    say(local_path("") == "" and local_path("Some Title") == "",
+        "an empty or non-path --file was not refused")
+
+    import tempfile as _tf
+    with _tf.TemporaryDirectory() as _td:
+        _dir = Path(_td)
+        (_dir / "track.flac").write_bytes(b"")
+        (_dir / "track.lrc").write_text(plain, encoding="utf-8")
+        found = sidecar_lrc(str(_dir / "track.flac"))
+        say(found == str(_dir / "track.lrc"),
+            "the .lrc beside the track was not found (%r)" % found)
+        say(sidecar_lrc("file://" + str(_dir / "track.flac"))
+            == str(_dir / "track.lrc"),
+            "the sidecar was not found through a file:// URL")
+        sw = build_timeline((_dir / "track.lrc").read_text(encoding="utf-8"),
+                            200.0)
+        say(len(sw) == 13,
+            "the sidecar produced %d words where the same LRC over the wire "
+            "produces 13 — one parser, two callers" % len(sw))
+        (_dir / "bare.flac").write_bytes(b"")
+        say(sidecar_lrc(str(_dir / "bare.flac")) == "",
+            "a track with no sidecar reported one")
+
+    for f in fails:
+        print("FAIL %s" % f)
+    print("selftest: %d assertion(s) failed" % len(fails))
+    return 1 if fails else 0
+
+
+# ── main ──────────────────────────────────────────────────────────────────
+def main(argv: list[str]) -> int:
+    global _DEBUG
+    ap = argparse.ArgumentParser(add_help=True, description=__doc__.split("\n")[0])
+    ap.add_argument("--artist", default="")
+    ap.add_argument("--title", default="")
+    ap.add_argument("--duration", type=float, default=0.0,
+                    help="seconds; MPRIS mpris:length / 1e6")
+    ap.add_argument("--file", default="",
+                    help="the track's own location (path or file:// URL); "
+                         "a .lrc beside it is read offline and wins")
+    ap.add_argument("--probe", action="store_true",
+                    help="print the capability document and exit; no network")
+    ap.add_argument("--selftest", action="store_true",
+                    help="run the offline timeline assertions (audit item 45)")
+    ap.add_argument("--debug", action="store_true")
+    # ⚠ `parse_known_args`, NOT `parse_args`, AND IT IS NOT LAZINESS.
+    # `parse_args` answers an unknown flag with a usage message on stderr and
+    # `SystemExit(2)`. In a program whose entire contract is "print a path or
+    # print nothing, exit 0", that is an error path that reaches a surface --
+    # as SILENCE, which is the one thing this feature must never be. It cost
+    # the owner a night on 2026-09-08 (see § THE SIDECAR). A caller that is
+    # ahead of the deployed helper now gets the answer the old helper would
+    # have given instead of no answer at all.
+    args, extra = ap.parse_known_args(argv)
+    _DEBUG = args.debug
+    if extra:
+        dbg("ignoring unrecognised arguments: %r" % (extra,))
+
+    if args.selftest:
+        return selftest()
+
+    if args.probe:
+        # Three states, never two — HardwareCaps.qml's rule. This one costs no
+        # network: whether lrclib answers is not knowable without asking it,
+        # and asking it before consent is the thing we must not do.
+        print(json.dumps({
+            "v": SCHEMA,
+            "enabled": consent_enabled(),
+            "settings_file": str(settings_path()),
+            "settings_present": settings_path().is_file(),
+            "cache_dir": str(cache_dir()),
+            "endpoint": "lrclib.net",
+            # ⚠ A CAPABILITY, SO A CALLER NEVER HAS TO GUESS AT ONE. The
+            # 2026-09-08 outage was a shell that assumed `--file` existed in
+            # a helper that had never heard of it. A surface that wants the
+            # sidecar can ask for this key first and pass `--file` only when
+            # it is true, which makes the deploy order of the two files stop
+            # mattering. HardwareCaps.qml's three-state rule, applied to a
+            # program instead of to hardware.
+            "sidecar": True,
+        }))
+        return 0
+
+    # ⚠ THE CONSENT GATE. Nothing below this line may run without it, and
+    # audit item 45 asserts from the source that no lookup call precedes it.
+    if not consent_enabled():
+        dbg("lyrics_online is not true — no request, no cache, no output")
+        return 0
+
+    artist, title = args.artist, args.title
+    duration = int(round(args.duration))
+    if not artist and not title:
+        artist, title, duration = from_playerctl()
+
+    artist, title = clean_artist(artist), clean_title(title)
+    if not title:
+        return 0                      # nothing to ask about; say nothing
+
+    path = cache_dir() / ("%s.json" % track_key(artist, title, duration))
+
+    # ⚠ THE SIDECAR IS ASKED BEFORE THE CACHE, AND THAT ORDERING IS THE
+    # POINT. A `.lrc` beside his own FLAC is exact to the line, costs no
+    # request and is already there for 188 of his tracks. Reading it after
+    # the cache would mean a "no match" written a fortnight ago kept hiding a
+    # file sitting on the disk the whole time; reading it first also means a
+    # stale miss REPAIRS ITSELF the next time the song is played.
+    #
+    # Nothing here touches the network. `local_path()` refuses anything that
+    # is not a file on this machine, so a stream cannot become a lookup.
+    side = sidecar_lrc(args.file)
+    if side:
+        try:
+            words = build_timeline(
+                Path(side).read_text(encoding="utf-8", errors="replace"),
+                float(duration))
+        except OSError:
+            words = []
+        if words:
+            dbg("sidecar %s (%d words)" % (side, len(words)))
+            write_doc(path, {
+                "v": SCHEMA, "source": "sidecar", "miss": False,
+                "instrumental": False,
+                "exact": any(w[3] == 1 for w in words),
+                "fetched": int(time.time()),
+                "track": {"artist": artist, "title": title,
+                          "duration": duration},
+                "words": words_json(words),
+            })
+            print(path)
+            return 0
+        # A sidecar that parsed to nothing is not an answer. Fall through and
+        # ask the way we always did.
+
+    doc = cached(path)
+    if doc is not None:
+        dbg("cache hit (%s)" % ("miss" if doc.get("miss") else "%d words" % len(doc["words"])))
+        print(path)
+        return 0
+
+    rec = lookup(artist, title, duration)
+
+    # ⚠ THE CHANNEL RETRY, AND IT IS A FALLBACK ON PURPOSE.
+    # On Chromium the reported artist is the CHANNEL, not the artist: measured
+    # here as xesam:artist "inimeg" against the title "Lil Yachty - From The D
+    # To The A 2". lrclib can never match that, and it is a large part of why
+    # 685 of the 997 documents in this cache are misses.
+    #
+    # An earlier cut rewrote the query BEFORE asking, and that was wrong: a
+    # track legitimately named "Track - Reprise" was split into artist
+    # "Track". Asking the real question first and only splitting when the
+    # answer is nothing cannot produce that false positive — the worst case is
+    # one extra request on a track that was already a miss.
+    #
+    # No new endpoint and nothing extra is sent about him; this is the same
+    # question asked once more, phrased the way the catalogue indexes it.
+    if not isinstance(rec, dict):
+        alt_a, alt_t = split_channel_title(artist, title)
+        if (alt_a, alt_t) != (artist, title):
+            dbg("channel retry: %r / %r" % (alt_a, alt_t))
+            rec = lookup(alt_a, alt_t, duration)
+            if isinstance(rec, dict):
+                artist, title = alt_a, alt_t
+
+    if not isinstance(rec, dict):
+        # audit 2026-09-08: last resort — lead artist + title with every
+        # bracketed suffix removed.
+        alt_a, alt_t = lead_artist(artist), _PAREN.sub("", title).strip(" -–—")
+        if (alt_a, alt_t) != (artist, title) and alt_a and alt_t:
+            dbg("lead-artist retry: %r / %r" % (alt_a, alt_t))
+            rec = lookup(alt_a, alt_t, duration)
+            if isinstance(rec, dict):
+                artist, title = alt_a, alt_t
+
+    if not isinstance(rec, dict):
+        write_doc(path, miss_doc(artist, title, duration, "no match"))
+        print(path)
+        return 0
+    if rec.get("instrumental"):
+        d = miss_doc(artist, title, duration, "instrumental")
+        d["instrumental"] = True
+        write_doc(path, d)
+        print(path)
+        return 0
+
+    words = build_timeline(str(rec.get("syncedLyrics") or ""), float(duration))
+    if not words:
+        write_doc(path, miss_doc(artist, title, duration, "no synced lines"))
+        print(path)
+        return 0
+
+    write_doc(path, {
+        "v": SCHEMA, "source": "lrclib", "miss": False,
+        "instrumental": False,
+        "exact": any(w[3] == 1 for w in words),
+        "fetched": int(time.time()),
+        "track": {"artist": artist, "title": title, "duration": duration},
+        "words": words_json(words),
+    })
+    print(path)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except KeyboardInterrupt:
+        sys.exit(0)
+    except Exception:                  # noqa: BLE001 — rule 3, to the last line
+        sys.exit(0)

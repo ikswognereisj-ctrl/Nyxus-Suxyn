@@ -1,0 +1,587 @@
+#!/usr/bin/env python3
+"""
+nyxus-autotz — set the time zone from where the machine actually is.
+
+★ OPT-IN, AND THE OPT-IN IS THE FEATURE (`WIP-722` / `GAP-936`)
+
+  This reads the person's LOCATION. Every commercial desktop does the same
+  thing and most of them do it without asking, on the grounds that a wrong
+  clock is worse than a quiet location read. This build's posture is
+  honest-and-asked, so it is off until someone turns it on in
+  Settings ▸ Date & Time, and the manual timezone picker — which works, and
+  which is what everybody gets by default — is untouched beside it.
+
+  The switch is the ONLY thing that creates /etc/nyxus/autotz.enabled, and
+  nothing in this file resolves a location or changes a zone unless that
+  file exists (`--force` excepted, and that flag only exists for the
+  Settings switch's own "apply it now, I just said yes" call — a human
+  pressing a control they can see).
+
+★ AND IT NEVER FAKES A RESULT
+
+  A timezone tool has exactly two honest outcomes: "it is now this zone" or
+  "I could not work out where you are". There is no third one. If geoclue
+  is masked, if no location source answers, if the fix is too vague to name
+  a zone — this says COULD NOT DETERMINE LOCATION, changes nothing, and
+  leaves whatever the person set by hand exactly where it was. Silently
+  leaving a wrong zone while reporting success is the failure mode that
+  makes people stop trusting the clock, and after that they stop trusting
+  the calendar.
+
+★ HOW A LATITUDE BECOMES A ZONE NAME, AND WHAT THAT COSTS
+
+  There is no offline API for this. What there IS, on every Arch machine,
+  is tzdata's own tables of every zone with the coordinates of its
+  principal city — /usr/share/zoneinfo/zone.tab and zone1970.tab, read as a
+  union for the reason given at ZONETABS below. The zone is the one whose
+  principal city is nearest the fix, by great-circle distance.
+
+  ⚠ THE HONEST LIMIT OF THAT METHOD, said here because the person is owed
+    it: near a zone boundary the nearest principal city can belong to the
+    neighbouring zone. Detroit is closer to Chicago than to New York and
+    both are real US zones. So this reports WHICH zone it chose, HOW FAR
+    the fix was from that zone's city, and how vague geoclue said the fix
+    was — and the Settings page prints all three next to a manual picker
+    that overrides it. It is a coarse method, it is named as one, and it is
+    not allowed to pretend otherwise.
+
+  NO network request is made by this file. tzdata's tables are on disk;
+  geoclue's own sources are geoclue's business and are governed by
+  /etc/geoclue/geoclue.conf, where they can be switched off individually.
+
+SURFACES
+    nyxus-autotz status [--json]     what is enabled, what zone, how it was
+                                     decided. Reads only; changes nothing
+    nyxus-autotz resolve [--json]    work out the zone and PRINT it. Does
+                                     not touch the clock
+    nyxus-autotz apply [--json] [--force] [--quiet]
+                                     resolve, then set it if it differs
+    nyxus-autotz enable | disable    write/remove the opt-in marker (root)
+
+EXIT CODES — a dispatcher hook and a Settings page see only this number
+    0  did what it said, including "the zone was already correct"
+    1  the location could NOT be determined. Nothing was changed
+    2  usage
+    3  the zone was determined and the clock could not be set
+    4  not enabled — the person has not opted in, so nothing was attempted
+
+  NYXUS_AUTOTZ_MARKER, NYXUS_AUTOTZ_ZONETAB and NYXUS_AUTOTZ_FIX relocate
+  the marker, the tzdata table and the location source. The last one takes
+  "<lat>,<lon>[,<accuracy_m>]" and exists so the proof harness can exercise
+  the REAL resolver against known coordinates without a location read and
+  without a D-Bus daemon — the same confined-tree pattern nyxus-hemera's
+  NYXUS_HEMERA_DB_DIR uses, and the reason the zone maths in this file is
+  tested rather than reasoned about.
+
+© 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+"""
+from __future__ import annotations
+
+import json
+import math
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+APP_NAME = "NYXUS"
+
+# The opt-in marker. It is a system path, not a per-user preference, and
+# that is deliberate: the timezone is a property of the MACHINE, one clock
+# shared by every account on it, so a per-user switch would let one user's
+# choice silently move another user's meetings.
+MARKER = "/etc/nyxus/autotz.enabled"
+
+# ⚠ BOTH TABLES, AND THE ORDER MATTERS. This was measured, not chosen.
+#
+#   zone1970.tab is the modern table and it MERGES zones whose clocks have
+#   agreed since 1970 — which is a correct thing for tzdata to do and a
+#   wrong table to navigate by. In tzdata 2026c, Iceland is folded into
+#   Africa/Abidjan, so the nearest principal city to Reykjavik in that file
+#   is 8,700 km away and the nearest one overall is America/Scoresbysund in
+#   Greenland. That is not a neighbouring-zone error; Scoresbysund observes
+#   DST and Reykjavik does not, so it is a WRONG OFFSET for half the year.
+#
+#   docs/proof/ch-0816/prove_autotz.py caught exactly that on its first
+#   real run. zone.tab, the older table, still carries
+#   `IS +6409-02151 Atlantic/Reykjavik` and one row per country per zone
+#   (America/Detroit as well as America/New_York), so it has 448 reference
+#   points against zone1970.tab's 375.
+#
+#   Both are read and the union is used: more reference points can only
+#   move the nearest neighbour closer to the fix. zone.tab is deprecated
+#   upstream and may one day stop shipping, which is why its absence is not
+#   an error — either file alone still works, and only both being missing
+#   is a refusal.
+ZONETABS = ("/usr/share/zoneinfo/zone.tab",
+            "/usr/share/zoneinfo/zone1970.tab")
+ZONETAB = ZONETABS[1]
+
+# GeoClue2, on the system bus.
+GC_BUS = "org.freedesktop.GeoClue2"
+GC_MANAGER_PATH = "/org/freedesktop/GeoClue2/Manager"
+# Must match the section name in /etc/geoclue/conf.d/50-nyxus-autotz.conf.
+# geoclue looks the client up BY THIS STRING; a mismatch is a permission
+# denial that reads exactly like "no location sources answered", so gate
+# 13q39 asserts the two spellings against each other rather than trusting
+# anyone to keep them in step.
+GC_DESKTOP_ID = "nyxus-autotz"
+# GClueAccuracyLevel. CITY is the coarsest level that can still name a
+# timezone, and asking for no more than we need is the whole posture.
+GC_ACCURACY_CITY = 4
+GC_TIMEOUT_S = 25
+
+# A fix vaguer than this cannot honestly pick between neighbouring zones.
+# 500 km is deliberately generous — a country-level GeoIP hit is usually
+# ~30 km and even a bad one lands inside the right zone far more often than
+# not — but it does refuse the "somewhere in this hemisphere" answers that
+# a failing source sometimes returns instead of an error.
+MAX_ACCURACY_M = 500_000.0
+
+REASON_NOT_ENABLED = "automatic time zone is not switched on"
+REASON_NO_LOCATION = "couldn't determine location"
+
+
+# ── the opt-in marker ────────────────────────────────────────────────────
+
+def marker_path() -> Path:
+    return Path(os.environ.get("NYXUS_AUTOTZ_MARKER") or MARKER)
+
+
+def is_enabled() -> bool:
+    try:
+        return marker_path().is_file()
+    except OSError:
+        return False
+
+
+# ── tzdata's own table ───────────────────────────────────────────────────
+
+def _iso6709(token: str) -> tuple[float, float]:
+    """Decode zone1970.tab's ±DDMM±DDDMM or ±DDMMSS±DDDMMSS coordinates.
+
+    The latitude field is fixed-width and the longitude begins at the
+    second sign, which is what makes this parseable without a delimiter.
+    """
+    split = -1
+    for i, ch in enumerate(token):
+        if i and ch in "+-":
+            split = i
+            break
+    if split < 0:
+        raise ValueError(f"not an ISO 6709 pair: {token!r}")
+    lat_s, lon_s = token[:split], token[split:]
+
+    def one(s: str, deg_digits: int) -> float:
+        sign = -1.0 if s[0] == "-" else 1.0
+        body = s[1:]
+        deg = int(body[:deg_digits])
+        mins = int(body[deg_digits:deg_digits + 2] or 0)
+        secs = int(body[deg_digits + 2:deg_digits + 4] or 0)
+        return sign * (deg + mins / 60.0 + secs / 3600.0)
+
+    return one(lat_s, 2), one(lon_s, 3)
+
+
+def zonetab_paths() -> tuple[str, ...]:
+    override = os.environ.get("NYXUS_AUTOTZ_ZONETAB")
+    return (override,) if override else ZONETABS
+
+
+def load_zones() -> list[tuple[str, float, float]]:
+    """[(zone_name, lat, lon)] from tzdata, unioned across both tables.
+
+    Empty only when NONE of the tables can be read, which is the one case
+    the caller must refuse on. A zone named in both files carries the same
+    coordinates in both, so first-wins deduplication is not a choice
+    between two answers.
+    """
+    seen: set[str] = set()
+    out: list[tuple[str, float, float]] = []
+    for p in zonetab_paths():
+        try:
+            text = Path(p).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            if not line or line.startswith("#"):
+                continue
+            cols = line.split("\t")
+            if len(cols) < 3:
+                continue
+            try:
+                lat, lon = _iso6709(cols[1].strip())
+            except (ValueError, IndexError):
+                continue
+            name = cols[2].strip()
+            if name and name not in seen:
+                seen.add(name)
+                out.append((name, lat, lon))
+    return out
+
+
+def haversine_km(a_lat: float, a_lon: float,
+                 b_lat: float, b_lon: float) -> float:
+    r = 6371.0088
+    p1, p2 = math.radians(a_lat), math.radians(b_lat)
+    dp = p2 - p1
+    dl = math.radians(b_lon - a_lon)
+    h = (math.sin(dp / 2) ** 2
+         + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2)
+    return 2 * r * math.asin(min(1.0, math.sqrt(h)))
+
+
+def zone_for(lat: float, lon: float) -> tuple[str, float, str, float] | None:
+    """(zone, km_to_its_city, runner_up, runner_up_km) or None.
+
+    The runner-up is carried out of here rather than thrown away because it
+    is the only cheap signal for "this fix is near a boundary", and the
+    Settings page shows it. A method that cannot say when it is unsure is a
+    method that is wrong silently.
+    """
+    zones = load_zones()
+    if not zones:
+        return None
+    scored = sorted(((haversine_km(lat, lon, zl, zo), name)
+                     for name, zl, zo in zones))
+    best_km, best = scored[0]
+    if len(scored) > 1:
+        up_km, up = scored[1]
+    else:
+        up_km, up = float("inf"), ""
+    return best, best_km, up, up_km
+
+
+# ── geoclue ──────────────────────────────────────────────────────────────
+
+def _fix_from_env() -> tuple[float, float, float] | None:
+    raw = os.environ.get("NYXUS_AUTOTZ_FIX", "").strip()
+    if not raw:
+        return None
+    parts = [p.strip() for p in raw.split(",")]
+    try:
+        lat = float(parts[0])
+        lon = float(parts[1])
+        acc = float(parts[2]) if len(parts) > 2 else 0.0
+    except (ValueError, IndexError):
+        return None
+    return lat, lon, acc
+
+
+def read_location() -> tuple[tuple[float, float, float] | None, str]:
+    """((lat, lon, accuracy_m), "") or (None, why_not).
+
+    Every failure path here returns a sentence a person can act on, because
+    "couldn't determine location" on its own tells them nothing about
+    whether to wait, connect to Wi-Fi, or go and unmask the service they
+    switched off last month.
+    """
+    forced = _fix_from_env()
+    if forced is not None:
+        return forced, ""
+
+    try:
+        import gi
+        gi.require_version("Gio", "2.0")
+        gi.require_version("GLib", "2.0")
+        from gi.repository import Gio, GLib
+    except (ImportError, ValueError):
+        return None, "the location library (python-gobject) is not available"
+
+    try:
+        mgr = Gio.DBusProxy.new_for_bus_sync(
+            Gio.BusType.SYSTEM, Gio.DBusProxyFlags.NONE, None,
+            GC_BUS, GC_MANAGER_PATH, GC_BUS + ".Manager", None)
+        client_path = mgr.call_sync(
+            "GetClient", None, Gio.DBusCallFlags.NONE, 5000, None).unpack()[0]
+    except Exception:
+        # geoclue is D-Bus activated, so this is what a MASKED service
+        # looks like from here — and masking it is a real thing the Privacy
+        # page offers, so it is named rather than lumped in with "failed".
+        return None, ("the location service is switched off — see "
+                      "Settings ▸ Privacy ▸ Location services")
+
+    try:
+        client = Gio.DBusProxy.new_for_bus_sync(
+            Gio.BusType.SYSTEM, Gio.DBusProxyFlags.NONE, None,
+            GC_BUS, client_path, GC_BUS + ".Client", None)
+        props = Gio.DBusProxy.new_for_bus_sync(
+            Gio.BusType.SYSTEM, Gio.DBusProxyFlags.NONE, None,
+            GC_BUS, client_path, "org.freedesktop.DBus.Properties", None)
+        props.call_sync("Set", GLib.Variant(
+            "(ssv)", (GC_BUS + ".Client", "DesktopId",
+                      GLib.Variant("s", GC_DESKTOP_ID))),
+            Gio.DBusCallFlags.NONE, 5000, None)
+        props.call_sync("Set", GLib.Variant(
+            "(ssv)", (GC_BUS + ".Client", "RequestedAccuracyLevel",
+                      GLib.Variant("u", GC_ACCURACY_CITY))),
+            Gio.DBusCallFlags.NONE, 5000, None)
+    except Exception as exc:
+        return None, f"the location service refused the request ({exc})"
+
+    loop = GLib.MainLoop()
+    got: dict = {}
+
+    def on_update(_p, _sender, signal, params):
+        if signal != "LocationUpdated":
+            return
+        try:
+            got["path"] = params.unpack()[1]
+        except Exception:
+            pass
+        loop.quit()
+
+    client.connect("g-signal", on_update)
+    timed_out = {"yes": True}
+
+    def bail():
+        timed_out["yes"] = True
+        loop.quit()
+        return False
+
+    GLib.timeout_add_seconds(GC_TIMEOUT_S, bail)
+    try:
+        client.call_sync("Start", None, Gio.DBusCallFlags.NONE, 5000, None)
+    except Exception:
+        return None, ("the location service would not start — it may be "
+                      "masked, or this program may not be allowed to use it")
+    timed_out["yes"] = False
+    loop.run()
+
+    try:
+        client.call_sync("Stop", None, Gio.DBusCallFlags.NONE, 5000, None)
+    except Exception:
+        pass
+
+    path = got.get("path")
+    if not path or path == "/":
+        return None, ("no location source answered in "
+                      f"{GC_TIMEOUT_S} seconds — this usually means the "
+                      "machine is not online yet")
+    try:
+        loc = Gio.DBusProxy.new_for_bus_sync(
+            Gio.BusType.SYSTEM, Gio.DBusProxyFlags.NONE, None,
+            GC_BUS, path, GC_BUS + ".Location", None)
+        lat = float(loc.get_cached_property("Latitude").unpack())
+        lon = float(loc.get_cached_property("Longitude").unpack())
+        acc = float(loc.get_cached_property("Accuracy").unpack())
+    except Exception:
+        return None, "the location service returned something unreadable"
+    return (lat, lon, acc), ""
+
+
+# ── the clock ────────────────────────────────────────────────────────────
+
+def current_zone() -> str:
+    try:
+        p = Path("/etc/localtime")
+        if p.is_symlink():
+            t = os.readlink(p)
+            if "zoneinfo/" in t:
+                return t.split("zoneinfo/", 1)[1]
+    except OSError:
+        pass
+    exe = shutil.which("timedatectl")
+    if exe:
+        try:
+            r = subprocess.run([exe, "show", "-p", "Timezone", "--value"],
+                               capture_output=True, text=True, check=False,
+                               timeout=5)
+            if r.returncode == 0:
+                return r.stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return ""
+
+
+def set_zone(zone: str) -> tuple[bool, str]:
+    exe = shutil.which("timedatectl")
+    if not exe:
+        return False, "timedatectl is not installed"
+    cmd = [exe, "set-timezone", zone]
+    if os.geteuid() != 0:
+        pk = shutil.which("pkexec")
+        if not pk:
+            return False, "there is no way to ask for administrator approval"
+        cmd = [pk, exe, "set-timezone", zone]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, check=False,
+                           timeout=30)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, f"the clock could not be set ({exc})"
+    if r.returncode != 0:
+        return False, ((r.stderr or r.stdout).strip()[:200]
+                       or "the clock could not be set")
+    return True, ""
+
+
+def notify(title: str, body: str, *, urgency: str = "low",
+           quiet: bool = False) -> None:
+    if quiet or not shutil.which("notify-send"):
+        return
+    try:
+        subprocess.run(["notify-send", "--app-name", APP_NAME,
+                        "--urgency", urgency,
+                        "--icon", "preferences-system-time", title, body],
+                       capture_output=True, check=False, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+# ── the commands ─────────────────────────────────────────────────────────
+
+def do_resolve() -> dict:
+    """The whole decision, as data. Changes nothing, ever."""
+    fix, why = read_location()
+    if fix is None:
+        return {"ok": False, "reason": REASON_NO_LOCATION, "detail": why,
+                "zone": "", "current": current_zone()}
+    lat, lon, acc = fix
+    if acc and acc > MAX_ACCURACY_M:
+        return {"ok": False, "reason": REASON_NO_LOCATION,
+                "detail": (f"the fix is only accurate to {acc / 1000:.0f} km, "
+                           f"which cannot pick a time zone"),
+                "zone": "", "current": current_zone(),
+                "accuracy_m": acc}
+    picked = zone_for(lat, lon)
+    if picked is None:
+        return {"ok": False, "reason": REASON_NO_LOCATION,
+                "detail": ("tzdata's zone tables are missing ("
+                           + ", ".join(zonetab_paths()) + ")"),
+                "zone": "", "current": current_zone()}
+    zone, km, runner_up, up_km = picked
+    return {"ok": True, "zone": zone, "current": current_zone(),
+            "latitude": round(lat, 4), "longitude": round(lon, 4),
+            "accuracy_m": acc, "km_to_zone_city": round(km, 1),
+            "runner_up": runner_up, "runner_up_km": round(up_km, 1),
+            "method": ("nearest principal city in tzdata's zone1970.tab — "
+                       "a coarse method; near a boundary it can name the "
+                       "neighbouring zone"),
+            "reason": "", "detail": ""}
+
+
+def do_apply(*, force: bool, quiet: bool) -> tuple[int, dict]:
+    # ⛔ THE OPT-IN GUARD. It returns BEFORE do_resolve() on every path
+    #    where nobody said yes, so a machine that never opted in never
+    #    reads a location — not once, not "just to check". Gate 13q39
+    #    asserts that as an ORDER, not as a string.
+    if not (force or is_enabled()):
+        return 4, {"ok": False, "reason": REASON_NOT_ENABLED,
+                   "detail": f"{marker_path()} does not exist",
+                   "zone": "", "current": current_zone()}
+    r = do_resolve()
+    if not r["ok"]:
+        return 1, r
+    if r["zone"] == r["current"]:
+        r["changed"] = False
+        r["note"] = "the time zone was already correct"
+        return 0, r
+    ok, err = set_zone(r["zone"])
+    r["changed"] = bool(ok)
+    if not ok:
+        r["ok"] = False
+        r["reason"] = "the time zone could not be set"
+        r["detail"] = err
+        return 3, r
+    notify("Time zone updated",
+           f"Set to {r['zone']} from your location.", quiet=quiet)
+    return 0, r
+
+
+def do_marker(enable: bool) -> tuple[int, dict]:
+    p = marker_path()
+    if os.geteuid() != 0:
+        return 3, {"ok": False,
+                   "reason": "this must run as root",
+                   "detail": f"{p} is a system file"}
+    try:
+        if enable:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(
+                "# Presence of this file is the opt-in for nyxus-autotz.\n"
+                "# Written by Settings ▸ Date & Time. Remove it and the\n"
+                "# machine stops reading its location for any reason.\n",
+                encoding="utf-8")
+        elif p.exists():
+            p.unlink()
+    except OSError as exc:
+        return 3, {"ok": False, "reason": "could not write the marker",
+                   "detail": str(exc)}
+    return 0, {"ok": True, "enabled": is_enabled(), "marker": str(p)}
+
+
+def do_status() -> dict:
+    return {"enabled": is_enabled(), "marker": str(marker_path()),
+            "current": current_zone(),
+            "zonetab": list(zonetab_paths()),
+            "zones_known": len(load_zones()),
+            "desktop_id": GC_DESKTOP_ID}
+
+
+def _emit(payload: dict, as_json: bool, line: str) -> None:
+    if as_json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        print(line)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
+    as_json = "--json" in args
+    quiet = "--quiet" in args
+    force = "--force" in args
+    verbs = [a for a in args if not a.startswith("-")]
+    unknown = [a for a in args
+               if a.startswith("-") and a not in
+               ("--json", "--quiet", "--force")]
+    if unknown or len(verbs) != 1:
+        print("usage: nyxus-autotz {status|resolve|apply|enable|disable} "
+              "[--json] [--quiet] [--force]", file=sys.stderr)
+        return 2
+    verb = verbs[0]
+
+    if verb == "status":
+        s = do_status()
+        _emit(s, as_json,
+              f"automatic time zone: {'on' if s['enabled'] else 'off'} "
+              f"(currently {s['current'] or '?'})")
+        return 0
+
+    if verb == "resolve":
+        r = do_resolve()
+        if r["ok"]:
+            _emit(r, as_json,
+                  f"{r['zone']}  ({r['km_to_zone_city']} km from that zone's "
+                  f"principal city)")
+            return 0
+        _emit(r, as_json, f"nyxus-autotz: {r['reason']} — {r['detail']}")
+        return 1
+
+    if verb == "apply":
+        rc, r = do_apply(force=force, quiet=quiet)
+        if rc == 0 and r.get("changed"):
+            _emit(r, as_json, f"time zone set to {r['zone']}")
+        elif rc == 0:
+            _emit(r, as_json, f"time zone already {r['current']}")
+        else:
+            _emit(r, as_json,
+                  f"nyxus-autotz: {r['reason']} — {r['detail']}")
+        return rc
+
+    if verb in ("enable", "disable"):
+        rc, r = do_marker(verb == "enable")
+        _emit(r, as_json,
+              (f"automatic time zone {verb}d" if rc == 0
+               else f"nyxus-autotz: {r['reason']} — {r['detail']}"))
+        return rc
+
+    print(f"nyxus-autotz: unknown command {verb!r}", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        sys.exit(130)

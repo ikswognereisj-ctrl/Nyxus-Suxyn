@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Gen Studio — the owner's Tauri front end driving ComfyUI on RunPod for
+# image/video generation, built from ~/gen-studio. Not a packaged NYXUS
+# component, so this shim locates whichever built binary exists rather than
+# assuming one path. TRK-3757.
+for candidate in \
+    "$HOME/gen-studio/src-tauri/target/release/gen-studio" \
+    "/opt/nyxus/apps/gen-studio/gen-studio" \
+    "gen-studio"; do
+    if [[ -x "${candidate}" ]] || command -v "${candidate}" >/dev/null 2>&1; then
+        exec "${candidate}" "$@"
+    fi
+done
+notify-send "Gen Studio" "No built binary found — run 'cargo tauri build' in ~/gen-studio/src-tauri" 2>/dev/null
+echo "nyxus-gen-studio: no Gen Studio binary found (looked in ~/gen-studio/src-tauri/target/release, /opt/nyxus/apps/gen-studio, PATH)" >&2
+exit 1

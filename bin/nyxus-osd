@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# ============================================================================
+#  NYXUS Suxyn — put a line on screen, the same way the volume keys do.
+#
+#  Owner 2026-09-08: "can you make it so when i press the key i know which key
+#  it shows on screen like volume does or whatever".
+#
+#  ONE SURFACE, NOT A SECOND ONE. This talks to the OSD the volume and
+#  brightness keys already use (shell/Osd.qml, kind `message`). Same plate,
+#  same 1800 ms dismiss, same place on screen. A key that invented its own
+#  overlay would drift from the volume one the first time either was touched.
+#
+#  WHY THIS WRAPPER EXISTS AT ALL rather than each key calling `qs ipc` itself:
+#  so there is one place that knows what to do when the shell is not running.
+#  During a login, an ISO's live session, or a shell restart, `qs ipc` fails,
+#  and a fan key that printed a stack trace instead of changing the fans would
+#  be a worse key than one with no readout. It falls through to notify-send,
+#  and if that is absent too it prints and returns 0. The key's real work must
+#  never depend on being able to announce itself.
+#
+#  USAGE:  nyxus-osd <glyph> <text> [notify-icon]
+#          nyxus-osd "" "Fans — Maximum" sensors-fan
+#
+#  The glyph is a Font Awesome codepoint rendered in Theme.fIcon, which
+#  resolves to Font Awesome 7 Free *Solid*. Brand glyphs are NOT in that
+#  family — that is a real defect this build already shipped once, where the
+#  removable-drive chip asked for U+F287 (usb, a brand) and drew a tofu box for
+#  as long as it existed. Check a codepoint is in the Solid font before using
+#  it here.
+# ============================================================================
+set -uo pipefail
+
+GLYPH="${1:-}"
+TEXT="${2:-}"
+ICON="${3:-dialog-information}"
+
+# THE CALLER CARRIES THE REAL CHARACTER. This used to run the glyph through
+# `printf '%b'` on the assumption that it would decode a \uXXXX escape. It does
+# not - measured on this machine, %b leaves \uf863 as the seven literal
+# characters (5c7566383633 in, 5c7546383633 out) and the OSD dutifully drew the
+# missing-glyph box with the codepoint inside. That looked exactly like a font
+# defect and was not one; the same glyph rendered correctly the moment real
+# UTF-8 bytes were passed. Every key script now embeds the character, as the
+# QML surfaces already did.
+#
+# An escape from an older caller is still decoded rather than shown raw, so a
+# script that has not been updated degrades to the right glyph instead of a box.
+case "${GLYPH}" in
+  '\u'[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])
+    GLYPH="$(python3 -c 'import sys;sys.stdout.write(chr(int(sys.argv[1][2:],16)))' \
+             "${GLYPH}" 2>/dev/null || printf '')"
+    ;;
+esac
+
+if command -v qs >/dev/null 2>&1; then
+  # THE `--` IS LOAD-BEARING. Without it `qs ipc call` rejects the arguments
+  # outright — "the following arguments were not expected" — because its
+  # option parser keeps consuming past the function name instead of handing
+  # what follows to the variadic `arguments...` positional. Verified both ways
+  # on the machine: without `--` it errors, with `--` it returns silently and
+  # the OSD appears. This is not decoration; deleting it breaks every key.
+  if qs ipc call -- osd show "${GLYPH}" "${TEXT}" >/dev/null 2>&1; then
+    exit 0
+  fi
+fi
+
+# The shell is not up, or has no OSD. Say it some other way rather than not
+# at all.
+if command -v notify-send >/dev/null 2>&1; then
+  notify-send -a "NYXUS" -i "${ICON}" "${TEXT}" >/dev/null 2>&1 && exit 0
+fi
+
+printf '%s\n' "${TEXT}"

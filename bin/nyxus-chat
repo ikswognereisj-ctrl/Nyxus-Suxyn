@@ -1,0 +1,499 @@
+#!/usr/bin/env python3
+"""nyxus-chat — talk to your machine, and have it remember.
+
+    nyxus-chat                     start talking
+    nyxus-chat "how is jett doing"  one-shot, still remembered
+    nyxus-chat --forget            wipe the memory
+    nyxus-chat --memories          show what it remembers about you
+
+── WHAT THIS ADDS OVER nyxus-brain ────────────────────────────────────────
+`nyxus-brain` answers one question and forgets you. This holds a conversation,
+remembers it between sessions, and pulls in facts about the machine only when
+the question actually needs them.
+
+── WHY THIS IS NOT A FINE-TUNE, WHICH IS WHAT WAS ASKED FOR ───────────────
+The ask was "talk to it like you and I, and have it understand me". Three
+separate things are hiding in that sentence, and only one of them is training:
+
+  · TALKING NATURALLY — qwen2.5:7b already does this. It is an instruction-tuned
+    chat model. Fine-tuning it on transcripts would not make it more fluent; the
+    most likely outcome is a model that is worse at everything else while
+    sounding marginally more familiar.
+  · KNOWING HIS SYSTEM — facts, and facts belong in retrieval. A fine-tune
+    memorises them approximately and cannot be corrected without another
+    training run. See nyxus-brain-index.
+  · REMEMBERING HIM — state, not weights. Training bakes in what was true on
+    training day. This file writes memory to disk, where it can be added to,
+    corrected and deleted.
+
+    So the honest engineering answer is that fine-tuning would cost hours of GPU
+    and deliver the least important third of the request, worse than the cheap
+    version. If a fine-tune is ever worth doing it is for a SKILL the base model
+    lacks — a rigid output format, a specialist judgement — not for this.
+
+── THE CEILING, STATED HONESTLY ───────────────────────────────────────────
+A 7B model running locally will not match a frontier model for reasoning. It
+will lose the thread on long multi-step problems and it will be more literal.
+What it will be is private, free, always available, and it will genuinely know
+this machine — which is the part no hosted model can do.
+
+If it feels too thin, the fix is a BIGGER MODEL, not a fine-tuned small one:
+this box has 8 GB of VRAM, so a 14B at 4-bit is within reach. Change
+NYXUS_BRAIN_MODEL and nothing else here has to change.
+"""
+import argparse
+import json
+import os
+import sys
+import time
+import urllib.request
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+try:
+    import nyxus_tools
+except Exception:
+    nyxus_tools = None
+
+OLLAMA = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
+CHAT_MODEL = os.environ.get("NYXUS_BRAIN_MODEL", "qwen2.5:7b")
+EMBED_MODEL = os.environ.get("NYXUS_BRAIN_EMBED", "nomic-embed-text")
+DIR = os.path.expanduser(os.environ.get("NYXUS_BRAIN_DIR", "~/.local/share/nyxus-brain"))
+HIST = os.path.join(DIR, "conversation.json")
+MEM = os.path.join(DIR, "memories.json")
+
+# How many past turns to carry. Long enough to hold a thread, short enough that
+# a 7B does not lose the current question underneath the history.
+KEEP_TURNS = 12
+
+
+# ── ENGINES ────────────────────────────────────────────────────────────────
+# The same brain — the same index, packs, memories, tools and system prompt —
+# can be answered by either a local model or the Anthropic API. Only the final
+# generation call changes.
+#
+# WHY THIS IS WORTH HAVING BOTH WAYS, rather than picking one:
+#   local  — free, private, instant, works with the network down, and nothing
+#            ever leaves the machine. Right for the constant small questions.
+#   claude — far stronger reasoning for the problems that actually need it.
+#            Costs money per call and sends the retrieved excerpts off the box.
+#
+# ⚠ THE PRIVACY LINE IS REAL AND WORTH STATING. In claude mode the retrieved
+# chunks are part of the prompt, and those chunks are HIS CONFIGS AND CODE. That
+# is fine for NYXUS work and not fine for everything, so the engine is chosen
+# per invocation and local stays the default. Nothing silently changes engine.
+ENGINE = os.environ.get("NYXUS_BRAIN_ENGINE", "local")
+ANTHROPIC_MODEL = os.environ.get("NYXUS_CLAUDE_MODEL", "claude-sonnet-5")
+ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+
+
+def ask_claude(system, messages):
+    """One call to the Anthropic API. Kept deliberately small — no SDK, no
+    dependency, just the documented HTTP shape, so this file keeps working
+    whether or not a python package is installed on the machine."""
+    if not ANTHROPIC_KEY:
+        raise RuntimeError(
+            "no ANTHROPIC_API_KEY set. Export it, or use the local engine.")
+    body = {
+        "model": ANTHROPIC_MODEL,
+        "max_tokens": 2048,
+        "system": system,
+        "messages": [m for m in messages if m["role"] != "system"],
+    }
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages",
+        data=json.dumps(body).encode(),
+        headers={"content-type": "application/json",
+                 "x-api-key": ANTHROPIC_KEY,
+                 "anthropic-version": "2023-06-01"})
+    with urllib.request.urlopen(req, timeout=300) as r:
+        out = json.loads(r.read())
+    return "".join(b.get("text", "") for b in out.get("content", [])).strip()
+
+TOOL_HINT = ""
+if nyxus_tools is not None:
+    TOOL_HINT = (
+        "\n\nTOOLS — you can look things up on this machine instead of guessing.\n"
+        + nyxus_tools.describe()
+        + "\n\nIf the question needs live information you do not already have, reply "
+          "with NOTHING but a JSON object: {\"tool\": \"<name>\", \"args\": {}}\n"
+          "Otherwise answer normally. Never mention that you used a tool."
+    )
+
+
+SYSTEM = """You are the NYXUS system brain. You run locally on Gowski's Alienware,
+the machine you are describing — a Hyprland/Quickshell Linux desktop he designed
+and built himself.
+
+WHO YOU ARE TALKING TO
+He is the person who built this system: a capable Linux user and the author of
+almost everything you know about. Do not explain basics to him. He types fast
+and informally, often without punctuation and with typos — read through them for
+intent and never comment on them or ask him to rephrase unless the meaning is
+genuinely ambiguous.
+
+HOW TO ANSWER
+· LEAD WITH THE ANSWER, THEN STOP. A question with one fact as its answer
+  ("how much disk space", "is jett running", "what's my accent colour") gets
+  ONE sentence: the fact, plainly stated. Not a paragraph that arrives at it.
+· Never show your work unless asked. Do not repeat the command or tool you
+  used, do not paste its raw output back at him, do not append "you can also
+  run `df -h` yourself" — he asked YOU so he wouldn't have to. That belongs in
+  a followup only if he asks how you know.
+· No unrequested lists, headers, or "in summary" recaps for a simple question.
+  Save structure for when the question actually has multiple parts.
+· Expand past one line only when the question is genuinely multi-part, asks
+  "why" or "how", or he asks for more.
+· When you are given excerpts from his system, answer from them and say where
+  the answer came from — briefly, e.g. "(from accent.json)", not a block quote.
+· LIVE STATE beats excerpts when they disagree — it was just read from the
+  machine, the excerpt might be stale. Say the live value.
+· Never invent a filename, a setting key, a field name, or a command you have
+  not actually seen this turn — not in the excerpts, not in live state, not in
+  a tool result. A plausible-sounding guess (a field like `diskPercent` that
+  looks like it should exist) is a hallucination, not a shortcut. If you don't
+  know whether something exists, say you don't know and say what would tell
+  you — a real file to check, a real tool you have. Guessing is worse than
+  admitting you don't know, because he cannot tell your guess from your fact.
+· DO NOT CONFLATE A NAME WITH A LOCATION. Seeing `Sys.diskPercent` in a QML
+  file does NOT mean `diskPercent` is a key in `settings.json` — a UI property
+  computed at runtime and a value persisted to disk are different things even
+  when they share a name. If asked whether a specific key is IN a specific
+  file, check the actual listing of that file you were given. If it is not
+  there verbatim, say so — do not borrow a similarly-named thing from a
+  different file and present it as the answer.
+· "Current NYXUS settings (~/.config/nyxus/settings.json): ..." in LIVE STATE,
+  when present, is the COMPLETE and ONLY list of keys that file has right now.
+  Before you say a key is "in your settings" or "in settings.json", check:
+  is that exact key name one of the comma-separated `key=value` pairs on that
+  line? If it is not there verbatim, the correct answer is "no, that's not a
+  key in settings.json" — never compute a plausible-looking number for it from
+  something else (a percentage from `df`, a property from unrelated code) and
+  present that as the setting's value. A made-up number in valid-looking JSON
+  is still made up.
+· Disagree with him when you have a reason. He is building something real and
+  agreement he has not earned is worthless to him.
+
+You may be given MEMORIES from earlier conversations. Treat them as things he
+told you, not as certainties about the present — the machine changes."""
+
+
+def post(path, payload, timeout=300):
+    req = urllib.request.Request(
+        OLLAMA + path, data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read())
+
+
+def load(p, default):
+    try:
+        with open(p) as f:
+            return json.load(f)
+    except Exception:
+        return default
+
+
+def save(p, obj):
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    tmp = p + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(obj, f, indent=2)
+    os.replace(tmp, p)
+
+
+
+def live_state():
+    """A snapshot of what the machine IS, right now, read at question time.
+
+    ⚠ THIS EXISTS BECAUSE THE INDEX CANNOT DO IT. The index is built once and
+    describes files as they were. Asked "what is my lock screen set to", a
+    retrieval-only build returned documentation ABOUT lock settings and never
+    the current VALUE — technically relevant, practically useless. Anything that
+    changes faster than the index is rebuilt has to be read live or it will be
+    confidently out of date.
+    """
+    import subprocess
+    facts = []
+
+    def sh(cmd):
+        try:
+            return subprocess.run(cmd, shell=True, capture_output=True,
+                                  text=True, timeout=6).stdout.strip()
+        except Exception:
+            return ""
+
+    settings = os.path.expanduser("~/.config/nyxus/settings.json")
+    doc = load(settings, {})
+    if doc:
+        # Every setting he has actually changed. Small, and it is the ground
+        # truth for "what is my X set to".
+        facts.append("Current NYXUS settings (~/.config/nyxus/settings.json): "
+                     + ", ".join(f"{k}={v!r}" for k, v in sorted(doc.items())))
+
+    host = sh("hostname")
+    if host:
+        facts.append(f"Hostname: {host}")
+    up = sh("uptime -p")
+    if up:
+        facts.append(f"Uptime: {up}")
+    svcs = sh("systemctl is-active jett-daemon greetd ollama 2>/dev/null | tr '\n' ' '")
+    if svcs:
+        facts.append(f"Services (jett-daemon, greetd, ollama): {svcs}")
+    procs = sh("pgrep -x qs >/dev/null && echo 'quickshell running' || echo 'quickshell NOT running'")
+    if procs:
+        facts.append(procs)
+    return facts
+
+def retrieve(q, n=12):
+    """Pull system facts, but only when the index exists. Absent index is not an
+    error — it just means it can still talk, only without knowing the machine."""
+    try:
+        import numpy as np
+        qv = np.array(post("/api/embeddings", {"model": EMBED_MODEL, "prompt": q})["embedding"],
+                      dtype="float32")
+        qv = qv / (np.linalg.norm(qv) or 1.0)
+
+        # ── SEARCH THE MAIN INDEX AND EVERY CODE PACK ──────────────────────
+        # Scored together and ranked as one list, rather than taking a fixed
+        # quota from each. A quota would force code into an answer about a
+        # design decision, and force prose into an answer about a function.
+        # Relevance decides; the pack is only where the chunk came from.
+        stores = []
+        if os.path.exists(os.path.join(DIR, "vectors.npy")):
+            stores.append((DIR, None))
+        packs = os.path.join(DIR, "packs")
+        if os.path.isdir(packs):
+            for name in sorted(os.listdir(packs)):
+                if os.path.exists(os.path.join(packs, name, "vectors.npy")):
+                    stores.append((os.path.join(packs, name), name))
+        if not stores:
+            return []
+
+        hits = []
+        for path, pack in stores:
+            vecs = np.load(os.path.join(path, "vectors.npy"))
+            meta = load(os.path.join(path, "meta.json"), [])
+            sc = vecs @ qv
+            for i in np.argsort(-sc)[:n]:
+                if int(i) < len(meta):
+                    hits.append((float(sc[int(i)]), meta[int(i)], pack))
+        hits.sort(key=lambda h: -h[0])
+
+        out = []
+        for score, m, pack in hits[:n]:
+            # A weak match is worse than no match: it fills the context with
+            # irrelevance and invites the model to connect things that are not
+            # connected. Below this, say nothing.
+            if score < 0.35:
+                continue
+            tag = m.get("kind", "doc") if not pack else f"code:{pack}"
+            out.append(f"[{tag}] {m['source']}:{m['line']}\n{m['text']}")
+        return out
+    except Exception:
+        return []
+
+
+def remember(history):
+    """Ask the model what is worth keeping. Cheap, and better than keeping
+    everything: an unbounded transcript becomes noise that crowds out the
+    question being asked now."""
+    convo = "\n".join(f"{m['role']}: {m['content'][:400]}" for m in history[-6:])
+    try:
+        out = post("/api/chat", {
+            "model": CHAT_MODEL,
+            "messages": [
+                {"role": "system", "content":
+                 "Extract durable facts about the user or his system from this "
+                 "exchange — preferences, decisions, things that will still be "
+                 "true next week. One per line, no bullets. If there is nothing "
+                 "worth keeping, output NOTHING."},
+                {"role": "user", "content": convo}],
+            "stream": False, "options": {"temperature": 0.1, "num_ctx": 16384},
+        })["message"]["content"].strip()
+    except Exception:
+        return
+    if not out or out.upper().startswith("NOTHING"):
+        return
+    mems = load(MEM, [])
+    for line in out.splitlines():
+        line = line.strip("-• ").strip()
+        if len(line) > 8 and line not in [m["text"] for m in mems]:
+            mems.append({"text": line, "at": time.strftime("%F %T")})
+    # Trim only the automatic memories; pinned ones are kept whatever happens.
+    pinned = [m for m in mems if m.get("pinned")]
+    auto = [m for m in mems if not m.get("pinned")][-200:]
+    save(MEM, pinned + auto)
+
+
+def build_messages(q, history, mems):
+    """Everything that happens BEFORE generation: retrieval, memories, live
+    state, and the tool-routing decision. Pulled out to module level so
+    nyx-brain (the web app) can drive the exact same brain — same system
+    prompt, same tool access, same live-state truth — instead of a second,
+    inevitably-drifting copy of this logic living in the server file.
+
+    Returns (messages, ctx_used) — ctx_used is just a bool the caller can
+    report; the caller still owns the final generation call and the history
+    write, because a web caller streams that call and a CLI caller does not.
+    """
+    ctx = retrieve(q)
+    sys_msg = SYSTEM
+    if mems:
+        # Pinned first and never trimmed: he chose those deliberately, so
+        # they must not be pushed out by a run of casual conversation.
+        pinned = [m for m in mems if m.get("pinned")]
+        rest = [m for m in mems if not m.get("pinned")][-20:]
+        recent = "\n".join(f"- {m['text']}" for m in pinned + rest)
+        sys_msg += f"\n\nMEMORIES from earlier conversations:\n{recent}"
+    state = live_state()
+    if state:
+        sys_msg += ("\n\nLIVE STATE — read from the machine just now. This is "
+                    "the CURRENT truth and overrides anything in the excerpts "
+                    "or memories that disagrees with it:\n"
+                    + "\n".join(f"- {f}" for f in state))
+    msgs = [{"role": "system", "content": sys_msg}]
+    msgs += history[-KEEP_TURNS:]
+    user = q if not ctx else ("Excerpts from his system:\n\n"
+                              + "\n\n---\n\n".join(ctx) + f"\n\n{q}")
+    msgs.append({"role": "user", "content": user})
+
+    # ── THE TOOL DECISION ──────────────────────────────────────────────────
+    # A SEPARATE, MINIMAL CALL — and that is the fix, not a detail.
+    #
+    # The first version appended the tool list to the main prompt, which by
+    # then already carried the system prompt, the memories and six retrieved
+    # excerpts. Asked "how much disk have i got left", the model saw a wall
+    # of context, decided it had enough, and helpfully explained how to run
+    # `df` instead of running it. Asked whether Jett was running it quoted a
+    # DOCUMENT about Jett rather than checking.
+    #
+    # A 7B will not reliably follow "reply with only JSON" when it is the
+    # last line of a thousand-token prompt. Given nothing but the question
+    # and the tool list, it follows it easily. Routing is its own job and it
+    # gets its own call.
+    tool_note = ""
+    if nyxus_tools is not None:
+        try:
+            pick = post("/api/chat", {
+                "model": CHAT_MODEL,
+                "messages": [
+                    {"role": "system", "content":
+                     "You choose whether a question needs LIVE data from this "
+                     "computer.\n\nTools:\n" + nyxus_tools.describe() +
+                     '\n\nReply with ONLY a JSON object {"tool":"<name>","args":{}} '
+                     "if live data is needed. Reply with exactly NONE if the "
+                     "question is about design, history, opinions, or anything "
+                     "that does not change. No other output, ever."},
+                    {"role": "user", "content": q}],
+                "stream": False, "options": {"temperature": 0.0, "num_ctx": 2048},
+            })["message"]["content"].strip()
+            if "{" in pick and '"tool"' in pick:
+                req = json.loads(pick[pick.index("{"):pick.rindex("}") + 1])
+                res = nyxus_tools.call(req.get("tool", ""), req.get("args") or {})
+                tool_note = ("\n\nLIVE READING from this machine, taken just now "
+                             "(" + str(req.get("tool")) + "). This is current fact "
+                             "and beats anything in the excerpts:\n" + res)
+        except Exception:
+            pass   # routing must never block the plain answer
+
+    if tool_note:
+        msgs[-1]["content"] += tool_note
+    return msgs, bool(ctx)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("question", nargs="*")
+    ap.add_argument("--forget", action="store_true")
+    ap.add_argument("--memories", action="store_true")
+    ap.add_argument("--no-memory", action="store_true", help="do not save this exchange")
+    ap.add_argument("--engine", choices=["local", "claude"],
+                    help="local (default, free/private) or claude (stronger, costs money, "
+                         "sends the retrieved excerpts to the API)")
+    ap.add_argument("--remember", metavar="FACT",
+                    help="pin something important by hand — survives --forget of history")
+    args = ap.parse_args()
+
+    if args.forget:
+        # Conversation history goes. PINNED facts do not — deleting something he
+        # explicitly asked to keep, because he cleared a chat log, would be a
+        # nasty surprise. Wiping those is a separate, explicit act.
+        if os.path.exists(HIST):
+            os.remove(HIST)
+        mems = [m for m in load(MEM, []) if m.get("pinned")]
+        save(MEM, mems)
+        print(f"conversation wiped; kept {len(mems)} pinned memories "
+              f"(delete {MEM} by hand to clear those too)")
+        return 0
+    if args.remember:
+        # Deliberate memory, as opposed to the automatic extraction below.
+        # Pinned facts are marked so they are never crowded out by chatter and
+        # so he can see which ones HE chose to keep.
+        mems = load(MEM, [])
+        mems.append({"text": args.remember, "at": time.strftime("%F %T"), "pinned": True})
+        save(MEM, mems)
+        print(f"remembered: {args.remember}")
+        return 0
+    if args.memories:
+        for m in load(MEM, []):
+            print(f"  {m['at']}  {m['text']}")
+        return 0
+
+    if args.engine:
+        globals()["ENGINE"] = args.engine
+    if ENGINE == "claude" and not ANTHROPIC_KEY:
+        print("engine 'claude' needs ANTHROPIC_API_KEY in the environment.",
+              file=sys.stderr)
+        return 1
+
+    history = load(HIST, [])
+    mems = load(MEM, [])
+
+    def ask(q):
+        msgs, ctx = build_messages(q, history, mems)
+        if ENGINE == "claude":
+            reply = ask_claude(msgs[0]["content"], msgs[1:])
+        else:
+            out = post("/api/chat", {"model": CHAT_MODEL, "messages": msgs,
+                                     "stream": False,
+                                     "options": {"temperature": 0.4, "num_ctx": 16384}})
+            reply = out["message"]["content"].strip()
+        # Store the RAW question, not the retrieval-padded one — otherwise the
+        # history fills with excerpts and the thread is lost within a few turns.
+        history.append({"role": "user", "content": q})
+        history.append({"role": "assistant", "content": reply})
+        return reply, bool(ctx)
+
+    if args.question:
+        reply, used = ask(" ".join(args.question))
+        print(reply)
+        if not args.no_memory:
+            save(HIST, history[-40:]); remember(history)
+        return 0
+
+    who = ANTHROPIC_MODEL + " (API)" if ENGINE == "claude" else CHAT_MODEL + " (local)"
+    print(f"nyxus-chat · {who} · {len(mems)} memories · ctrl-d to leave")
+    while True:
+        try:
+            q = input("\n> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+        if not q:
+            continue
+        if q in ("exit", "quit"):
+            break
+        try:
+            reply, used = ask(q)
+        except Exception as e:
+            print(f"! {e}")
+            continue
+        print(f"\n{reply}")
+        save(HIST, history[-40:])
+    remember(history)
+    save(HIST, history[-40:])
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
