@@ -629,7 +629,6 @@ SetPage {
             spacing: Theme.s3
 
             SetIceFace {
-                property string key: "print_paper"; property string defaultValue: "Letter"
                 Layout.fillWidth: true
                 Layout.leftMargin: 0
                 Layout.rightMargin: 0
@@ -638,7 +637,6 @@ SetPage {
                 selected: page.paper === "Letter"
                 interactive: true
                 onActivated: {
-                    SettingsStore.setValue("print_paper", "Letter");
                     page.act("paper", ["lpoptions", "-p", page.subject, "-o", "media=Letter"]);
                 }
             }
@@ -651,7 +649,6 @@ SetPage {
                 selected: page.paper === "A4"
                 interactive: true
                 onActivated: {
-                    SettingsStore.setValue("print_paper", "A4");
                     page.act("paper", ["lpoptions", "-p", page.subject, "-o", "media=A4"]);
                 }
             }
@@ -664,14 +661,12 @@ SetPage {
                 selected: page.paper === "Legal"
                 interactive: true
                 onActivated: {
-                    SettingsStore.setValue("print_paper", "Legal");
                     page.act("paper", ["lpoptions", "-p", page.subject, "-o", "media=Legal"]);
                 }
             }
         }
 
         SetIceFace {
-            property string key: "print_duplex"; property bool defaultValue: false
             compact: true
             kicker: qsTr("BOTH SIDES")
             // Three states, not two: -1 is "this queue has not been asked
@@ -683,9 +678,31 @@ SetPage {
                      : qsTr("Only takes effect on printers that can do it")
             selected: page.duplex
             interactive: true
+            // TRK-4162 — this also carried
+            //     SettingsStore.setValue("print_duplex", next);
+            // beside the lpoptions call, left behind when this card moved to
+            // CUPS as its source of truth. It wrote ONE GLOBAL value for a
+            // PER-PRINTER setting, which is precisely the bug the migration
+            // was done to remove — see the header note on `paper`.
+            //
+            // All nine buttons on this card did it: three paper, one duplex,
+            // three quality. The migration replaced how the card READS these
+            // (CUPS, per queue) and left every WRITE in place, so each tap
+            // did the right thing through lpoptions and then also stamped a
+            // global that no longer meant anything.
+            //
+            // Nothing read any of them back — `SetIceFace` has no `key`
+            // property at all, so the `property string key: "print_duplex"`
+            // that sat here was inert too, and grepping for the names found
+            // only this file writing them. That is also why the 2026-09-14
+            // audit cleared all three as false positives: the check was a
+            // grep for the NAME, and the name was present — in the write.
+            //
+            // Harmless while unread, but they are stale globals in
+            // settings.json that contradict the model the page now uses, and
+            // the build is meant to go out clean.
             onActivated: {
                 var next = !page.duplex;
-                SettingsStore.setValue("print_duplex", next);
                 page.act("duplex", ["lpoptions", "-p", page.subject, "-o",
                                     "sides=" + (next ? "two-sided-long-edge" : "one-sided")]);
             }
@@ -695,8 +712,11 @@ SetPage {
             Layout.fillWidth: true
             spacing: Theme.s3
 
+            // As with BOTH SIDES above (TRK-4162): the three quality buttons
+            // each wrote a global `print_quality` that nothing read. CUPS
+            // holds this per queue and `readOptions()` reads it back, which
+            // is what `page.quality` below is bound to.
             SetIceFace {
-                property string key: "print_quality"; property string defaultValue: "4"
                 Layout.fillWidth: true
                 Layout.leftMargin: 0
                 Layout.rightMargin: 0
@@ -705,7 +725,6 @@ SetPage {
                 selected: page.quality === "3"
                 interactive: true
                 onActivated: {
-                    SettingsStore.setValue("print_quality", "3");
                     page.act("quality", ["lpoptions", "-p", page.subject, "-o",
                                          "print-quality=3"]);
                 }
@@ -719,7 +738,6 @@ SetPage {
                 selected: page.quality === "4"
                 interactive: true
                 onActivated: {
-                    SettingsStore.setValue("print_quality", "4");
                     page.act("quality", ["lpoptions", "-p", page.subject, "-o",
                                          "print-quality=4"]);
                 }
@@ -733,7 +751,6 @@ SetPage {
                 selected: page.quality === "5"
                 interactive: true
                 onActivated: {
-                    SettingsStore.setValue("print_quality", "5");
                     page.act("quality", ["lpoptions", "-p", page.subject, "-o",
                                          "print-quality=5"]);
                 }
