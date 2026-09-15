@@ -111,17 +111,38 @@ Singleton {
     // Hue is ours; the ladder shape is measured. `teal` and `gold` keep their
     // exact shipped hexes so nothing in Agent A's half of the build desyncs
     // over a change too small to see.
+    // TRK-4147 — the MAGMA column of this table used to hand back #ff7847 for
+    // `teal`, for `azure`'s glow and for `plum`, and #f7a83b for `tealGlow`,
+    // `plumGlow`, `goldGlow` and `gold`. Seven named accents, two actual
+    // colours. ICE spends cyan, ice-blue, deep blue, blue, magenta, pink and
+    // gold across those same seven names, so every surface that colour-codes
+    // by accent carries seven readings under ICE and two under MAGMA. Fire is
+    // not one hue: a volcano runs crimson through rust, copper, orange, amber
+    // and gold, so the lanes below are separated by hue (crimson ~8°, the
+    // signature orange ~18°, amber ~33°, gold ~46°) and by lightness, while
+    // every one of them stays unmistakably ember. `plum` keeps #ff7847
+    // because it is MAGMA's signature the way magenta is ICE's, and moving it
+    // would move the look itself rather than restore what the look erased.
+    //
+    // Scope, honestly: these names are spent 69 times across the QML, but NOT
+    // on the Start tiles. That was checked by pixel sample before and after
+    // and the gems did not move one byte -- MAGMA app icons are etched inside
+    // `hardened_magma.frag`, which ignores the per-app tint QML hands it, so
+    // the "twenty identical orange squares" reading has a different cause and
+    // is not repaired here. What is repaired is the collapse itself, which is
+    // true whichever screen you find it on: seven names must not answer with
+    // two colours.
     readonly property color tealHaze:   lookMagma ? "#2a0a18" : "#012c3b"
     readonly property color tealDeep:   lookMagma ? "#7a1e0c" : "#026282"
     readonly property color tealBody:   lookMagma ? "#a33214" : "#0582ad"
-    readonly property color teal:       lookMagma ? "#ff7847" : "#0aa2d6"
-    readonly property color tealGlow:   lookMagma ? "#f7a83b" : "#5cc6ea"
+    readonly property color teal:       lookMagma ? "#ffa22b" : "#0aa2d6"
+    readonly property color tealGlow:   lookMagma ? "#ffc85c" : "#5cc6ea"
 
     readonly property color azureHaze:  lookMagma ? "#3a0c22" : "#000f1c"
     readonly property color azureDeep:  lookMagma ? "#58100f" : "#01203e"
     readonly property color azureBody:  lookMagma ? "#6d1a30" : "#03386b"
-    readonly property color azure:      lookMagma ? "#a33214" : "#064f95"
-    readonly property color azureGlow:  lookMagma ? "#ff7847" : "#52a0ea"
+    readonly property color azure:      lookMagma ? "#d0331f" : "#064f95"
+    readonly property color azureGlow:  lookMagma ? "#ff5b3a" : "#52a0ea"
 
     readonly property color indigoHaze: lookMagma ? "#2a0a18" : "#060125"
     readonly property color indigoDeep: lookMagma ? "#58100f" : "#0e0153"
@@ -150,13 +171,18 @@ Singleton {
     // it by eye, which is exactly why it needed to be caught by a value.
     readonly property color plumBody:   lookMagma ? "#050203" : "#891955"
     readonly property color plum:       lookMagma ? "#ff7847" : "#ae206c"
-    readonly property color plumGlow:   lookMagma ? "#f7a83b" : "#d765a2"
+    // TRK-4147 — was #f7a83b, the same value `tealGlow` and `goldGlow` both
+    // returned. Peach keeps it in the signature lane while separating it.
+    readonly property color plumGlow:   lookMagma ? "#ffa07a" : "#d765a2"
 
     readonly property color goldHaze:   lookMagma ? "#2a0a18" : "#251604"
     readonly property color goldDeep:   lookMagma ? "#7a1e0c" : "#50310b"
     readonly property color goldBody:   lookMagma ? "#a33214" : "#764a12"
-    readonly property color gold:       lookMagma ? "#ff7847" : "#9b621b"
-    readonly property color goldGlow:   lookMagma ? "#f7a83b" : "#d8a464"
+    // TRK-4147 — gold answering #ff7847 meant the gold family was not gold at
+    // all, it was the signature orange wearing gold's name. The gold lane is
+    // the top of the ember range, so it gets to actually be yellow.
+    readonly property color gold:       lookMagma ? "#e8a021" : "#9b621b"
+    readonly property color goldGlow:   lookMagma ? "#f5d76e" : "#d8a464"
 
     // ── ramps · light → dark, for gradient bodies ────────────────────
     readonly property var tealRamp:   [tealGlow, teal, tealDeep]
