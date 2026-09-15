@@ -98,6 +98,61 @@ Item {
     //   d8a464 = _ramps.gold[2] (_palette_fixed.gold_glow/rich_gold)   9.167:1
     readonly property var heavyStops: ["9b621b", "d8a464", "9b621b", "d8a464", "9b621b", "d8a464"]
 
+    // ══ TRK-4173 · the look-aware rim · 2026-09-15 ════════════════════════
+    // Owner, on a MAGMA desktop: "i dont see the borders glowing and
+    // pulsating to the music".
+    //
+    // TWO separate faults, and the first one hid the second.
+    //
+    // 1. `BorderPulse {}` was commented out in shell.qml on 2026-09-08 by an
+    //    audit whose note reads "drove app-window border/shadow to ice+plum
+    //    on every beat". That note is accurate. It is also a description of
+    //    a PALETTE bug, and the audit fixed it by deleting the behaviour the
+    //    owner actually wanted instead of fixing the colours.
+    //
+    // 2. The palette bug itself, which is the interesting one. `calmStops`,
+    //    `busyStops` and `heavyStops` above are NOT what this file paints.
+    //    They are a contract declaration — gate 21 asserts calmStops equals
+    //    the winning nyxus-cometfire.conf stops — and nothing reads them at
+    //    runtime. `write()` carried its own inline hex literals: 7fe8ff,
+    //    b7e6f2, 4f7fa6, 274b7a, aa6ece, d765a2. Glacier and plum, always,
+    //    on every look. A first attempt at this fix made the arrays
+    //    look-aware, deployed it, and changed exactly nothing on screen,
+    //    which is how the dead arrays were found at all.
+    //
+    // So the literals move here, behind the look. Ratios are vs black and
+    // were computed, not guessed; the ice column is measured from the old
+    // literals so the magma column can be checked against it rather than
+    // against a vibe:
+    //
+    //   role                ice       ratio    magma     ratio
+    //   light A (focus)     7fe8ff    14.89    f7a83b    10.62
+    //   light B (hover)     b7e6f2    15.61    ffd27a    14.75
+    //   dark end (rim)      4f7fa6     4.92    b0653a     4.77
+    //   halo deep (glow)    274b7a     2.37    6b2a15     1.97
+    //   strike A            aa6ece     5.83    ff7847     8.03
+    //   strike B            d765a2     6.27    ff9a3c     9.94
+    //
+    // `dark end` is the one that matters for the WIP-777 focus-contrast
+    // floor, because the slow fade lands there and parks: 4.77 vs 4.92 is
+    // the closest warm rung to glacier[4] and is comfortably over 3:1.
+    // `halo deep` is deliberately under 3:1 in BOTH columns — it is a
+    // shadow glow, never a rim state, exactly as the glacier note above
+    // already says of 274b7a.
+    //
+    // light A is f7a83b rather than a paler gold at 14.89 on purpose: it is
+    // the same gold Prefs.applyHyprLook() already writes as the MAGMA
+    // active border, and a rim that pulses away from the look's own resting
+    // colour and back is the entire point. Agreeing with applyHyprLook
+    // matters more here than matching glacier's ratio digit for digit.
+    readonly property bool _magma: Theme.lookMagma
+    readonly property string cLightA:   root._magma ? "f7a83b" : "7fe8ff"
+    readonly property string cLightB:   root._magma ? "ffd27a" : "b7e6f2"
+    readonly property string cDarkEnd:  root._magma ? "b0653a" : "4f7fa6"
+    readonly property string cHaloDeep: root._magma ? "6b2a15" : "274b7a"
+    readonly property string cStrikeA:  root._magma ? "ff7847" : "aa6ece"
+    readonly property string cStrikeB:  root._magma ? "ff9a3c" : "d765a2"
+
     // Hyprctl floor. 120 ms is enough for a 16 s glacier fade and is not
     // the old 50 ms beat writer.
     readonly property int updateMs: 120
@@ -145,7 +200,7 @@ Item {
     property int  _restRange:    36
     property int  _restAlpha:    0x3a
     property int  _restAlphaIn:  0x33
-    property string _restHex:    "b7e6f2"
+    property string _restHex:    root.cLightB
     property string _restHexIn:  "000000"
     // Idle halo is glacier[5], not the compositor's leftover #1e03ad
     // (NYXUS purple). The slow fade mixes this toward glacier[3].
@@ -211,8 +266,8 @@ Item {
         // glacier[5] → glacier[3] (glow, not a 3:1 state stop).
         const t = Math.max(0, Math.min(1, root.iceT));
         const k = Math.max(0, Math.min(1, root.strike));
-        let a = mixHex("7fe8ff", "4f7fa6", t);
-        let b = mixHex("b7e6f2", "4f7fa6", t);
+        let a = mixHex(root.cLightA, root.cDarkEnd, t);
+        let b = mixHex(root.cLightB, root.cDarkEnd, t);
 
         // THE STRIKE, on the rim. The glacier pair is pushed toward the
         // galaxy accent -- violet_glow #aa6ece into plum_glow #d765a2 -- so a
@@ -221,8 +276,8 @@ Item {
         // the WIP-777 focus-contrast floor lives in these stops, and a rim
         // that abandons them stops saying "this window has focus" on the beat.
         if (k > 0.001) {
-            a = mixHex(a, "aa6ece", k * 0.72);
-            b = mixHex(b, "d765a2", k * 0.72);
+            a = mixHex(a, root.cStrikeA, k * 0.72);
+            b = mixHex(b, root.cStrikeB, k * 0.72);
         }
 
         let parts = [];
@@ -233,8 +288,8 @@ Item {
         const aLo = Math.min(0x44, Math.round(0x26 * (1 + t * 0.35))).toString(16).padStart(2, "0");
         // Unfocused windows breathe rather than strike (see strikeInactive).
         const ki = Math.max(0, Math.min(1, root.strikeInactive));
-        const inParts = "rgba(" + mixHex(mixHex("4f7fa6", "274b7a", t), "aa6ece", ki) + aHi + ") rgba("
-                      + mixHex(mixHex("274b7a", "4f7fa6", t), "aa6ece", ki) + aLo + ")";
+        const inParts = "rgba(" + mixHex(mixHex(root.cDarkEnd, root.cHaloDeep, t), root.cStrikeA, ki) + aHi + ") rgba("
+                      + mixHex(mixHex(root.cHaloDeep, root.cDarkEnd, t), root.cStrikeA, ki) + aLo + ")";
 
         // THE HALO BLOOM. The shadow is the widest, softest thing the rim
         // owns, so pushing its range and alpha on the beat is what makes the
@@ -245,8 +300,8 @@ Item {
                         .toString(16).padStart(2, "0");
         const shIn = Math.min(0x66, Math.round(root._restAlphaIn * (1 + t * 0.40 + ki * 0.60)))
                         .toString(16).padStart(2, "0");
-        const shCol = mixHex(mixHex("b7e6f2", "274b7a", t), "d765a2", k * 0.65);
-        const shColIn = mixHex("4f7fa6", "274b7a", t);
+        const shCol = mixHex(mixHex(root.cLightB, root.cHaloDeep, t), root.cStrikeB, k * 0.65);
+        const shColIn = mixHex(root.cDarkEnd, root.cHaloDeep, t);
 
         Quickshell.execDetached(["hyprctl", "--batch",
             "keyword general:col.active_border " + parts.join(" ") + " 45deg ; "

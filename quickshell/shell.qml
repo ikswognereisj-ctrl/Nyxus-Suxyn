@@ -411,7 +411,31 @@ ShellRoot {
     // border again; this non-visual singleton driver pulses its brightness
     // with the music (Beat) and shifts its colour with the workload
     // (Sys.cpuPercent). No window, no layer surface, no cost when idle.
-    // BorderPulse {}   // audit 2026-09-08: drove app-window border/shadow to ice+plum on every beat; widgets have a fixed 45% glacier rim, so app windows get the same (hyprland.conf).
+    // BorderPulse — RE-ENABLED, TRK-4173, 2026-09-15.
+    //
+    // It was commented out by the audit of 2026-09-08 with this note:
+    //   "drove app-window border/shadow to ice+plum on every beat; widgets
+    //    have a fixed 45% glacier rim, so app windows get the same"
+    //
+    // The observation was correct and the fix was wrong. It painted ice and
+    // plum on every beat because `write()` held inline glacier/plum hex
+    // literals that no look could reach — see the TRK-4173 block in
+    // BorderPulse.qml, which also explains why the three `*Stops` arrays in
+    // that file are a contract declaration and not the runtime palette.
+    // Turning the feature off cured the symptom and cost the owner the
+    // thing he had asked for; he raised it again on 2026-09-14 as "i dont
+    // see the borders glowing and pulsating to the music".
+    //
+    // The palette is now look-aware, so the rim pulses in gold/ember on
+    // MAGMA and glacier/plum on ICE, and the resting colour agrees with the
+    // one Prefs.applyHyprLook() writes for the active look.
+    //
+    // ⚠ Do NOT also run `nyxus-beatd`. It writes col.active_border too, it
+    // is not look-aware (it carries a fixed palette including magenta
+    // ae206c and yellow fffe42), and the two fight. bin/nyxus-supernova:162
+    // carries the same warning. Note that `nyxus-beat off` reports
+    // "beat: off" while leaving the daemon alive on a stale pidfile.
+    BorderPulse {}
 
     // ── the Spill · REMOVED on the owner's instruction, 2026-08-05 ──────
     // HORIZON §5.35 argued this was bias lighting for an operating system —
