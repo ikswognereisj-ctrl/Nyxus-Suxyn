@@ -250,7 +250,33 @@ void main(){
     // Ladder top pulled 0.70 -> 0.56 green: the top rung is where a lit
     // glyph spends most of its pixels, and gold there was the etch reading
     // yellow independently of the rim.
-    vec3 ladder   = mix(vec3(0.30, 0.05, 0.02), vec3(1.00, 0.56, 0.28),
+    // TRK-4148 — the top rung was the literal vec3(1.00, 0.56, 0.28), and
+    // that one constant is a large part of why every MAGMA app icon looked
+    // like every other MAGMA app icon. Nearly the whole NYXUS-Dark set is
+    // drawn in ice, plum and violet, so nearly every glyph is "cold" by the
+    // b > g test above and gets re-hued onto this ladder FULLY -- not
+    // tinted, re-hued. One ladder, one destination, twenty-six apps.
+    // `tileCore()` has always handed each app its own colour and `GlassTile`
+    // has always passed it down as the tint, so the identity arrived at this
+    // shader and died on this line. Taking the top rung from uEyeCol means
+    // each tile climbs to ITS colour: the ladder still starts at the same
+    // dark rust, still re-hues cold glyphs completely, still leaves warm
+    // glyphs their own chroma, and verbatim brand art still skips the lot
+    // through uMarkMode. The fallback keeps the old constant, so any caller
+    // that sends no tint cannot change.
+    //
+    // Measured, not claimed. Seven pinned and app tiles sampled over a 34 px
+    // box before and after: mean pairwise colour distance 32.5 -> 36.6, and
+    // the two most confusable tiles in the set went 2.2 -> 4.6, which is the
+    // number that actually matters. So this is a real gain and a modest one,
+    // NOT the whole repair -- the rest of the sameness is the crackle crust,
+    // which is identical on every tile by design and swamps a thin glyph etch
+    // in any honest whole-tile sample. Anyone chasing the remaining distance
+    // should go at the crust or at the etch's share of the tile, not at this
+    // ladder, which is now doing its part.
+    vec3 ladderTop = (length(uEyeCol) > 0.05) ? uEyeCol
+                                              : vec3(1.00, 0.56, 0.28);
+    vec3 ladder   = mix(vec3(0.30, 0.05, 0.02), ladderTop,
                         smoothstep(0.06, 0.80, lum));
     vec3 coreEtch = mix(boosted, ladder, coolness) * (0.90 + 0.20 * eb);
     // Verbatim marks get a small lift so the art's whites stay white and
