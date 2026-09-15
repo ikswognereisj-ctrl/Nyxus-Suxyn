@@ -177,7 +177,7 @@ FloatingWindow {
     // rungs the kit uses for interactive / on (index 0 and 5); mid (4) is
     // the 1 px seam, never a fill. tokenAccent* is now glacier too
     // (owner 2026-08-19 ~20:42). Hub LAYOUT is unchanged.
-    readonly property color iceInteractive: Theme.paintLayers.glacier[0]
+    readonly property color iceInteractive: Theme.stateLayer[0]
     readonly property color icePrimary:     Theme.paintLayers.glacier[5]
     readonly property color iceHairline:    Theme.lookSeam
     readonly property color icePeak:        Theme.tokenAccentPeak

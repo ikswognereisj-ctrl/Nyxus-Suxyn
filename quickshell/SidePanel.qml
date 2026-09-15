@@ -295,7 +295,7 @@ PanelWindow {
     onRevealedChanged: if (root.revealed) brightGet.running = true
 
     // 2026-08-19 · owner: glacier/ice chrome only, drop rose.
-    readonly property color iceInteractive: Theme.paintLayers.glacier[0]
+    readonly property color iceInteractive: Theme.stateLayer[0]
     readonly property color icePrimary:     Theme.paintLayers.glacier[5]
     readonly property color iceHairline:    Theme.lookSeam
     // Owner 2026-08-19 palette map: magma = record / destructive;
@@ -326,7 +326,7 @@ PanelWindow {
     // real and still wanted, it is only the hue that the newer ruling
     // changed. Critical is untouched — it was magma on 08-19 and it is
     // crimson in the mockup, which is the same thing said twice.
-    readonly property color unreadInteractive: Theme.paintLayers.glacier[0]
+    readonly property color unreadInteractive: Theme.stateLayer[0]
     readonly property color unreadPrimary:     Theme.paintLayers.glacier[5]
 
     // Sections, in rail order. `key` is what a bar glyph asks for through

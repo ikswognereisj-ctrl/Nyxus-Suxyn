@@ -34,9 +34,9 @@ Item {
 
     readonly property color iceElevated: Theme.elevated
     readonly property color iceSeam:     Theme.lookSeam
-    readonly property color icePeak:     Theme.paintLayers.glacier[6]
-    readonly property color iceHover:    Theme.paintLayers.glacier[5]
-    readonly property color iceFocus:    Theme.paintLayers.glacier[0]
+    readonly property color icePeak: Theme.stateLayer[6]
+    readonly property color iceHover: Theme.stateLayer[5]
+    readonly property color iceFocus: Theme.stateLayer[0]
     readonly property color magmaMark:   Theme.paintLayers.magma[5]
 
     readonly property bool lit: face.activeFocus

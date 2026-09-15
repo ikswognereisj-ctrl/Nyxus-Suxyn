@@ -106,7 +106,7 @@ Item {
     // (glacier[6] × tealGlow 0.30); lip stays glacier[0]. Magma numbers
     // do not move.
     property real tone: 0.35
-    readonly property color markFocus: Theme.paintLayers.glacier[0]
+    readonly property color markFocus: Theme.stateLayer[0]
     readonly property color markSeam: Theme.lookSeam
     // TRK-3060 — 5 px sheen only: glacier peak toward swirl teal glow.
     // Mix at the call site. Both args are already `property color`.

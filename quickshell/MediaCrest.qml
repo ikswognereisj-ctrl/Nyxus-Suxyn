@@ -65,7 +65,7 @@ PanelWindow {
     implicitHeight: card.height + 12 + Theme.bloomPad
     implicitWidth: 580 + Theme.bloomPad * 2
 
-    readonly property color iceInteractive: Theme.paintLayers.glacier[0]
+    readonly property color iceInteractive: Theme.stateLayer[0]
     readonly property color icePrimary: Theme.paintLayers.glacier[5]
     readonly property color iceHairline: Theme.lookSeam
     readonly property color iceOn: Theme.paintLayers.glacier[3]

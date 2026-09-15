@@ -346,7 +346,7 @@ SetPage {
                 radius: Theme.r2
                 color: Theme.soften(Theme.void_, 0.35)
                 border.width: nameIn.activeFocus ? 2 : 1
-                border.color: nameIn.activeFocus ? Theme.paintLayers.glacier[0] : Theme.lookSeam
+                border.color: nameIn.activeFocus ? Theme.stateLayer[0] : Theme.lookSeam
                 TextInput {
                     id: nameIn
                     anchors.fill: parent
@@ -395,7 +395,7 @@ SetPage {
                 radius: Theme.r2
                 color: Theme.soften(Theme.void_, 0.35)
                 border.width: wallIn.activeFocus ? 2 : 1
-                border.color: wallIn.activeFocus ? Theme.paintLayers.glacier[0] : Theme.lookSeam
+                border.color: wallIn.activeFocus ? Theme.stateLayer[0] : Theme.lookSeam
                 TextInput {
                     id: wallIn
                     anchors.fill: parent
@@ -491,7 +491,7 @@ SetPage {
                 radius: Theme.r2
                 color: Theme.soften(Theme.void_, 0.35)
                 border.width: labelIn.activeFocus ? 2 : 1
-                border.color: labelIn.activeFocus ? Theme.paintLayers.glacier[0] : Theme.lookSeam
+                border.color: labelIn.activeFocus ? Theme.stateLayer[0] : Theme.lookSeam
                 TextInput {
                     id: labelIn
                     anchors.fill: parent
@@ -518,7 +518,7 @@ SetPage {
                 radius: Theme.r2
                 color: Theme.soften(Theme.void_, 0.35)
                 border.width: whatIn.activeFocus ? 2 : 1
-                border.color: whatIn.activeFocus ? Theme.paintLayers.glacier[0] : Theme.lookSeam
+                border.color: whatIn.activeFocus ? Theme.stateLayer[0] : Theme.lookSeam
                 TextInput {
                     id: whatIn
                     anchors.fill: parent

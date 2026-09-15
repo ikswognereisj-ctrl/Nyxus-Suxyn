@@ -42,8 +42,8 @@ Item {
     Layout.preferredHeight: 56
     opacity: pill.enabled ? 1.0 : 0.4
 
-    readonly property color markOn: Theme.paintLayers.glacier[5]
-    readonly property color markFocus: Theme.paintLayers.glacier[0]
+    readonly property color markOn: Theme.stateLayer[5]
+    readonly property color markFocus: Theme.stateLayer[0]
     // TRK-3045 — 4 px sheen only: glacier peak toward swirl teal glow.
     // Mix at the call site. Both args are already `property color`.
     readonly property color swirlPeak: Theme.mix(Theme.tokenAccentPeak, Theme.tealGlow, 0.30)
@@ -234,7 +234,45 @@ Item {
                                 !pill.enabled ? 0.22
                                 : (tap.pressed ? 0.95
                                 : (pill.active ? 0.90
-                                : (hov.hovered ? 0.82 : 0.62))))
+                                : (hov.hovered ? 0.48 : 0.30))))
+            // ── TRK-4141 · THE BROW WAS LIT WHETHER OR NOT ANYTHING WAS ON ──
+            // Owner, 2026-09-15, on the theme reading same-y everywhere.
+            // Measured the flyout brows straight off a screenshot:
+            //
+            //   Wi-Fi    ON   R235 G153 B79   lum 160
+            //   Airplane OFF  R161 G106 B53   lum 116
+            //
+            // Same hue, 1.45x apart — which is this ladder's 0.90 over 0.62.
+            // Brightness alone is the weakest channel there is, so eight tiles
+            // in a grid all wore what looked like the same lit brow and the
+            // state had to be read off the word "Off" in 11 px type.
+            //
+            // It was worse on the way past: hover was 0.82 against active's
+            // 0.90. Hovering an OFF tile lit its brow to within 9% of ON, so
+            // the pointer made things look like they had switched on.
+            //
+            // Idle 0.62 -> 0.30 and hover 0.82 -> 0.48. Active is untouched at
+            // 0.90, so ON does not get dimmer — OFF gets quieter, which is the
+            // half of the pair that was lying.
+            //
+            // Measured back off the same screenshot afterwards, mean luminance
+            // across the whole brow band rather than its peak row:
+            //
+            //   ON    153.9 -> 154.0   (unmoved, as intended)
+            //   OFF   105.4 ->  73.1   (-31%)
+            //   ratio  1.46x -> 2.11x
+            //
+            // Not the 3x the alphas imply — soften() composites over a lit
+            // ground, so the floor never reaches the alpha ratio. 2.11x is the
+            // number that is actually on screen.
+            //
+            // This also takes five of the eight brightest ember bars out of
+            // the flyout, which is most of the repetition the owner was
+            // seeing: the ember that is left is on the tiles that earned it.
+            //
+            // The cool lip below keeps its own ladder — hue AND brightness now
+            // both report state, so the pair survives a bad angle or a
+            // washed-out panel where either alone would not.
         }
         Rectangle {
             anchors.left: parent.left

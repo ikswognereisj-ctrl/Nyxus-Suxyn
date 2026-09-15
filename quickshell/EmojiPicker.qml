@@ -89,8 +89,8 @@ PanelWindow {
     // Ice chrome (TRK-968 / WIP-704). Sweep0 `#0aa2d6` is banned as a fill.
     // Same rungs as SetIceFace / MonthCalendar today-stone.
     readonly property color iceElevated: Theme.elevated                 // #071318
-    readonly property color iceHover:    Theme.paintLayers.glacier[5]   // #b7e6f2
-    readonly property color iceFocus:    Theme.paintLayers.glacier[0]   // #7fe8ff
+    readonly property color iceHover: Theme.stateLayer[5]   // #b7e6f2
+    readonly property color iceFocus: Theme.stateLayer[0]   // #7fe8ff
 
     // ── recents ──────────────────────────────────────────────────────────
     // Stored as an array of GLYPHS, resolved back to table entries on read.

@@ -75,7 +75,7 @@ PanelWindow {
 
     // 2026-08-19 · owner palette map: ice rest/hover/Settings;
     // magma = power. Violet is notifications (Toasts / flyout), not here.
-    readonly property color iceInteractive: Theme.paintLayers.glacier[0]
+    readonly property color iceInteractive: Theme.stateLayer[0]
     readonly property color icePrimary:     Theme.paintLayers.glacier[5]
     readonly property color iceHairline:    Theme.lookSeam
     readonly property color magmaInteractive: Theme.paintLayers.magma[0]

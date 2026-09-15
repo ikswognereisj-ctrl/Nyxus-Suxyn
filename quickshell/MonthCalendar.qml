@@ -24,9 +24,9 @@ Item {
     // (`#0aa2d6` fill, banned). Magma none. Hover glacier[5], focus glacier[0].
     readonly property color iceElevated: Theme.elevated                 // #071318
     readonly property color iceSeam:     Theme.lookSeam   // #4f7fa6
-    readonly property color icePeak:     Theme.paintLayers.glacier[6]   // #eefcff
-    readonly property color iceHover:    Theme.paintLayers.glacier[5]   // #b7e6f2
-    readonly property color iceFocus:    Theme.paintLayers.glacier[0]   // #7fe8ff
+    readonly property color icePeak: Theme.stateLayer[6]   // #eefcff
+    readonly property color iceHover: Theme.stateLayer[5]   // #b7e6f2
+    readonly property color iceFocus: Theme.stateLayer[0]   // #7fe8ff
 
     // Emitted when a day is tapped. The calendar does not own what happens
     // next — a month grid is the wrong place to host an editor — so it reports

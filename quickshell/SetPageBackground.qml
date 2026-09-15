@@ -31,8 +31,8 @@ SetPage {
     title: qsTr("Background")
     blurb: qsTr("Starlight, or pick a numbered still.")
 
-    readonly property color iceFocus: Theme.paintLayers.glacier[0]
-    readonly property color iceHover: Theme.paintLayers.glacier[5]
+    readonly property color iceFocus: Theme.stateLayer[0]
+    readonly property color iceHover: Theme.stateLayer[5]
 
     property var featured: []
     property var moreWalls: []

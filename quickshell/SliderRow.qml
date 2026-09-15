@@ -22,9 +22,9 @@ RowLayout {
     // Off by default so the two existing call sites keep their exact shape;
     // the flyout turns it on for the hero pair at the top of the panel.
     property bool showReadout: false
-    readonly property color markOn: Theme.paintLayers.glacier[5]
-    readonly property color markFocus: Theme.paintLayers.glacier[0]
-    readonly property color markPeak: Theme.paintLayers.glacier[6]
+    readonly property color markOn: Theme.stateLayer[5]
+    readonly property color markFocus: Theme.stateLayer[0]
+    readonly property color markPeak: Theme.stateLayer[6]
     signal moved(real v)
 
     spacing: Theme.s5

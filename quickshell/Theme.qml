@@ -57,6 +57,46 @@ Singleton {
     // ICE glacier, never remapped. paintLayers.glacier becomes magma when
     // MAGMA is on; hairlines still read this.
     readonly property var iceLayer: ["#7fe8ff", "#123a5e", "#0c1f66", "#274b7a", "#4f7fa6", "#b7e6f2", "#eefcff"]
+
+    // ══ THE STATE LAYER ═══════════════════════════════════════ TRK-4139 ══
+    // Owner, 2026-09-14: "i also feel like theres too much of the same color
+    // in everything do you feel the same of is it just me".
+    //
+    // Not just him, and it measured worse than it looked. Bucketing the 39
+    // colours on each side of every `lookMagma ?` in this file:
+    //
+    //   ICE     cyan 31 · blue 15 · magenta 15 · violet 13 · orange 13
+    //           six families, widest bucket 31%
+    //   MAGMA   red 59 · rose 21 · orange 8 · CYAN 3
+    //           88% inside one red→rose arc, and ONE cool token out of 39
+    //
+    // On screen that came out as red+orange being 70–77% of every chromatic
+    // pixel on the bar, the Start menu and Settings alike.
+    //
+    // The cause is one line: `paintLayers.glacier` is remapped wholesale to
+    // magma (see paintLayers, below). That is correct for the PAINT — the
+    // swirl should be molten. But 129 call sites across 25 files read
+    // `paintLayers.glacier[n]`, and most of them are not paint. They are
+    // focus rings, hover washes, active marks and peaks, and they are named
+    // for what they were: `iceFocus`, `iceHover`, `icePeak`, `stateFocus`,
+    // `iceInteractive`. Several still carry the ICE hex in a trailing
+    // comment — SetSwitch.qml documents "focus #7fe8ff" two lines above a
+    // binding that returns #ff7847 under MAGMA, and StateEdge.qml does the
+    // same. A property called `iceFocus` that renders ember is not a design
+    // decision, it is a remap that reached further than it was aimed.
+    //
+    // So state accents read THIS instead. Under ICE it is byte-identical to
+    // `paintLayers.glacier` — glacier IS iceLayer when MAGMA is off — so the
+    // ICE theme cannot move by even one pixel. Under MAGMA it gives back the
+    // pale glacier those call sites were written against, which is also
+    // already the established MAGMA counterpoint: `lookSeam` is iceLayer[5]
+    // under MAGMA, and the dock shader got its glacier catch-light in
+    // TRK-4127 for the same reason.
+    //
+    // ⚠ STATE ONLY. Body text, large fills and background washes deliberately
+    // stay ember: the point is a second voice where the eye looks for "what
+    // is live", not to repaint MAGMA in ICE's colours.
+    readonly property var stateLayer: iceLayer
     // Floor hub wears BOTH layers at once (ice/plum + magma). Never remapped.
     readonly property color iceTeal: "#0aa2d6"
     readonly property color icePlum: "#ae206c"
@@ -1260,7 +1300,35 @@ Singleton {
     // #141a30, a blue-GREY at S 0.58 and the muddiest colour in the build,
     // sitting behind every hover state. Same darkness, real chroma — now the
     // same real chroma as the apps.
-    readonly property color void_:     lookMagma ? "#0a0404" : "#020506"
+    // ══ WARM LIGHT, COOL SHADOW ═══════════════════════════════ TRK-4140 ══
+    // Owner, 2026-09-15: "what do you think would make the theme better
+    // looking using these layers".
+    //
+    // The elevation ladder was warm at every rung. Measured R:B under MAGMA:
+    //
+    //   void_     #0a0404   R10 B4    R/B 2.5   ← deepest
+    //   surface   #120605   R18 B5    R/B 3.6
+    //   elevated  #1a0806   R26 B6    R/B 4.3   ← raised
+    //
+    // The instinct was already right — warmth climbs with elevation — but it
+    // climbs from warm to warmer, so the ember at the top has nothing to be
+    // warm AGAINST. No painter puts a warm shadow under a warm light, and
+    // fire in particular lights a cold room: the lava glows, the rock around
+    // it stays blue-black night. Warm-on-warm is what integrates to the
+    // "too much of the same color" the owner called out.
+    //
+    // So the bottom rung goes cold and the top two stay lit. void_ is 112
+    // uses and elevated is 120, so this is a genuine two-pole system rather
+    // than a tint: every recess now reads cool and every raised face reads
+    // hot, and the ember gets hotter by simultaneous contrast WITHOUT one
+    // more orange pixel on screen.
+    //
+    // Luminance is held so blacks do not lift: #0a0404 is lum 5.8, #05060b is
+    // lum 6.3 — a rounding error to the eye, but B/R goes 0.4 → 2.2.
+    //
+    // ⚠ ICE is untouched. It is a cold theme end to end; its shadow is
+    // already cool and giving it a second cool would flatten it the same way.
+    readonly property color void_:     lookMagma ? "#05060b" : "#020506"
     readonly property color surface:   lookMagma ? "#120605" : "#040b0e"
     readonly property color elevated:  lookMagma ? "#1a0806" : "#071318"
 

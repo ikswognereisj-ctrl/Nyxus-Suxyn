@@ -197,8 +197,8 @@ Item {
     // Thumb = glacier[5] (same role rose[5] / accentSolidHalo had).
     // Halo 1px = glacier[6] (peak, line only). Track seam = glacier[4].
     readonly property color icePrimary:  Theme.paintLayers.glacier[5]
-    readonly property color iceFocus:    Theme.paintLayers.glacier[0]
-    readonly property color icePeak:     Theme.paintLayers.glacier[6]
+    readonly property color iceFocus: Theme.stateLayer[0]
+    readonly property color icePeak: Theme.stateLayer[6]
     readonly property color iceHairline: Theme.lookSeam
 
     // Only meaningful when there is something to scroll.

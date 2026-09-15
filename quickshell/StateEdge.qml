@@ -134,8 +134,8 @@ Item {
     // rose[5] + teal rose[0] mixed muddy olive on black glass. Equivalent
     // rungs: glacier[5] hover/on, glacier[0] focus, glacier[3] pressed ground.
     // Swirls / Bar / shaders untouched.
-    readonly property color stateHover: Theme.paintLayers.glacier[5]   // #b7e6f2
-    readonly property color stateFocus: Theme.paintLayers.glacier[0]   // #7fe8ff
+    readonly property color stateHover: Theme.stateLayer[5]   // #b7e6f2
+    readonly property color stateFocus: Theme.stateLayer[0]   // #7fe8ff
     // TRK-1784: was glacier[3] #274b7a, measured 2.13:1 on the plate — under
     // the 3:1 component floor. tokenAccentGround is 3.09:1.
     readonly property color activeGround: Theme.tokenAccentGround // #3b6590, 3.09:1

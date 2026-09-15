@@ -53,7 +53,7 @@ Item {
     readonly property color iceWash: Theme.paintLayers.glacier[3]
     // TRK-3047 — swirl teal in the 4 px pip only. glacier[0] is a string;
     // mix(string, …) is NaN-black. tealGlow is already a color. t=0.30.
-    readonly property color icePip: Theme.mix(Qt.color(Theme.paintLayers.glacier[0]), Theme.tealGlow, 0.30)
+    readonly property color icePip: Theme.mix(Qt.color(Theme.stateLayer[0]), Theme.tealGlow, 0.30)
     readonly property color iceSeam: Theme.lookSeam
 
     Layout.fillWidth: true

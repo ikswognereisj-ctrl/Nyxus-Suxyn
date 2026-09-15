@@ -180,7 +180,7 @@ PanelWindow {
 
     // Ice object tokens — Theme.elevated / paintLayers.glacier, not hex
     // literals at the use site. Magma is the critical mark only.
-    readonly property color iceMark:     Theme.paintLayers.glacier[0]
+    readonly property color iceMark: Theme.stateLayer[0]
     readonly property color iceSeam:     Theme.lookSeam
     readonly property color iceSoft:     Theme.paintLayers.glacier[5]
     readonly property color markCritical: Theme.paintLayers.magma[5]

@@ -32,7 +32,7 @@ AppWindow {
 
     readonly property color ice: Theme.tokenAccentPrimary
     readonly property color iceHair: Theme.tokenAccentHairline
-    readonly property color iceFocus: Theme.paintLayers.glacier[0]
+    readonly property color iceFocus: Theme.stateLayer[0]
     readonly property color magma: Theme.paintLayers.magma[5]
     readonly property var monthNames: ["January", "February", "March", "April",
                                        "May", "June", "July", "August",

@@ -53,9 +53,9 @@ Item {
     // Kept so SetPage* callers (`tone: page.tone`) do not break. Paint is
     // the SliderRow light-bar: primary fill, interactive cap. Never sweepAt.
     property real tone: 0.35
-    readonly property color markOn: Theme.paintLayers.glacier[5]
-    readonly property color markFocus: Theme.paintLayers.glacier[0]
-    readonly property color markPeak: Theme.paintLayers.glacier[6]
+    readonly property color markOn: Theme.stateLayer[5]
+    readonly property color markFocus: Theme.stateLayer[0]
+    readonly property color markPeak: Theme.stateLayer[6]
     readonly property color markHairline: Theme.lookSeam
 
     signal moved(real value)

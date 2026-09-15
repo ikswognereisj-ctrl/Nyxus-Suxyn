@@ -58,7 +58,7 @@ AppWindow {
     readonly property int railW: 260
     readonly property int spineW: 88
     readonly property color iceHair: Theme.tokenAccentHairline
-    readonly property color iceFocus: Theme.paintLayers.glacier[0]
+    readonly property color iceFocus: Theme.stateLayer[0]
     readonly property color magma: Theme.paintLayers.magma[5]
     readonly property color magmaHot: Theme.paintLayers.magma[0]
     readonly property string lockMark: "NYXUS-NOTE-LOCK-v1\n"

@@ -39,8 +39,8 @@ Item {
 
     // Kept so SetPage* callers (`tone: page.tone`) do not break.
     property real tone: 0.35
-    readonly property color markOn: Theme.paintLayers.glacier[5]
-    readonly property color markFocus: Theme.paintLayers.glacier[0]
+    readonly property color markOn: Theme.stateLayer[5]
+    readonly property color markFocus: Theme.stateLayer[0]
     // TRK-3046: 30% tealGlow into glacier[6] ice. Catch-light band only.
     readonly property color swirlPeak: Theme.mix(Theme.tokenAccentPeak, Theme.tealGlow, 0.30)
 

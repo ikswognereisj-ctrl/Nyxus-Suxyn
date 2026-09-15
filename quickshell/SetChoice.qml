@@ -47,7 +47,7 @@ Item {
     readonly property color swirlPeak: Theme.mix(Theme.tokenAccentPeak, Theme.tealGlow, 0.30)
 
     property real tone: 0.35
-    readonly property color markFocus: Theme.paintLayers.glacier[0]
+    readonly property color markFocus: Theme.stateLayer[0]
     // Kept so SetPage* callers (`tone: page.tone`) do not break. Paint is
     // StateEdge — never sweepAt(tone).
 

@@ -46,7 +46,7 @@ AppWindow {
     property int nowMin: 0
 
     readonly property color iceHair: Theme.tokenAccentHairline
-    readonly property color iceFocus: Theme.paintLayers.glacier[0]
+    readonly property color iceFocus: Theme.stateLayer[0]
 
     readonly property bool liveSky: SettingsStore.boolValue("app_weather_live_sky", true)
     readonly property int refreshMins: Math.max(10, Math.round(SettingsStore.numberValue("app_weather_refresh_mins", 60)))
