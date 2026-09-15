@@ -353,7 +353,31 @@ Singleton {
         var ice = theme.iceLayer;
         // MAGMA house: magma in one corner, black in the other, they bleed.
         // Same BRIGHT/dark/dark/dark/mid/bright/BRIGHT ladder as glacier.
-        var mag = ["#f7a83b", "#0a0404", "#050203", "#1a0806", "#58100f", "#ff7847", "#ffb080"];
+        //
+        // ── TRK-4138 · why stop 6 is not #ffb080 any more ────────────────
+        // Owner, 2026-09-14: "The swirls do you think thats the correcte
+        // pallete for the swirls on this theme".
+        //
+        // Measured before answering, the same way the dock icons were:
+        // sampled the brightest 8% of the Start menu's swirl core and got
+        // RGB 135/100/64 — G/R 0.74, B/R 0.48. That is not the ember stop
+        // (G/R 0.47) and it is not the gold stop (B/R 0.24). It is stop 6,
+        // #ffb080, almost exactly (G/R 0.69, B/R 0.50), carried down to a
+        // third of its brightness by the fluid.
+        //
+        // And that is the whole problem: #ffb080 is a PALE PEACH, and pale
+        // peach dimmed is tan. The blue is what does it — at B/R 0.50 the
+        // shadows lift toward grey, so the densest part of the paint, the
+        // part the eye actually reads, came out dusty khaki on a theme
+        // whose entire idea is molten rock.
+        //
+        // #ffa85e keeps stop 6 the brightest stop in the ladder (185 vs
+        // gold's 179 and ember's 155, so BRIGHT/…/mid/bright/BRIGHT still
+        // holds by construction) while dropping B/R to 0.37 and G/R to
+        // 0.66. It cannot be made more orange AND stay as bright — red is
+        // already at 255 — so the ~9 points of luminance are the price,
+        // and the ladder is what says how much of that is affordable.
+        var mag = ["#f7a83b", "#0a0404", "#050203", "#1a0806", "#58100f", "#ff7847", "#ffa85e"];
         return {
             "rose":    ["#0aa2d6", "#064f95", "#1e03ad", "#521e72", "#891955", "#d765a2", "#ffb3d9"],
             "magma":   mag,
