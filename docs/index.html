@@ -1,14 +1,14 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-look="ice">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Nyxus Suxyn — Horizon desktop</title>
-  <meta name="description" content="Nyxus Suxyn: a Hyprland + Quickshell desktop with a shader sky, living bar, predicted-beat analyser, glass lock, and one Settings surface. See what each piece is, how it is built, and how to deploy it." />
+  <title>Nyxus Suxyn — a Hyprland desktop with two faces</title>
+  <meta name="description" content="Nyxus Suxyn is a complete Hyprland + Quickshell Linux desktop: a shader sky, a bar painted by a fluid simulation, a predicted-beat analyser, music-reactive window borders, a glass lock screen, and 46 pages of settings — in two switchable looks, ICE and MAGMA." />
   <meta name="theme-color" content="#020506" />
-  <meta property="og:title" content="Nyxus Suxyn" />
-  <meta property="og:description" content="Hyprland + Quickshell desktop. Starlight, living bar, glass lock." />
-  <meta property="og:image" content="https://ikswognereisj-ctrl.github.io/Nyxus-Suxyn/assets/desktop.jpg" />
+  <meta property="og:title" content="Nyxus Suxyn — a Hyprland desktop with two faces" />
+  <meta property="og:description" content="A complete Hyprland + Quickshell desktop. Shader sky, living bar, beat-reactive borders, glass lock. Two looks, one switch." />
+  <meta property="og:image" content="https://ikswognereisj-ctrl.github.io/Nyxus-Suxyn/assets/magma-desktop.jpg" />
   <meta property="og:url" content="https://ikswognereisj-ctrl.github.io/Nyxus-Suxyn/" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@500;600&display=swap" />
   <style>
@@ -20,635 +20,625 @@
       --magma: #ff7847;
       --ice: #b7e6f2;
       --panel: rgba(8, 16, 20, 0.72);
+      --accent: #7fe8ff;
+      --edge: rgba(79,127,166,.35);
+      --edge-soft: rgba(79,127,166,.18);
+    }
+    /* TRK-3403. The page itself switches look, because a page that only TELLS
+       you the desktop has two faces is weaker than one that HAS two faces. */
+    html[data-look="magma"] {
+      --ink: #f6ece2;
+      --dim: #b09a88;
+      --hair: #a8642f;
+      --ice: #f7a83b;
+      --accent: #ff7847;
+      --panel: rgba(20, 10, 5, 0.72);
+      --edge: rgba(168,100,47,.40);
+      --edge-soft: rgba(168,100,47,.20);
     }
     * { box-sizing: border-box; }
-    html { scroll-behavior: smooth; scroll-padding-top: 56px; }
+    html { scroll-behavior: smooth; scroll-padding-top: 58px; }
     html, body { margin: 0; background: var(--void); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; }
-    body { line-height: 1.55; }
-    a { color: var(--ice); text-decoration: none; }
+    body { line-height: 1.6; }
+    a { color: var(--accent); text-decoration: none; }
     a:hover { color: #fff; }
     a:focus-visible { outline: 2px solid var(--magma); outline-offset: 2px; border-radius: 2px; }
-    .skip {
-      position: absolute; left: -9999px; top: 0;
-      background: var(--magma); color: #020506;
-      padding: 10px 16px; font-weight: 600; z-index: 100;
-    }
+    .skip { position: absolute; left: -9999px; top: 0; background: var(--magma); color: #020506; padding: 10px 16px; font-weight: 600; z-index: 100; }
     .skip:focus { left: 0; }
     img, video { max-width: 100%; display: block; }
     .wrap { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
-    header.hero { position: relative; min-height: 100vh; display: flex; flex-direction: column; justify-content: flex-end; }
+
+    header.hero { position: relative; min-height: 100vh; display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden; }
     header.hero img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-    header.hero .veil {
-      position: absolute; inset: 0;
-      background: linear-gradient(180deg, rgba(2,5,6,.15) 20%, rgba(2,5,6,.92) 100%);
-    }
+    header.hero .veil { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(2,5,6,.20) 15%, rgba(2,5,6,.94) 100%); }
     header.hero .copy { position: relative; padding: 48px 0 64px; }
-    .mark { font-family: Orbitron, Inter, sans-serif; letter-spacing: .18em; font-size: 12px; color: var(--ice); text-transform: uppercase; }
-    h1 { font-family: Orbitron, Inter, sans-serif; font-size: clamp(40px, 7vw, 72px); font-weight: 600; margin: 8px 0 12px; letter-spacing: .04em; }
-    .lede { max-width: 640px; color: var(--dim); font-size: 18px; }
-    .ids { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
-    .ids span {
-      border: 1px solid rgba(79,127,166,.45);
-      background: var(--panel);
-      padding: 6px 10px; border-radius: 6px;
-      font-size: 12px; color: var(--ice); letter-spacing: .04em;
+    .mark { font-family: Orbitron, Inter, sans-serif; letter-spacing: .18em; font-size: 12px; color: var(--accent); text-transform: uppercase; }
+    h1 { font-family: Orbitron, Inter, sans-serif; font-size: clamp(38px, 7vw, 72px); font-weight: 600; margin: 8px 0 14px; letter-spacing: .04em; }
+    .lede { max-width: 660px; color: var(--dim); font-size: 18px; }
+    .ids { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+    .ids span { border: 1px solid var(--edge); background: var(--panel); padding: 6px 10px; border-radius: 6px; font-size: 12px; color: var(--accent); letter-spacing: .04em; }
+
+    nav { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(16px); background: rgba(2,5,6,.80); border-bottom: 1px solid var(--edge-soft); }
+    nav .wrap { display: flex; align-items: center; gap: 20px; padding: 12px 0; font-size: 13px; color: var(--dim); overflow-x: auto; }
+    nav a { color: var(--dim); white-space: nowrap; }
+    nav a:hover { color: var(--ink); }
+
+    /* the look switch — present in the nav so it is reachable from anywhere */
+    .look { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
+    .look-label { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+    .look-btns { display: flex; border: 1px solid var(--edge); border-radius: 999px; overflow: hidden; background: var(--panel); }
+    .look-btns button {
+      appearance: none; border: 0; cursor: pointer; font: inherit; font-size: 12px;
+      letter-spacing: .10em; text-transform: uppercase; padding: 7px 15px;
+      background: transparent; color: var(--dim); transition: background .18s, color .18s;
     }
-    nav {
-      position: sticky; top: 0; z-index: 10;
-      backdrop-filter: blur(16px);
-      background: rgba(2,5,6,.72);
-      border-bottom: 1px solid rgba(79,127,166,.25);
-    }
-    nav .wrap { display: flex; gap: 22px; padding: 14px 0; font-size: 13px; color: var(--dim); overflow-x: auto; }
-    nav a { color: var(--dim); }
-    section { padding: 72px 0; border-top: 1px solid rgba(79,127,166,.18); }
-    h2 { font-size: 28px; font-weight: 600; margin: 0 0 10px; }
-    h3 { font-size: 16px; font-weight: 600; margin: 0 0 8px; color: var(--ice); }
-    .sub { color: var(--dim); max-width: 720px; margin-bottom: 28px; }
-    .frame {
-      border: 1px solid rgba(79,127,166,.35);
-      border-radius: 12px; overflow: hidden;
-      background: #000;
-      box-shadow: 0 24px 80px rgba(0,0,0,.45);
-    }
+    .look-btns button[aria-pressed="true"] { color: #04080a; font-weight: 600; }
+    .look-btns button[data-set="ice"][aria-pressed="true"] { background: #7fe8ff; }
+    .look-btns button[data-set="magma"][aria-pressed="true"] { background: #f7a83b; }
+    .look-btns button:focus-visible { outline: 2px solid var(--magma); outline-offset: -2px; }
+
+    section { padding: 76px 0; border-top: 1px solid var(--edge-soft); }
+    h2 { font-size: 29px; font-weight: 600; margin: 0 0 12px; letter-spacing: .01em; }
+    h3 { font-size: 16px; font-weight: 600; margin: 0 0 8px; color: var(--accent); }
+    .sub { color: var(--dim); max-width: 730px; margin-bottom: 30px; }
+    .sub + .sub { margin-top: -18px; }
+    .frame { border: 1px solid var(--edge); border-radius: 12px; overflow: hidden; background: #000; box-shadow: 0 24px 80px rgba(0,0,0,.45); }
     .cap { margin-top: 12px; color: var(--dim); font-size: 14px; }
     .cap strong { color: var(--ink); font-weight: 600; }
     .grid { display: grid; gap: 28px; }
-    @media (min-width: 860px) {
-      .grid.two { grid-template-columns: 1fr 1fr; }
-    }
+    @media (min-width: 860px) { .grid.two { grid-template-columns: 1fr 1fr; } }
+    @media (min-width: 860px) { .grid.three { grid-template-columns: repeat(3, 1fr); } }
+
     table.spec { width: 100%; border-collapse: collapse; font-size: 14px; }
-    table.spec th, table.spec td { text-align: left; padding: 10px 12px; border-bottom: 1px solid rgba(79,127,166,.2); }
+    table.spec th, table.spec td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--edge-soft); }
     table.spec th { color: var(--dim); font-weight: 500; width: 34%; }
     .magma { color: var(--magma); }
-    footer { padding: 40px 0 64px; color: var(--dim); font-size: 13px; }
+    footer { padding: 44px 0 72px; color: var(--dim); font-size: 13px; }
+    footer a { color: var(--dim); text-decoration: underline; text-underline-offset: 3px; }
     video { width: 100%; background: #000; }
+
+    .pull { border-left: 2px solid var(--magma); padding: 6px 0 6px 18px; margin: 0 0 30px; color: var(--ink); font-size: 18px; max-width: 660px; }
+    .pull cite { display: block; margin-top: 8px; font-size: 13px; font-style: normal; color: var(--dim); }
+
+    .stack { display: grid; gap: 12px; font-size: 13px; margin: 0 0 28px; }
+    .stack div { display: grid; grid-template-columns: 150px 1fr; gap: 16px; padding: 10px 12px; border: 1px solid var(--edge-soft); border-radius: 8px; background: var(--panel); }
+    .stack b { color: var(--accent); font-weight: 600; }
+
+    .pair { display: grid; gap: 14px; }
+    @media (min-width: 760px) { .pair { grid-template-columns: 1fr 1fr; } }
+    .pair figure { margin: 0; }
+    .pair figcaption { margin-top: 8px; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
+    .pair .t-ice { color: #7fe8ff; }
+    .pair .t-magma { color: #f7a83b; }
+
+    .note { border: 1px solid var(--edge); border-radius: 10px; background: var(--panel); padding: 16px 18px; font-size: 14px; color: var(--dim); margin-top: 26px; }
+    .note b { color: var(--ink); }
+    .note.warn { border-color: rgba(255,120,71,.45); }
+
+    ul.plain { list-style: none; padding: 0; margin: 0 0 26px; }
+    ul.plain li { padding: 9px 0 9px 22px; position: relative; color: var(--dim); font-size: 15px; border-bottom: 1px solid var(--edge-soft); }
+    ul.plain li:before { content: "▸"; position: absolute; left: 0; color: var(--accent); }
+    ul.plain li b { color: var(--ink); font-weight: 600; }
+
+    code, kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; }
+    kbd { border: 1px solid var(--edge); border-radius: 5px; padding: 2px 7px; background: var(--panel); color: var(--ink); font-size: 12px; white-space: nowrap; }
+    pre { background: #01080b; border: 1px solid var(--edge-soft); border-radius: 10px; padding: 16px 18px; overflow-x: auto; font-size: 13px; color: var(--ink); }
+    html[data-look="magma"] pre { background: #0b0603; }
+
+    #progress { position: fixed; top: 0; left: 0; height: 2px; width: 0; background: linear-gradient(90deg, var(--accent), var(--magma)); z-index: 30; transition: width .1s linear; }
+
     @media (max-width: 720px) {
-      header.hero { min-height: 70vh; }
-      h1 { font-size: 40px; }
+      header.hero { min-height: 72vh; }
+      h1 { font-size: 38px; }
       nav .wrap { gap: 14px; font-size: 12px; }
-      section { padding: 48px 0; }
+      section { padding: 52px 0; }
       .stack div { grid-template-columns: 1fr; gap: 4px; }
-      table.spec th { width: 40%; }
-      video { max-height: 56vw; object-fit: cover; }
+      table.spec th { width: 42%; }
+      .look-label { display: none; }
     }
-    .pull {
-      border-left: 2px solid var(--magma);
-      padding: 4px 0 4px 18px;
-      margin: 0 0 28px;
-      color: var(--ink);
-      font-size: 18px;
-      max-width: 640px;
-    }
-    .stack {
-      display: grid; gap: 12px;
-      font-size: 13px;
-      margin: 0 0 28px;
-    }
-    .stack div {
-      display: grid;
-      grid-template-columns: 140px 1fr;
-      gap: 16px;
-      padding: 10px 12px;
-      border: 1px solid rgba(79,127,166,.22);
-      border-radius: 8px;
-      background: var(--panel);
-    }
-    .stack b { color: var(--ice); font-weight: 600; }
-
-    /* scroll progress bar */
-    #progress {
-      position: fixed; top: 0; left: 0; height: 2px; width: 0;
-      background: linear-gradient(90deg, var(--hair), var(--magma));
-      z-index: 60;
-    }
-
-    /* feature cards — "the main pieces at a glance" */
-    .cards { display: grid; gap: 18px; grid-template-columns: 1fr; }
-    @media (min-width: 700px) { .cards { grid-template-columns: 1fr 1fr; } }
-    @media (min-width: 1000px) { .cards { grid-template-columns: 1fr 1fr 1fr; } }
-    .card {
-      border: 1px solid rgba(79,127,166,.25);
-      border-radius: 12px;
-      background: var(--panel);
-      padding: 18px 18px 16px;
-      transition: border-color .2s ease, transform .2s ease, box-shadow .2s ease;
-    }
-    .card:hover {
-      border-color: rgba(255,120,71,.55);
-      transform: translateY(-3px);
-      box-shadow: 0 14px 40px rgba(0,0,0,.4);
-    }
-    .card .tag {
-      font-family: Orbitron, Inter, sans-serif;
-      font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
-      color: var(--magma); margin-bottom: 6px;
-    }
-    .card h3 { margin: 0 0 6px; color: var(--ink); }
-    .card p { margin: 0; color: var(--dim); font-size: 13.5px; }
-    .card code { color: var(--ice); }
-
-    /* architecture flow */
-    .flow {
-      display: grid; gap: 10px;
-      font-size: 13.5px; margin: 0 0 28px;
-    }
-    .flow .hop {
-      display: grid; grid-template-columns: 30px 1fr; gap: 14px; align-items: start;
-      padding: 12px 14px;
-      border: 1px solid rgba(79,127,166,.22);
-      border-radius: 8px; background: var(--panel);
-    }
-    .flow .n {
-      font-family: Orbitron, Inter, sans-serif;
-      color: var(--magma); font-weight: 600; font-size: 14px; line-height: 1.4;
-    }
-    .flow .hop b { color: var(--ice); font-weight: 600; }
-    .flow .hop p { margin: 2px 0 0; color: var(--dim); }
-
-    /* faq */
-    details.faq {
-      border: 1px solid rgba(79,127,166,.22);
-      border-radius: 10px; background: var(--panel);
-      padding: 2px 18px; margin-bottom: 12px;
-    }
-    details.faq summary {
-      cursor: pointer; list-style: none;
-      padding: 14px 0; font-weight: 600; color: var(--ink);
-      display: flex; justify-content: space-between; align-items: center; gap: 12px;
-    }
-    details.faq summary::-webkit-details-marker { display: none; }
-    details.faq summary::after {
-      content: "+"; color: var(--magma); font-size: 20px; font-weight: 400;
-      transition: transform .2s ease; flex: none;
-    }
-    details.faq[open] summary::after { transform: rotate(45deg); }
-    details.faq .body { padding: 0 0 16px; color: var(--dim); font-size: 14px; }
-    details.faq .body code { color: var(--ice); }
-
-    /* media inside the piece cards */
-    .card .shot {
-      margin: -18px -18px 12px;
-      border-bottom: 1px solid rgba(79,127,166,.25);
-      overflow: hidden; border-radius: 12px 12px 0 0;
-    }
-    .card .shot img { width: 100%; height: 130px; object-fit: cover; display: block; }
-
-    /* keybind cheat-sheet */
-    .keys { display: grid; gap: 26px; grid-template-columns: 1fr; }
-    @media (min-width: 860px) { .keys { grid-template-columns: 1fr 1fr; } }
-    table.binds { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-    table.binds caption {
-      text-align: left; font-family: Orbitron, Inter, sans-serif;
-      font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
-      color: var(--magma); padding-bottom: 8px;
-    }
-    table.binds td { padding: 7px 10px; border-bottom: 1px solid rgba(79,127,166,.16); vertical-align: top; }
-    table.binds td:first-child { width: 46%; }
-    table.binds tr:hover td { background: rgba(79,127,166,.08); }
-    kbd {
-      display: inline-block; padding: 1px 7px; margin: 1px 2px 1px 0;
-      border: 1px solid rgba(183,230,242,.4); border-bottom-width: 2px; border-radius: 5px;
-      background: #04121a; color: var(--ice);
-      font-family: ui-monospace, monospace; font-size: 12px; white-space: nowrap;
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      #progress { transition: none; }
     }
   </style>
 </head>
 <body>
-  <div id="progress" aria-hidden="true"></div>
-  <a class="skip" href="#overview">Skip to content</a>
-  <header class="hero">
-    <img src="assets/desktop.jpg" alt="Nyxus Suxyn desktop: Starlight sky, glass widgets, living bar" />
-    <div class="veil"></div>
-    <div class="copy wrap">
-      <div class="mark">Nyxus · Suxyn</div>
-      <h1>SUXYN</h1>
-      <p class="lede">A daily-driver desktop for one Alienware. Hyprland compositor. Quickshell chrome. Starlight sky, a living bar, glass lock. Built as one piece — not a theme pack on someone else’s shell. Every surface is a material. Every accent is an emission ladder. Nothing important is a flat fill.</p>
-      <div class="ids">
-        <span>nyxus-suxyn 2026.09.02</span>
-        <span>Alienware 15 DA15265</span>
-        <span>Hyprland 0.56.2</span>
-        <span>Quickshell 0.3.1</span>
-        <span>1920×1200 @ 165 Hz</span>
+<a class="skip" href="#main">Skip to content</a>
+<div id="progress"></div>
+
+<header class="hero">
+  <img id="hero-shot" src="assets/ice-desktop.jpg" data-ice="assets/ice-desktop.jpg" data-magma="assets/magma-desktop.jpg" alt="The Nyxus Suxyn desktop: a shader star-field sky, a stack of glass widgets on the right, and a wide bar along the bottom." width="1600" height="1000" fetchpriority="high" />
+  <div class="veil"></div>
+  <div class="copy wrap">
+    <div class="mark">Hyprland · Quickshell · Arch Linux</div>
+    <h1>Nyxus&nbsp;Suxyn</h1>
+    <p class="lede">
+      A complete Linux desktop built from scratch — not a theme dropped on top of
+      someone else's shell. The sky is a live shader. The bar is painted by a fluid
+      simulation. The window borders pulse on the beat of whatever is playing. And
+      the whole thing has <em>two faces</em>, swapped by one setting.
+    </p>
+    <p class="lede" style="margin-top:14px">
+      Use the <strong>ICE / MAGMA</strong> switch in the bar above — every screenshot
+      on this page, and the page itself, changes with it.
+    </p>
+    <div class="ids">
+      <span>210 QML files</span>
+      <span>92,738 lines</span>
+      <span>33 shaders</span>
+      <span>46 Settings pages</span>
+      <span>197 scripts</span>
+      <span>198 icons</span>
+      <span>108 sounds</span>
+    </div>
+  </div>
+</header>
+
+<nav>
+  <div class="wrap">
+    <a href="#what">What it is</a>
+    <a href="#looks">Two looks</a>
+    <a href="#sky">Sky</a>
+    <a href="#bar">Bar</a>
+    <a href="#beat">Beat</a>
+    <a href="#apps">Apps</a>
+    <a href="#lock">Lock</a>
+    <a href="#numbers">Numbers</a>
+    <a href="#install">Install</a>
+    <a href="#honest">Honesty</a>
+    <div class="look">
+      <span class="look-label">Look</span>
+      <div class="look-btns" role="group" aria-label="Switch the look of this page and every screenshot">
+        <button type="button" data-set="ice" aria-pressed="true">Ice</button>
+        <button type="button" data-set="magma" aria-pressed="false">Magma</button>
       </div>
     </div>
-  </header>
+  </div>
+</nav>
 
-  <nav>
-    <div class="wrap">
-      <a href="#pieces">The pieces</a>
-      <a href="#overview">Overview</a>
-      <a href="#horizon">Horizon</a>
-      <a href="#starlight">Starlight</a>
-      <a href="#swirl">Swirls</a>
-      <a href="#visualizer">Visualizer</a>
-      <a href="#media">Media</a>
-      <a href="#start">Start</a>
-      <a href="#lock">Lock</a>
-      <a href="#settings">Settings</a>
-      <a href="#tour">Tour</a>
-      <a href="#get">Get it</a>
-      <a href="#update">Update</a>
-      <a href="#architecture">How it works</a>
-      <a href="#keys">Keys</a>
-      <a href="#faq">FAQ</a>
-      <a href="#made">How it’s built</a>
-      <a href="#scope">Scope</a>
+<main id="main">
+
+<section id="what">
+  <div class="wrap">
+    <h2>What this actually is</h2>
+    <p class="sub">
+      Most "Linux ricing" projects are a colour scheme and a config file. This is a
+      desktop environment. Hyprland handles the windows; everything you can see or
+      click — the bar, the menus, the widgets, the lock screen, the settings app, the
+      music player, the notifications — is one Quickshell program written for this
+      machine, in QML and GLSL.
+    </p>
+
+    <p class="pull">
+      It is one shell process. The bar, the lock screen and the Settings window are
+      not three apps that agree on a palette — they are three surfaces of the same
+      running program, so they cannot drift out of sync.
+    </p>
+
+    <h3>If you've never seen a desktop like this, here's the short version</h3>
+    <ul class="plain">
+      <li><b>The wallpaper is running code.</b> The background is a GLSL shader drawing a star-field and cloud layers in real time, not a JPEG.</li>
+      <li><b>The bar is painted by fluid dynamics.</b> A Navier–Stokes solver runs continuously and its output is the bar's texture — it visibly rolls and curls even when nothing is happening.</li>
+      <li><b>It listens to your music.</b> A Python engine reads the audio stream, predicts where the beat lands, and drives the analyser, the window borders and the lock-screen glow from it.</li>
+      <li><b>One settings app for everything.</b> 46 pages covering appearance, network, audio, power, hotkeys, wallpapers and more — searchable, with live previews.</li>
+      <li><b>Two complete looks.</b> ICE (glacier cyan and plum) and MAGMA (ember gold and crust) — one key in one JSON file swaps the whole desktop.</li>
+    </ul>
+
+    <div class="stack">
+      <div><b>Compositor</b><span>Hyprland (Wayland) — tiling and floating, animations, per-monitor workspaces</span></div>
+      <div><b>Shell</b><span>Quickshell — QML/Qt6. Bar, dock, widgets, launcher, flyout, OSD, notifications, lock, screensaver</span></div>
+      <div><b>Rendering</b><span>33 GLSL fragment/vertex shaders — sky, fluid bar, lock weather, Earth, spectrum, glass blur</span></div>
+      <div><b>Audio</b><span>PipeWire + a custom beat-prediction engine feeding spectrum and beat events over a line protocol</span></div>
+      <div><b>Glue</b><span>197 shell/Python scripts in <code>bin/</code> for wallpapers, updates, hardware profiles, media, capture</span></div>
     </div>
-  </nav>
+  </div>
+</section>
 
-  <section id="pieces">
-    <div class="wrap">
-      <h2>The main pieces, at a glance</h2>
-      <p class="sub">Six systems carry the whole desktop. Each is a real, separable piece of code — not a coat of paint. This is the map; the sections below go deep on each one.</p>
-      <div class="cards">
-        <div class="card">
-          <div class="shot"><img src="assets/bar.jpg" alt="The Horizon bar with dock, clock, vitals and reflections" loading="lazy" /></div>
-          <div class="tag">Chrome</div>
-          <h3>The Horizon bar</h3>
-          <p>No panel rectangle — an 84&nbsp;px lit seam of living paint. Dock, desks, clock, tray, and vitals sit on it and reflect into the swirl. Flips over into a spectrum analyser when music plays. <code>Bar.qml</code></p>
-        </div>
-        <div class="card">
-          <div class="shot"><img src="assets/desktop.jpg" alt="Starlight sky with glass widgets" loading="lazy" /></div>
-          <div class="tag">Sky</div>
-          <h3>Starlight</h3>
-          <p>The ground is a shader, not an image — three lattices of hard points on true black that twinkle by occupancy. It pauses on battery and under fullscreen windows. <code>shaders/headliner.frag</code></p>
-        </div>
-        <div class="card">
-          <div class="shot"><img src="assets/bar.jpg" alt="Living paint seam under the bar" loading="lazy" /></div>
-          <div class="tag">Motion</div>
-          <h3>Living paint</h3>
-          <p>The swirl is a real Navier–Stokes fluid on the GPU, not a gradient. Idle it rolls on its own; pointer and beat feed it; hidden it sleeps. <code>Swirl.qml</code></p>
-        </div>
-        <div class="card">
-          <div class="shot"><img src="assets/visualizer.jpg" alt="The spectrum analyser face of the bar" loading="lazy" /></div>
-          <div class="tag">Sound</div>
-          <h3>The beat engine</h3>
-          <p>One process hears the PipeWire sink monitor, predicts the downbeat with a phase-locked loop, and times the spectrum, the swirl, and the window rims to it. Silence is still. <code>Beat.qml</code></p>
-        </div>
-        <div class="card">
-          <div class="shot"><img src="assets/settings.jpg" alt="The Settings hub and quick flyout" loading="lazy" /></div>
-          <div class="tag">Control</div>
-          <h3>Settings &amp; flyout</h3>
-          <p>One Settings window — 40 pages of live controls over a catalog — plus a quick flyout for network, Bluetooth, power, and audio. <code>Settings.qml</code> · <code>SidePanel.qml</code></p>
-        </div>
-        <div class="card">
-          <div class="shot"><img src="assets/lock.jpg" alt="The Earth lock screen with glass unlock card" loading="lazy" /></div>
-          <div class="tag">Session</div>
-          <h3>Lock &amp; login</h3>
-          <p>An Earth shader, time and weather, and a glass unlock card. Super+L, Start, and Power all hit the same PAM-authenticated lock. <code>Lock.qml</code> · <code>hyprlock.conf</code></p>
-        </div>
+<section id="looks">
+  <div class="wrap">
+    <h2>Two looks, one switch</h2>
+    <p class="sub">
+      ICE is glacier cyan over plum. MAGMA is ember gold over a dark crust. This is
+      not a hue rotation — the palettes, the gradients, the icon treatments, the bar's
+      fluid tint and the window border colours are all defined separately. Flipping
+      <code>look_set</code> in <code>~/.config/nyxus/settings.json</code> repaints the
+      running desktop in about two seconds. No logout, no restart.
+    </p>
+
+    <div class="frame">
+      <video autoplay loop muted playsinline poster="assets/ice-desktop.jpg" width="1280" height="800" aria-label="Screen recording: the whole desktop changes from the ICE look to the MAGMA look while running.">
+        <source src="assets/themeswitch.webm" type="video/webm" />
+      </video>
+    </div>
+    <p class="cap">
+      <strong>The switch, live.</strong> A single unedited take. The widgets, the bar's
+      fluid texture, the icon glows and the calendar accents all cross over together.
+      Recorded with music paused so the analyser and lyrics don't distract.
+    </p>
+
+    <h3 style="margin-top:44px">The same surfaces, side by side</h3>
+    <div class="pair" style="margin-top:16px">
+      <figure>
+        <div class="frame"><img src="assets/ice-widgets.jpg" alt="Widget stack in the ICE look: clock, calendar, system monitor, weather and notes in cyan and plum." width="640" height="760" loading="lazy" /></div>
+        <figcaption class="t-ice">Ice — glacier cyan + plum</figcaption>
+      </figure>
+      <figure>
+        <div class="frame"><img src="assets/magma-widgets.jpg" alt="The same widget stack in the MAGMA look, rendered in ember gold over a dark crust." width="640" height="760" loading="lazy" /></div>
+        <figcaption class="t-magma">Magma — ember gold + crust</figcaption>
+      </figure>
+    </div>
+    <p class="cap">
+      <strong>Widgets, both looks.</strong> Clock, calendar, live system monitor, weather
+      and a notes pad. Same layout, same data, entirely different material. Note the
+      meter bars, the sparkline and the date ring all recolour — these are themed
+      components, not tinted images.
+    </p>
+
+    <div class="grid two" style="margin-top:44px">
+      <div>
+        <div class="frame"><img src="assets/ice-appearance.jpg" data-ice="assets/ice-appearance.jpg" data-magma="assets/magma-appearance.jpg" alt="The Appearance page of the Settings app, showing the ICE and MAGMA look cards side by side." width="1600" height="1000" loading="lazy" /></div>
+        <p class="cap"><strong>Where the switch lives.</strong> Settings → Appearance. Two cards — "Glacier + plum" and "Live magma + Starlight" — and the desktop follows immediately.</p>
+      </div>
+      <div>
+        <div class="frame"><img src="assets/ice-bar.jpg" data-ice="assets/ice-bar.jpg" data-magma="assets/magma-bar.jpg" alt="Close crop of the bar showing launcher icons, clock, tray and media controls." width="1600" height="70" loading="lazy" /></div>
+        <p class="cap"><strong>The bar, close up.</strong> Launcher, pinned apps, workspace pips, clock, tray and media readout. The cloud texture behind it is the fluid simulation, tinted by the current look.</p>
+        <div class="frame" style="margin-top:20px"><img src="assets/ice-visualizer.jpg" data-ice="assets/ice-visualizer.jpg" data-magma="assets/magma-visualizer.jpg" alt="The bar's music spectrum analyser drawn across its full width." width="1600" height="77" loading="lazy" /></div>
+        <p class="cap"><strong>The analyser</strong> spans the whole bar while music plays.</p>
       </div>
     </div>
-  </section>
 
-  <section id="overview">
-    <div class="wrap">
-      <h2>What this build is</h2>
-      <p class="sub">Nyxus Suxyn is not a GTK skin pack and not a wallpaper dump. It is a desktop shell built out of Quickshell surfaces, Hyprland rules, custom GLSL shaders, and one audio-analysis path that feeds the chrome. The point of this page is to show the main pieces, what each one does, and where the behavior actually lives in the repository.</p>
+    <div class="note warn">
+      <b>Honest scope note.</b> The look switch is thorough inside the shell, and it also
+      rewrites the GTK4 accent colour and Hyprland's window border colours. It does
+      <em>not</em> reach everything: only one script in the build (<code>bin/nyxus-app-shell</code>)
+      reads <code>look_set</code>, terminal colours in <code>~/.config/ghostty/config</code>
+      are hard-coded to the ICE cyan, and 16 QML files still carry that cyan literally.
+      The lock screen's Earth shader is also look-independent — the card and chrome
+      around it change, the planet does not. Verified by reading the files, not assumed.
+    </div>
+  </div>
+</section>
 
-      <div class="stack">
-        <div><b>Compositor layer</b><span><code>hypr/</code> carries monitor rules, binds, layer-shell behavior, hyprlock, hypridle, and the session-level rules the shell expects.</span></div>
-        <div><b>Shell surfaces</b><span><code>quickshell/Bar.qml</code>, <code>Launcher.qml</code>, <code>SidePanel.qml</code>, <code>Settings.qml</code>, widgets, media, and lock surfaces are the UI the user actually touches.</span></div>
-        <div><b>Render systems</b><span><code>Swirl.qml</code> is the living paint solver, <code>BarSpectrum.qml</code> is the analyser face, and <code>shaders/headliner.frag</code> is the hard-point sky.</span></div>
-        <div><b>Audio path</b><span><code>nyxus-beat-engine</code> drives predicted beat timing, while <code>Beat.qml</code> and <code>nyxus-beat-tap.sh</code> choose the correct PipeWire monitor source and distribute the result.</span></div>
-        <div><b>Deploy path</b><span><code>docs/get.sh</code> clones or updates the repo, and <code>tools/apply-shell.sh</code> now runs a pre-flight plus rollback snapshot before replacing shell config.</span></div>
+<section id="sky">
+  <div class="wrap">
+    <h2>The sky is a shader</h2>
+    <p class="sub">
+      The desktop background is a GLSL program, not an image. It draws a drifting
+      star-field with parallax layers and soft nebula banding, and it keeps moving
+      whether or not anything is focused. Because it is generated, it costs a few
+      kilobytes rather than a few megabytes, and it can be tinted by the current look
+      instead of needing two wallpapers.
+    </p>
+    <div class="frame">
+      <img src="assets/ice-desktop.jpg" data-ice="assets/ice-desktop.jpg" data-magma="assets/magma-desktop.jpg" alt="The full desktop: shader sky filling the screen, glass widget stack on the right, bar along the bottom." width="1600" height="1000" loading="lazy" />
+    </div>
+    <p class="cap">
+      <strong>A full desktop, untouched.</strong> The widget stack on the right is always
+      available; the bar runs the width of the screen. There are 43 hand-made wallpapers
+      in the repo as well, and the picker unions three directories to offer 56 on the
+      live machine — but the default surface is the shader.
+    </p>
+  </div>
+</section>
+
+<section id="bar">
+  <div class="wrap">
+    <h2>The bar is alive</h2>
+    <p class="sub">
+      The texture behind the bar is a real fluid simulation — a Navier–Stokes solver
+      running every frame, advecting dye through a velocity field. It is never a loop
+      and never a video. Left alone with no music playing, it still rolls, folds and
+      curls. It is the single most-seen surface in the desktop, so it was given the
+      most expensive treatment.
+    </p>
+    <div class="frame">
+      <video autoplay loop muted playsinline poster="assets/magma-bar.jpg" width="1280" height="76" aria-label="Screen recording of the bar's fluid texture slowly churning while idle.">
+        <source src="assets/swirl.webm" type="video/webm" />
+      </video>
+    </div>
+    <p class="cap">
+      <strong>Idle, with music paused.</strong> Nothing is driving this but the solver.
+      Recorded in the MAGMA look, where the motion reads most clearly; the ICE look runs
+      the same simulation in cyan and plum.
+    </p>
+  </div>
+</section>
+
+<section id="beat">
+  <div class="wrap">
+    <h2>It moves to the music</h2>
+    <p class="sub">
+      A Python engine reads the audio stream from PipeWire, runs an FFT, and — rather
+      than just reacting late — <em>predicts</em> where the next beat lands so the
+      visuals can hit on time instead of trailing. That one signal drives three
+      different surfaces.
+    </p>
+
+    <div class="frame">
+      <video autoplay loop muted playsinline poster="assets/magma-media.jpg" width="1000" height="652" aria-label="Screen recording of a window's border brightening and dimming in time with music.">
+        <source src="assets/borders.webm" type="video/webm" />
+      </video>
+    </div>
+    <p class="cap">
+      <strong>Music-reactive window borders.</strong> The focused window's rim is driven
+      by the beat engine — Hyprland's border gradient is rewritten live. Measured on this
+      clip, the rim's brightness swings about <strong>15%</strong> peak-to-trough
+      (pixel mean 329 → 388 on a 0–1000 scale), which I cross-checked against the
+      compositor's own reported colour moving between <code>fff4bd6e</code> and
+      <code>fffddfa8</code>. It is a pulse, not a strobe — noticeable in motion, subtle
+      in a still.
+    </p>
+
+    <div class="grid two" style="margin-top:44px">
+      <div>
+        <div class="frame"><img src="assets/ice-media.jpg" data-ice="assets/ice-media.jpg" data-magma="assets/magma-media.jpg" alt="The built-in music player showing album art, track information and transport controls." width="1600" height="1000" loading="lazy" /></div>
+        <p class="cap"><strong>The player.</strong> Album art, transport, queue and timed lyrics, built into the shell rather than shelled out to another app.</p>
       </div>
-
-      <p class="cap"><strong>What ships here.</strong> Quickshell chrome, Hyprland config, lock/login visuals, shaders, helper scripts, and the docs/demo page. It is the shell layer of the machine. It is not the ISO builder, not package manifests for every dependency, and not a generic theme meant to fit every desktop unchanged.</p>
-    </div>
-  </section>
-
-  <section id="horizon">
-    <div class="wrap">
-      <h2>The Horizon bar</h2>
-      <p class="sub">There is no panel rectangle. The bottom of the screen is a lit seam of living paint. Icons, clock, desks, and vitals sit on that shelf and throw a floor reflection into the swirl.</p>
-      <div class="frame"><img src="assets/bar.jpg" alt="Bottom bar with NYXUS mark, dock, clock, vitals and reflections" /></div>
-      <p class="cap"><strong>What it is.</strong> Top-layer Quickshell window, 84 px exclusive zone, click-through living paint underneath. Magma is reserved for what matters (charging, the no). Glacier ice is chrome, not fill.</p>
-      <p class="cap"><strong>How it’s made.</strong> <code>Bar.qml</code> owns the structure: exclusive zone, dock, desks, tray, centre clock, right-side vitals, and the flip to the analyser. <code>BarSeam.qml</code> owns the visible paint seam under the glass. Geometry and keep-out spans are derived from live screen and item widths, so the layout scales across other resolutions and multi-monitor setups instead of assuming one fixed 1920×1200 strip.</p>
-    </div>
-  </section>
-
-  <section id="starlight">
-    <div class="wrap">
-      <h2>Starlight</h2>
-      <p class="sub">The ground is not a JPEG of stars. It is a shader: three incommensurate lattices of hard points on true black, occupancy-hashed and jittered so they never read as a grid. No bloom, no diffraction spikes — a fibre tip, not a photographed star. Twinkle is occupancy over time, not a halo.</p>
-      <div class="frame"><img src="assets/desktop.jpg" alt="Starlight sky with widgets" /></div>
-      <p class="cap"><strong>How it’s made.</strong> <code>shaders/headliner.frag</code> draws the field on a dedicated Quickshell surface. The points are hard, snapped, and sparse by construction — not blurred after the fact. On battery the sky stops twinkling instead of redrawing pointlessly, and when a fullscreen window covers the monitor the effect pauses until the desktop is visible again.</p>
-    </div>
-  </section>
-
-  <section id="swirl">
-    <div class="wrap">
-      <h2>Living paint</h2>
-      <p class="sub">The bar’s swirl is not a color wash. It is a fluid. Dye is material in a velocity field. Idle, it rolls and climbs on its own. Pointer and beat can feed it. It is never compositor blur.</p>
-      <div class="frame">
-        <video src="assets/swirl.webm" autoplay muted loop playsinline preload="metadata" controls></video>
-      </div>
-      <p class="cap"><strong>How it’s made.</strong> <code>Swirl.qml</code> ports a Navier–Stokes chain on the GPU: splat → curl → vorticity → divergence → pressure → advect velocity → advect dye → display. On AC it keeps the full 22-iteration pressure solve; on battery it drops to an eco solve depth and lets idle surfaces sleep. Hosts such as the wallpaper can now tell it when the viewport is covered, so hidden motion stops instead of burning cycles under a fullscreen window.</p>
-    </div>
-  </section>
-
-  <section id="visualizer">
-    <div class="wrap">
-      <h2>The analyser</h2>
-      <p class="sub">When music is actually on the sink, the bar turns over. The swirl face flips to a spectrum: thin columns, mirrored in the seam, magma at the peaks. Notes ride the same field. Timed lyrics, when a track has them, launch from that same mirror line so the words are in the music, not a sticker on top of it.</p>
-      <div class="frame">
-        <video src="assets/visualizer.webm" autoplay muted loop playsinline preload="metadata" controls></video>
-      </div>
-      <p class="cap"><strong>How it’s made.</strong> One long-lived <code>nyxus-beat-engine</code>: STFT, mel bands, SuperFlux onset, tempo, a phase-locked loop that predicts the downbeat. <code>BarSpectrum.qml</code> is its own shader, not a Swirl. The analyser now reads live keep-out spans from the bar itself, so lyrics and notes stay clear of the dock, clock, tray, and vitals even when those widths change. PipeWire sink monitoring is hardened for default-output switches, mute, pause, and unavailable routes so false beat pulses are zeroed instead of lingering.</p>
-    </div>
-  </section>
-
-  <section id="media">
-    <div class="wrap">
-      <h2>Media</h2>
-      <p class="sub">The library is a Nyxus app, not a browser tab. Shelf, albums, keeps, tone. The window rim is the same ice glass as the rest of the chrome — and that rim is piped to the beat engine, so the border pulses on the music, not on a timer.</p>
-      <div class="frame"><img src="assets/media.jpg" alt="Nyxus Media app album shelf" /></div>
-      <p class="cap"><strong>How it’s made.</strong> <code>Media.qml</code> + a local library. Album art is the file, not a generated square. <code>BorderPulse.qml</code> writes Hyprland’s active border from <code>Beat.kick</code> — predicted, once per beat, falling between hits. Idle is a still glacier ring. No fake pulse with nothing playing.</p>
-    </div>
-  </section>
-
-  <section id="start">
-    <div class="wrap">
-      <h2>Start</h2>
-      <p class="sub">Quiet hours, this machine, pinned apps, Quick toggles. One glass card — not a full-screen launcher that throws the desktop away.</p>
-      <div class="frame"><img src="assets/start.jpg" alt="Start menu over Starlight with widgets still visible" /></div>
-      <p class="cap"><strong>How it’s made.</strong> <code>Launcher.qml</code> as a layer-shell surface. Widgets stay on the sky. Search hits apps, files, and Settings pages from one field.</p>
-    </div>
-  </section>
-
-  <section id="lock">
-    <div class="wrap">
-      <h2>Session lock</h2>
-      <p class="sub">Earth on the left. Time, weather, and a glass login card on the right. Super+L, Start, and the power menu all hit the same lock — not a second greeter.</p>
-      <div class="grid two">
-        <div>
-          <div class="frame"><img src="assets/lock.jpg" alt="Earth lock screen with glass unlock card" /></div>
-          <p class="cap"><strong>Session lock.</strong> Earth shader, time, weather, glass card. Super+L. The card is furniture glass. Magma is the no.</p>
-        </div>
-        <div>
-          <div class="frame"><img src="assets/login.jpg" alt="Login still — vortex Earth" /></div>
-          <p class="cap"><strong>Login still.</strong> The same vortex Earth the machine uses at the front door.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section id="settings">
-    <div class="wrap">
-      <h2>Settings, flyout, widgets</h2>
-      <p class="sub">One Settings window. Tree on the left, the page on the right. The old diagnostic log column is gone so the page can breathe. The flyout is Quick, Sound, Network, Bluetooth, and the rest of the rail — nearby Wi-Fi and BT lists, not just radio toggles.</p>
-      <div class="grid two">
-        <div>
-          <div class="frame"><img src="assets/settings.jpg" alt="Nyxus Rack Settings hub" /></div>
-          <p class="cap"><strong>Settings.</strong> <code>Settings.qml</code> — FloatingWindow, catalog pages, live controls. 40 pages in glass.</p>
-        </div>
-        <div>
-          <div class="frame"><img src="assets/flyout.jpg" alt="Quick flyout with Wi-Fi, Bluetooth, Night Light" /></div>
-          <p class="cap"><strong>Flyout.</strong> <code>SidePanel.qml</code>. Night Light, DND, Airplane, Keep Awake, Mute, Mic. Join a network from the list.</p>
-        </div>
+      <div>
+        <div class="frame"><img src="assets/ice-visualizer.jpg" data-ice="assets/ice-visualizer.jpg" data-magma="assets/magma-visualizer.jpg" alt="The bar spectrum analyser rendered across the full width of the bar." width="1600" height="77" loading="lazy" /></div>
+        <p class="cap"><strong>The analyser</strong> renders the engine's spectrum across the bar. The bar's media readout also scrolls synchronised lyrics when a track supplies them.</p>
       </div>
     </div>
-  </section>
 
-  <section id="tour">
-    <div class="wrap">
-      <h2>A pass across the desktop</h2>
-      <p class="sub">A longer pass on this machine: Starlight, Start, flyout, Settings, Notes, Media, then a terminal that states the build. Empty workspace. No compositor blur.</p>
-      <div class="frame">
-        <video src="assets/tour.webm" controls playsinline preload="metadata"></video>
+    <div class="note warn">
+      <b>A bug I found while making this page, and did not hide.</b>
+      The bar analyser visibly flickers the whole time music plays. I measured it
+      rather than described it: over an 80-frame burst captured straight off the
+      running bar, the spectrum was fully drawn in <strong>3 frames, partially in 1,
+      and completely blank in 76 &mdash; about 4% uptime</strong>. The failure is binary,
+      never a fade: the band is either the full spectrum or empty.
+      <br><br>
+      What I have been able to <em>eliminate</em>, each by direct measurement while
+      the fault was happening: the beat engine is not restarting (its PID was
+      unchanged across 215 samples over 60 s), cava is not restarting (likewise 0
+      PID changes), and the audio-routing layer is not flapping &mdash; the tap
+      reported the identical sink, <code>playing=1</code> and <code>state=ok</code> on
+      25 consecutive runs. The engine's own data is healthy. So it is not the
+      audio, not the process supervision, and not the route.
+      <br><br>
+      <b>I have not found the cause, and I am not going to pretend otherwise on a
+      page meant to introduce this project.</b> It is somewhere in the renderer or
+      the hand-off into it. That is as far as I have got. There is deliberately no
+      video of the analyser here; the stills above are of it working, selected from
+      a burst, which is itself a measurement of how often it doesn't.
+    </div>
+  </div>
+</section>
+
+<section id="apps">
+  <div class="wrap">
+    <h2>The surfaces you use</h2>
+    <p class="sub">
+      Everything below is part of the same shell process. None of it is a separate
+      application that had to be themed into agreement.
+    </p>
+
+    <div class="grid two">
+      <div>
+        <div class="frame"><img src="assets/ice-start.jpg" data-ice="assets/ice-start.jpg" data-magma="assets/magma-start.jpg" alt="The application launcher, showing a search field and a grid of application results." width="1600" height="1000" loading="lazy" /></div>
+        <p class="cap"><strong>Launcher.</strong> Fuzzy search across applications, with keyboard-first navigation. Opens on the focused monitor.</p>
+      </div>
+      <div>
+        <div class="frame"><img src="assets/ice-flyout.jpg" data-ice="assets/ice-flyout.jpg" data-magma="assets/magma-flyout.jpg" alt="The quick-settings flyout panel with Wi-Fi, Bluetooth, night light and volume controls." width="1600" height="1000" loading="lazy" /></div>
+        <p class="cap"><strong>Quick settings flyout.</strong> Wi-Fi, Bluetooth, airplane mode, night light, do-not-disturb, mute, mic, and the sound and brightness sliders.</p>
       </div>
     </div>
-  </section>
 
-  <section id="get">
-    <div class="wrap">
-      <h2>Get it</h2>
-      <p class="sub">From a terminal, on a machine that already has git:</p>
-      <div class="frame" style="padding:18px 20px;background:#040b0e;font-family:ui-monospace,monospace;font-size:14px;color:#b7e6f2;">
-        curl -fsSL https://ikswognereisj-ctrl.github.io/Nyxus-Suxyn/get.sh | bash
-      </div>
-      <p class="cap">That clones the desktop (Quickshell, Hyprland, walls) into <code>~/src/Nyxus-Suxyn</code>. It does not flash a full OS. The complete system is still the Nyxus Suxyn ISO; the installer slideshow and Calamares theme in this repo go on the next bake.</p>
-      <p class="cap">Then, if you want this chrome on the current user (it backs up first):</p>
-      <div class="frame" style="padding:18px 20px;background:#040b0e;font-family:ui-monospace,monospace;font-size:14px;color:#b7e6f2;">
-        ~/src/Nyxus-Suxyn/tools/apply-shell.sh
-      </div>
-      <p class="cap"><strong>Pre-flight.</strong> Before deploy, the repo now checks for GPU/driver expectations, Hyprland + Quickshell presence, PipeWire/WirePlumber, audio-monitor tools, and monitor geometry versus the 1920×1200 baseline the original layout was tuned on. You can run that alone with <code>tools/apply-shell.sh --preflight-only</code>.</p>
-      <p class="cap"><strong>What a target machine should already have.</strong> Hyprland, Quickshell, PipeWire, WirePlumber, and the usual desktop helpers such as <code>hyprctl</code>, <code>wpctl</code>, <code>pactl</code>, <code>playerctl</code>, and <code>cava</code>. The deploy script does not install a distro for you; it replaces the shell config on a machine that already has the stack.</p>
+    <div class="frame" style="margin-top:32px">
+      <video autoplay loop muted playsinline poster="assets/magma-flyout.jpg" width="740" height="1104" style="max-height:78vh;object-fit:contain" aria-label="Screen recording of the quick-settings flyout sliding open over the widget stack and closing again.">
+        <source src="assets/flyout.webm" type="video/webm" />
+      </video>
     </div>
-  </section>
+    <p class="cap">
+      <strong>The flyout, in motion.</strong> It slides in and the widget stack behind it
+      dims and blurs rather than simply being covered. Cropped to exclude the bar so the
+      animation is the only thing moving.
+    </p>
 
-  <section id="update">
-    <div class="wrap">
-      <h2>Update it</h2>
-      <p class="sub">The shell is updatable from the terminal at any time. One command pulls the latest commit and re-runs the deploy — pre-flight checks and a fresh rollback snapshot included. Local edits in the clone are never discarded: a dirty tree stops the pull and is reported instead.</p>
-      <div class="frame" style="padding:18px 20px;background:#040b0e;font-family:ui-monospace,monospace;font-size:14px;color:#b7e6f2;">
-        ~/src/Nyxus-Suxyn/tools/update-shell.sh
+    <div class="grid two" style="margin-top:44px">
+      <div>
+        <div class="frame"><img src="assets/ice-settings.jpg" data-ice="assets/ice-settings.jpg" data-magma="assets/magma-settings.jpg" alt="The Settings application window showing a category sidebar and a settings panel." width="1600" height="1000" loading="lazy" /></div>
+        <p class="cap"><strong>Settings.</strong> 46 pages behind a searchable catalogue of 44 linked nodes — appearance, network, audio, display, power, hotkeys, wallpapers, notifications and more.</p>
       </div>
-      <p class="cap"><strong>Check first, change nothing.</strong> <code>tools/update-shell.sh --check</code> reports how far behind the clone is and exits. Re-running the <code>get.sh</code> one-liner from the section above also fast-forwards an existing clone without deploying.</p>
-      <p class="cap"><strong>Rollback.</strong> Every deploy snapshots the previous <code>~/.config/quickshell</code> and <code>~/.config/hypr</code> to <code>~/.local/share/nyxus/shell-bak-&lt;timestamp&gt;/</code> with a <code>RESTORE.txt</code> beside them. Restoring is copying the snapshot back over <code>~/.config</code> — the exact commands are written into that file at deploy time.</p>
-    </div>
-  </section>
-
-  <section id="architecture">
-    <div class="wrap">
-      <h2>How it works</h2>
-      <p class="sub">The whole desktop is one data flow. Sound and input come in at the bottom; everything you see is a reaction to it. Here is the path a single beat of music actually travels.</p>
-
-      <div class="flow">
-        <div class="hop"><span class="n">01</span><div><b>PipeWire plays audio.</b><p>The desktop's sound server runs the sink. Nothing in the shell touches the audio device directly.</p></div></div>
-        <div class="hop"><span class="n">02</span><div><b><code>nyxus-beat-tap.sh</code> picks the right monitor.</b><p>It follows the <em>default</em> sink's monitor source, so the analysis tracks whatever output is actually live — and goes quiet on mute, pause, or an unavailable route instead of guessing.</p></div></div>
-        <div class="hop"><span class="n">03</span><div><b><code>nyxus-beat-engine</code> analyzes it.</b><p>STFT → mel bands → SuperFlux onset detection → autocorrelation tempo → a phase-locked loop that predicts the downbeat <em>ahead</em> of the hit, so reactions land on time instead of chasing it.</p></div></div>
-        <div class="hop"><span class="n">04</span><div><b><code>Beat.qml</code> broadcasts it.</b><p>One Quickshell singleton turns the engine's output into timing + spectrum data the rest of the shell can bind to.</p></div></div>
-        <div class="hop"><span class="n">05</span><div><b>The surfaces react.</b><p><code>BarSpectrum.qml</code> flips the bar into columns, <code>Swirl.qml</code> feeds bass/mid/high and the predicted kick into the fluid, and <code>BorderPulse.qml</code> rewrites Hyprland's active border once per beat. No real audio → no fake pulse.</p></div></div>
-      </div>
-
-      <h3>The layers, top to bottom</h3>
-      <p class="sub">Quickshell surfaces live on explicit Wayland layer-shell tiers, so the sky, the widgets, the bar, and the lock never fight over the same pixel.</p>
-      <div class="stack">
-        <div><b>Overlay</b><span>Lock &amp; screensaver (<code>Lock.qml</code>, <code>Screensaver.qml</code>) — above everything, the only tier that authenticates.</span></div>
-        <div><b>Top</b><span>The Horizon bar (<code>Bar.qml</code>) and the flyout (<code>SidePanel.qml</code>) — the chrome you touch.</span></div>
-        <div><b>Bottom</b><span>Widgets (<code>Widgets.qml</code>) and the sky (<code>Headliner.qml</code> / <code>Starlight3D.qml</code>) — they sit <em>in</em> the scene, behind windows.</span></div>
-        <div><b>Background</b><span>The still wallpaper (<code>LiveWall.qml</code> + <code>awww</code>) — the floor everything else floats over.</span></div>
-      </div>
-      <p class="cap"><strong>Why it holds together.</strong> <code>shell.qml</code> instantiates the surfaces; <code>Theme.qml</code> is the single token source so no component writes a raw hex; and the compositor itself (<code>hypr/hyprland.conf</code> + the <code>conf.d/</code> shards) carries the window rules, keybinds, and idle/lock pipeline the shell assumes.</p>
-    </div>
-  </section>
-
-  <section id="keys">
-    <div class="wrap">
-      <h2>Keybind cheat-sheet</h2>
-      <p class="sub">The chords that drive the desktop, straight from <code>hypr/hyprland.conf</code> and the <code>conf.d/</code> shards. <kbd>Super</kbd> is the modifier (<code>$mod</code>).</p>
-
-      <div class="keys">
-        <table class="binds">
-          <caption>Launch &amp; shell</caption>
-          <tr><td><kbd>Super</kbd><kbd>Enter</kbd></td><td>Terminal (ghostty)</td></tr>
-          <tr><td><kbd>Super</kbd><kbd>Space</kbd></td><td>Start / launcher</td></tr>
-          <tr><td><kbd>Super</kbd><kbd>A</kbd> / <kbd>N</kbd></td><td>Quick flyout</td></tr>
-          <tr><td><kbd>Super</kbd><kbd>X</kbd></td><td>Power menu</td></tr>
-          <tr><td><kbd>Super</kbd><kbd>Tab</kbd></td><td>Task view</td></tr>
-          <tr><td><kbd>Super</kbd><kbd>.</kbd></td><td>Emoji picker</td></tr>
-          <tr><td><kbd>Super</kbd><kbd>B</kbd></td><td>Browser</td></tr>
-          <tr><td><kbd>Super</kbd><kbd>E</kbd></td><td>Files</td></tr>
-        </table>
-
-        <table class="binds">
-          <caption>Windows</caption>
-          <tr><td><kbd>Super</kbd><kbd>Q</kbd></td><td>Close window</td></tr>
-          <tr><td><kbd>Alt</kbd><kbd>F4</kbd></td><td>Close window</td></tr>
-          <tr><td><kbd>Alt</kbd><kbd>Tab</kbd></td><td>Cycle windows</td></tr>
-          <tr><td><kbd>Super</kbd><kbd>F</kbd></td><td>Fullscreen</td></tr>
-          <tr><td><kbd>Super</kbd><kbd>Shift</kbd><kbd>V</kbd></td><td>Toggle floating</td></tr>
-          <tr><td><kbd>Super</kbd> + <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd></td><td>Snap to halves</td></tr>
-          <tr><td><kbd>Super</kbd><kbd>Alt</kbd> + arrows</td><td>Move focus</td></tr>
-          <tr><td><kbd>Super</kbd><kbd>Alt</kbd><kbd>Shift</kbd> + arrows</td><td>Move window</td></tr>
-        </table>
-
-        <table class="binds">
-          <caption>Workspaces &amp; rooms</caption>
-          <tr><td><kbd>Super</kbd><kbd>1</kbd>–<kbd>0</kbd></td><td>Go to workspace 1–10</td></tr>
-          <tr><td><kbd>Super</kbd><kbd>Shift</kbd><kbd>1</kbd>–<kbd>0</kbd></td><td>Move window to workspace</td></tr>
-          <tr><td><kbd>Super</kbd><kbd>S</kbd></td><td>Toggle scratchpad</td></tr>
-          <tr><td><kbd>Ctrl</kbd><kbd>Alt</kbd> + arrows</td><td>Walk between rooms</td></tr>
-          <tr><td><kbd>Super</kbd><kbd>Alt</kbd><kbd>M</kbd></td><td>Station map</td></tr>
-          <tr><td><kbd>Super</kbd> + scroll</td><td>Next / previous workspace</td></tr>
-        </table>
-
-        <table class="binds">
-          <caption>Session &amp; capture</caption>
-          <tr><td><kbd>Super</kbd><kbd>L</kbd></td><td>Lock</td></tr>
-          <tr><td><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>Del</kbd></td><td>Power menu</td></tr>
-          <tr><td><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>Esc</kbd></td><td>System monitor</td></tr>
-          <tr><td><kbd>PrtSc</kbd></td><td>Screenshot (fullscreen)</td></tr>
-          <tr><td><kbd>Shift</kbd><kbd>PrtSc</kbd></td><td>Screenshot (region)</td></tr>
-          <tr><td><kbd>Alt</kbd><kbd>PrtSc</kbd></td><td>Screenshot (window)</td></tr>
-          <tr><td>Volume / play keys</td><td>Volume, mute, play-pause</td></tr>
-        </table>
-      </div>
-      <p class="cap">In-session, <kbd>Super</kbd><kbd>/</kbd> opens a searchable cheatsheet (<code>~/.config/rofi/cheatsheet.sh</code>).</p>
-    </div>
-  </section>
-
-  <section id="faq">
-    <div class="wrap">
-      <h2>Questions</h2>
-      <p class="sub">The short answers to what people actually ask.</p>
-
-      <details class="faq">
-        <summary>Is this a distro or an ISO I can flash?</summary>
-        <div class="body">No. This repository is the <strong>shell layer</strong> — Quickshell chrome, Hyprland config, shaders, and scripts. It does not build or ship an operating system. The full system is a separate Nyxus Suxyn image; only the Calamares <em>branding</em> for it lives here (in <code>installer/</code>).</div>
-      </details>
-      <details class="faq">
-        <summary>Will it work on my machine?</summary>
-        <div class="body">It is tuned for one Alienware 15 (1920×1200 @ 165&nbsp;Hz). Machine-specific values ship commented out with generic fallbacks, so it will <em>run</em> elsewhere, but it is opinionated. The supported path is to <strong>fork it</strong> and adapt it — <code>DEPENDENCIES.md</code> lists the expected stack and <code>tools/apply-shell.sh --preflight-only</code> checks a machine against it before anything changes.</div>
-      </details>
-      <details class="faq">
-        <summary>How do I install it from a terminal?</summary>
-        <div class="body"><code>curl -fsSL https://ikswognereisj-ctrl.github.io/Nyxus-Suxyn/get.sh | bash</code> clones it to <code>~/src/Nyxus-Suxyn</code> and pre-flights the machine. Then <code>~/src/Nyxus-Suxyn/tools/apply-shell.sh</code> deploys it, after taking a timestamped backup.</div>
-      </details>
-      <details class="faq">
-        <summary>How do I update it later?</summary>
-        <div class="body"><code>~/src/Nyxus-Suxyn/tools/update-shell.sh</code> pulls the latest commit (fast-forward only — your local edits are never discarded) and re-runs the deploy with a fresh rollback snapshot. Use <code>--check</code> to see how far behind you are without changing anything.</div>
-      </details>
-      <details class="faq">
-        <summary>What happens if an update breaks something?</summary>
-        <div class="body">Every deploy snapshots your previous <code>~/.config/quickshell</code> and <code>~/.config/hypr</code> to <code>~/.local/share/nyxus/shell-bak-&lt;timestamp&gt;/</code> with a <code>RESTORE.txt</code> beside them. Rolling back is copying that snapshot back — the exact commands are written into the file at deploy time.</div>
-      </details>
-      <details class="faq">
-        <summary>Does it collect or send any data?</summary>
-        <div class="body">No. The only network calls in the shell are to the hardcoded Open-Meteo weather APIs, and only if you turn weather on. Locking authenticates locally through PAM; no credentials are stored, logged, or transmitted.</div>
-      </details>
-    </div>
-  </section>
-
-  <section id="made">
-    <div class="wrap">
-      <h2>How this build is put together</h2>
-      <p class="pull">This is not a tinted GTK theme. Every surface is a material with a shader behind it. The palette is not a list of hex codes to fill rectangles — it is emission ladders sampled from nebula photographs, then used as thickness, etch, and dye.</p>
-
-      <div class="stack">
-        <div><b>Starlight</b><span>Bottom-layer shader. Three lattices, hard points, true black gaps. Not a wallpaper file with a bloom filter.</span></div>
-        <div><b>Horizon</b><span>Top bar + click-through seam. Exclusive zone 84 px. Living paint under glass, not a panel bitmap.</span></div>
-        <div><b>Widgets</b><span>Clock, system, calendar, weather, notes, rooms. Same glass language as Start. They sit in the sky, not in the bar.</span></div>
-        <div><b>Lock</b><span>Earth shader + glass card. Super+L, Start, and Power all call the same lock. PAM through hyprlock.</span></div>
-        <div><b>Beat</b><span>One engine. Predicted downbeat. Spectrum, swirl, and window rims listen. Silence is still.</span></div>
-      </div>
-
-      <h3>Main runtime pieces</h3>
-      <p class="sub"><code>shell.qml</code> instantiates the per-screen surfaces. <code>Bar.qml</code> is the permanent chrome. <code>Launcher.qml</code>, <code>SidePanel.qml</code>, and <code>Settings.qml</code> are the main interactive panels. <code>Beat.qml</code> is the singleton that turns audio into timing and spectrum data. <code>Theme.qml</code> is the token source, and <code>shaders/*.frag</code> are the render back-ends compiled to <code>.qsb</code> for Qt.</p>
-
-      <h3>Runtime rules this build follows</h3>
-      <p class="sub">Real motion must be honest about cost. Hidden or covered surfaces pause. Battery mode scales motion down instead of pretending nothing changed. Audio reactions follow the actual sink monitor, not metadata alone. The shell uses compositor layers and item geometry as first-class structure, so bars, widgets, wallpaper, and lock surfaces do not fight each other for the same pixel.</p>
-
-      <h3>Glass is furniture</h3>
-      <p class="sub">Panels, Start, Settings, flyout: Pane + swell + a 1 px glacier seam. The body is empty. You see the sky through smoked glass that <em>bends</em>. Hyprland’s blur stays at zero so the type never goes soft. A compositor blur would have been the easy way. It was rejected because it turns the whole desktop into vaseline.</p>
-
-      <h3>Crystal is identity</h3>
-      <p class="sub">Dock gems are not icons on a plate. <code>ocular_crystal.frag</code> ray-marches a 3-D signed distance field baked from the mark. The SDF packs silhouette in R and 16-bit dome height in GB so the normals do not band into rings. Alpha is pinned to 255 — Qt premultiplies, and an earlier pack in A silently destroyed the field. The glyph is laser-etched in the stone: points of light in ice, never a PNG glued on top.</p>
-
-      <h3>The palette is layers</h3>
-      <p class="sub">Each accent is a five-band emission ladder (haze / deep / body / accent / glow) measured off nebula stills — 197k pixels, four banners. Grounds sit at <code>#000000–#000007</code>. Saturation stays 0.79–0.86 into the darks. Magma (<code>#ff7847</code>) is the only hot corner, and it is reserved for what matters: charging, the no, a peak on the analyser. glacier[0] teal is banned as a fill. Nothing in the shell writes a raw hex; tokens live in one file so a banned color cannot hide in an icon.</p>
-
-      <h3>Swirl is a fluid, not a gradient</h3>
-      <p class="sub">The solver is a real Navier–Stokes chain on the GPU, ported pass-for-pass from a reference that had filaments and voids. An earlier curl-noise “port” produced smooth bands with nothing for dye to pile against. Pressure is solved 22 iterations a frame. Idle, stirrers roll and climb so the field does not only slide. When music is on, bass/mid/high and a predicted kick feed the same tank. When music is off, the field does not fake a pulse.</p>
-
-      <h3>Beat is predicted, not guessed</h3>
-      <p class="sub">One process, <code>nyxus-beat-engine</code>, hears the sink monitor. STFT 2048/512, mel bands, SuperFlux onset, autocorrelation tempo, phase-locked loop. It knows the downbeat ahead of the hit so rims, swirl, and spectrum land on time. <code>BorderPulse.qml</code> rewrites Hyprland’s active border from that kick — once per beat, falling between hits. Idle is a still glacier ring. A paused player’s metadata is not a beat.</p>
-
-      <h3>The analyser is a second face</h3>
-      <p class="sub">The bar does not overlay bars on the swirl. It <em>turns over</em> — a FlipPlate — after ~900 ms of real sink audio. <code>BarSpectrum.qml</code> is its own shader: hundreds of thin columns, mirrored in the seam, magma holds on the peaks. Keep-out rectangles so the field never runs through dock, clock, or vitals. Timed lyrics, when an LRC exists, launch from that same mirror line.</p>
-
-      <table class="spec">
-        <tr><th>Build</th><td>Nyxus Suxyn · <strong>2026.09.02</strong></td></tr>
-        <tr><th>Machine</th><td>Alienware 15 · 1920×1200 @ 165 Hz</td></tr>
-        <tr><th>Compositor</th><td>Hyprland 0.56.2 · blur off</td></tr>
-        <tr><th>Shell</th><td>Quickshell 0.3.1</td></tr>
-        <tr><th>Sky</th><td>Starlight shader · six stills in Settings</td></tr>
-        <tr><th>Lock</th><td>Earth glass card · Super+L</td></tr>
-        <tr><th>Audio</th><td><code>nyxus-beat-engine</code> + PipeWire monitor routing</td></tr>
-        <tr><th>Deploy</th><td><code>docs/get.sh</code> clone/update + <code>tools/apply-shell.sh</code> pre-flight and rollback snapshot</td></tr>
-      </table>
-    </div>
-  </section>
-
-  <section id="scope">
-    <div class="wrap">
-      <h2>Scope &amp; disclaimer</h2>
-      <p class="sub">Nyxus Suxyn is built for one machine, on purpose. It is a personal build shared as-is under the <a href="https://github.com/ikswognereisj-ctrl/Nyxus-Suxyn/blob/main/LICENSE">MIT license</a> — a showcase and dotfiles source, not a distribution, ISO, or drop-in theme. Layouts, keybinds, and the audio pipeline are opinions, and those opinions are this laptop's. Where a value is machine-specific it ships commented out with a generic fallback.</p>
-      <p class="sub">Nothing here installs an operating system or modifies the boot chain. The deploy replaces <strong>user-level</strong> shell configuration on a machine that already runs the stack, after taking a backup. Review a script before running it with <code>curl | bash</code> — that advice applies to every project, including this one.</p>
-      <div class="stack">
-        <div><b>Fork to adapt</b><span>Want it on your own hardware? Fork it. <code>DEPENDENCIES.md</code> lists the expected stack; <code>tools/apply-shell.sh --preflight-only</code> checks a machine against it.</span></div>
-        <div><b>Security</b><span>Locking authenticates through PAM; no credentials are stored or transmitted. Report vulnerabilities privately per <code>SECURITY.md</code>, not in a public issue.</span></div>
-        <div><b>Not in this repo</b><span>ISO builder, other machines, personal apps, local AI, and security-stack tools.</span></div>
+      <div>
+        <div class="frame"><img src="assets/ice-media.jpg" data-ice="assets/ice-media.jpg" data-magma="assets/magma-media.jpg" alt="The media player window with album artwork and playback controls." width="1600" height="1000" loading="lazy" /></div>
+        <p class="cap"><strong>Media.</strong> A full player surface, not a tray popup — artwork, scrubbing, queue and lyrics.</p>
       </div>
     </div>
-  </section>
+  </div>
+</section>
 
-  <footer>
-    <div class="wrap">
-      Nyxus Suxyn · 2026.09.02 ·
-      <a href="https://github.com/ikswognereisj-ctrl/Nyxus-Suxyn">source</a> ·
-      <a href="https://github.com/ikswognereisj-ctrl/Nyxus-Suxyn/blob/main/LICENSE">MIT license</a> ·
-      <a href="https://github.com/ikswognereisj-ctrl/Nyxus-Suxyn/blob/main/SECURITY.md">security</a> ·
-      <a href="https://github.com/ikswognereisj-ctrl/Nyxus-Suxyn/issues">issues</a><br />
-      Photographs and clips from the live Alienware, 2026-09-11.
+<section id="lock">
+  <div class="wrap">
+    <h2>Lock screen and greeter</h2>
+    <p class="sub">
+      The lock screen draws a live Earth — real satellite imagery fetched on a schedule
+      and rendered through a shader with a weather layer over it — behind a glass card
+      carrying the clock, the date, the current track and the password field. The
+      now-playing rim on that card glows on the beat, same engine as the window borders.
+    </p>
+
+    <div class="frame">
+      <img src="assets/ice-lock.jpg" data-ice="assets/ice-lock.jpg" data-magma="assets/magma-lock.jpg" alt="The lock screen: a rendered Earth behind a translucent glass card with clock, date and password field." width="1600" height="1000" loading="lazy" />
     </div>
-  </footer>
-  <script>
-    (function () {
-      var bar = document.getElementById('progress');
-      if (!bar) return;
-      var update = function () {
-        var h = document.documentElement;
-        var max = h.scrollHeight - h.clientHeight;
-        bar.style.width = (max > 0 ? (h.scrollTop / max) * 100 : 0) + '%';
-      };
-      addEventListener('scroll', update, { passive: true });
-      addEventListener('resize', update);
-      update();
-    })();
-  </script>
+    <p class="cap">
+      <strong>Locked.</strong> The card, type and accents follow the current look. The
+      Earth itself does not change between looks — that is a real limitation, not a
+      styling choice.
+    </p>
+
+    <h3 style="margin-top:44px">Before you even log in</h3>
+    <div class="pair" style="margin-top:16px">
+      <figure>
+        <div class="frame"><img src="assets/ice-greeter.jpg" alt="The login greeter in the ICE look, with a purple galaxy background." width="1280" height="720" loading="lazy" /></div>
+        <figcaption class="t-ice">Greeter — Ice</figcaption>
+      </figure>
+      <figure>
+        <div class="frame"><img src="assets/magma-greeter.jpg" alt="The login greeter in the MAGMA look, with a molten planet background." width="1280" height="720" loading="lazy" /></div>
+        <figcaption class="t-magma">Greeter — Magma</figcaption>
+      </figure>
+    </div>
+    <p class="cap">
+      <strong>The greeter matches too.</strong> The look reaches the display manager, so
+      the machine is themed from power-on rather than from login.
+    </p>
+  </div>
+</section>
+
+<section id="numbers">
+  <div class="wrap">
+    <h2>By the numbers</h2>
+    <p class="sub">
+      Every figure here was counted on the repository at the time this page was written,
+      not estimated. Where my own count disagreed with earlier notes, the counted value
+      is the one printed.
+    </p>
+    <table class="spec">
+      <tbody>
+        <tr><th>QML source files</th><td>210 <span class="magma">(205 in the shell, 5 in the greeter)</span></td></tr>
+        <tr><th>Lines of QML</th><td>92,738</td></tr>
+        <tr><th>Shader sources</th><td>33 <span class="magma">(.frag / .vert)</span></td></tr>
+        <tr><th>Settings pages</th><td>46 page components, 44 reachable from the catalogue</td></tr>
+        <tr><th>Scripts in <code>bin/</code></th><td>197, all executable</td></tr>
+        <tr><th>Wallpapers</th><td>43 in the repo; 56 offered by the picker on a live install</td></tr>
+        <tr><th>Icons</th><td>198</td></tr>
+        <tr><th>Sound effects</th><td>108</td></tr>
+        <tr><th>Compositor</th><td>Hyprland on Wayland</td></tr>
+        <tr><th>Shell runtime</th><td>Quickshell (Qt 6 / QML)</td></tr>
+      </tbody>
+    </table>
+    <div class="note">
+      <b>Two of the 46 Settings page components are not reachable from the catalogue.</b>
+      One is the base component every other page inherits from; the other is an orphan
+      left over from earlier work. That is why the page count and the node count differ,
+      and it seemed more useful to say so than to print a single tidier number.
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <h2>Getting it</h2>
+    <p class="sub">
+      Nyxus Suxyn targets Arch Linux with Hyprland and Quickshell. It is a full desktop,
+      so it expects to own the session rather than sit alongside another shell.
+    </p>
+    <pre><code>git clone https://github.com/ikswognereisj-ctrl/Nyxus-Suxyn.git
+cd Nyxus-Suxyn
+# review first — this installs a whole desktop
+less README.md</code></pre>
+    <p class="sub" style="margin-top:26px">
+      The shell lives in <code>quickshell/</code>, the compositor configuration in
+      <code>hypr/</code>, and the supporting tools in <code>bin/</code>. Switching the
+      look after install is one key:
+    </p>
+    <pre><code># ~/.config/nyxus/settings.json
+{ "look_set": "magma" }   # or "ice"</code></pre>
+
+    <h3 style="margin-top:38px">A few keys worth knowing</h3>
+    <ul class="plain">
+      <li><kbd>Super</kbd> — open the launcher</li>
+      <li><kbd>Super</kbd> + <kbd>L</kbd> — lock</li>
+      <li><kbd>Super</kbd> + <kbd>Return</kbd> — terminal</li>
+      <li><kbd>Super</kbd> + <kbd>1…9</kbd> — switch workspace</li>
+      <li>Full, editable bindings live in Settings → Hotkeys</li>
+    </ul>
+  </div>
+</section>
+
+<section id="honest">
+  <div class="wrap">
+    <h2>What isn't finished</h2>
+    <p class="sub">
+      A showcase that only lists strengths is an advertisement. These are the things I
+      know are wrong or incomplete as of this page going up.
+    </p>
+    <ul class="plain">
+      <li><b>The bar analyser flickers.</b> Measured at roughly 4% uptime while music plays. The audio engine, cava and the audio routing have each been eliminated by direct measurement; the actual cause is still unidentified. Detailed above.</li>
+      <li><b>The look switch doesn't reach everything.</b> Terminal colours are hard-coded to the ICE cyan, 16 QML files carry that same literal, and only one script consults <code>look_set</code>.</li>
+      <li><b>The lock screen's Earth is look-independent.</b> The chrome around it themes; the planet does not.</li>
+      <li><b>Only one machine has run this.</b> Everything here was captured on a dual-monitor Alienware laptop. Nothing about this build has been validated on other hardware.</li>
+      <li><b>The media player is invisible to its own shell on a fresh install.</b> The bundled player talks to the rest of the desktop through an optional MPRIS bridge that the image does not currently install, so on a clean build the bar, lock screen and analyser cannot see what it is playing. Found while making this page; the fix is one package, but I cannot verify it until I can build an image.</li>
+      <li><b>The ISO build is unverified.</b> Producing and booting an installable image needs tooling I have not been able to run yet, so "install it on your own machine" is not a claim I'm making.</li>
+    </ul>
+
+    <div class="note">
+      <b>About the screenshots.</b> Every still and clip on this page was captured fresh
+      from the running desktop for this page, in both looks, with <code>grim</code> and
+      <code>wf-recorder</code>. Nothing is a mock-up and no image has been retouched.
+      Two pieces of live data were changed <em>at the source</em> before capture — the
+      Wi-Fi network name and the weather city — because the real values would have
+      published my home location to strangers. The shell rendered those substituted
+      values itself; the pixels are genuine, and the change was reverted immediately
+      after capture. The music surfaces were shot with online lyrics at the
+      <em>shipped</em> default (off) and a local instrumental playing, so no third-party
+      lyric text appears in a screenshot; and the analyser stills were picked from a
+      burst because of the flicker documented above.
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>
+      Nyxus Suxyn — a Hyprland + Quickshell desktop by Joseph (“gowski”).
+      Source: <a href="https://github.com/ikswognereisj-ctrl/Nyxus-Suxyn">github.com/ikswognereisj-ctrl/Nyxus-Suxyn</a>.
+    </p>
+    <p style="margin-top:10px">
+      Photographs and clips captured from the live machine on 15 September 2026, in both
+      looks, at 1920×1200.
+    </p>
+  </div>
+</footer>
+
+<script>
+/* TRK-3403 — the look switch.
+   Every themed image carries data-ice and data-magma. Switching sets the
+   attribute on <html> (which retints the page through CSS custom properties)
+   and rewrites those img srcs. Images that exist in only one look — the
+   side-by-side comparison pairs and the greeter shots — deliberately carry
+   NO data-ice/data-magma, so they are left alone and keep showing both. */
+(function () {
+  var root = document.documentElement;
+  var buttons = Array.prototype.slice.call(document.querySelectorAll('.look-btns button'));
+  var themed = Array.prototype.slice.call(document.querySelectorAll('img[data-ice][data-magma]'));
+
+  function apply(look, persist) {
+    if (look !== 'ice' && look !== 'magma') look = 'ice';
+    root.setAttribute('data-look', look);
+    themed.forEach(function (img) {
+      var next = img.getAttribute('data-' + look);
+      if (next && img.getAttribute('src') !== next) img.setAttribute('src', next);
+    });
+    buttons.forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.set === look));
+    });
+    if (persist) { try { localStorage.setItem('nyxus-look', look); } catch (e) {} }
+  }
+
+  buttons.forEach(function (b) {
+    b.addEventListener('click', function () { apply(b.dataset.set, true); });
+  });
+
+  var saved = null;
+  try { saved = localStorage.getItem('nyxus-look'); } catch (e) {}
+  apply(saved || 'ice', false);
+})();
+
+/* scroll progress */
+(function () {
+  var bar = document.getElementById('progress');
+  if (!bar) return;
+  function tick() {
+    var h = document.documentElement.scrollHeight - window.innerHeight;
+    bar.style.width = (h > 0 ? (window.scrollY / h) * 100 : 0) + '%';
+  }
+  window.addEventListener('scroll', tick, { passive: true });
+  window.addEventListener('resize', tick);
+  tick();
+})();
+</script>
 </body>
 </html>
