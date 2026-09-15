@@ -1,0 +1,238 @@
+#!/usr/bin/env bash
+# ============================================================================
+# nyxus-fde-wire — wire an encrypted root into the initramfs, at install time
+#
+# Runs INSIDE the Calamares chroot (shellprocess@initramfs, immediately before
+# `mkinitcpio -P`) on every install, and decides for itself whether there is
+# anything to do:
+#
+#   · root NOT on a LUKS mapper  → says so, exits 0, touches nothing.
+#     This is the normal, unencrypted install — the common path stays
+#     byte-identical to what it was before FDE existed (TRK-1370).
+#   · root IS a LUKS mapper      → inserts the unlock hook into every HOOKS
+#     line, registers the Calamares keyfile in FILES, and verifies the
+#     EFFECTIVE result, failing the install loudly rather than producing a
+#     disk the initramfs cannot unlock (the WIP-585 brick, the other way
+#     round: better a red install than a black boot).
+#
+# WHY A TARGETED EDIT AND NOT A DROP-IN. mkinitcpio reads /etc/mkinitcpio.conf
+# and then every /etc/mkinitcpio.conf.d/*.conf in lexical order, and each
+# HOOKS= line REPLACES the previous one wholesale. A new drop-in carrying its
+# own HOOKS line would silently clobber whatever the last writer declared —
+# exactly the archiso.conf trap WIP-253 removed, and it would also collide
+# with the hibernate lane, which owns the HOOKS order (`resume`). So instead:
+# every file that already declares HOOKS gets `encrypt` (or `sd-encrypt`,
+# matching that line's own flavour) spliced in BEFORE `filesystems`, which
+# also lands it before `resume` wherever resume ends up (resume never
+# precedes block). The edit is idempotent — a line that already carries an
+# unlock hook is left alone — so re-running the installer, or a rescue
+# re-run of this script, changes nothing.
+#
+# THE KEYFILE. Calamares' luksbootkeyfile job creates /crypto_keyfile.bin on
+# the target and enrols it in every LUKS partition — but ONLY when /boot is
+# encrypted too (the job itself refuses otherwise; verified against the
+# shipped .so: "/boot partition is not encrypted, skipping keyfile
+# creation."). When the file exists, adding it to FILES=() embeds it in the
+# initramfs, and the stock `encrypt` hook picks up /crypto_keyfile.bin by
+# that exact default path: GRUB asks for the passphrase once (cryptodisk),
+# and the initramfs then unlocks silently instead of asking a second time.
+# The initramfs lives inside the encrypted /boot, so embedding the key there
+# leaks nothing. When /boot is UNENCRYPTED there is no keyfile, nothing is
+# embedded, and the initramfs prompts via Plymouth — the safe default.
+#
+# --selftest <airootfs-dir>: gate mode (13s83). Copies the SHIPPED
+# etc/mkinitcpio.conf + conf.d out of the given profile into a scratch root,
+# fakes a keyfile, runs the same wiring functions against it, and asserts —
+# in ok/BAD lines a gate can consume — that the hook landed before
+# filesystems in every file, that FILES gained the keyfile, and that a second
+# run is a byte-identical no-op. The gate therefore computes that the sed
+# actually bites the exact bytes this profile ships, instead of stating it
+# in prose (owner ruling 2026-08-17).
+#
+# Ships via airootfs only (the restore loop in build-iso.sh reinstalls every
+# committed usr/local/bin launcher LAST at 0755 — the two-copy rule's one
+# inversion), so there is deliberately no nyxus-scripts twin of this file.
+#
+# © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+# ============================================================================
+set -uo pipefail
+
+say()  { printf '[nyxus-fde-wire] %s\n' "$*"; }
+FDEROOT="${NYXFDE_ROOT:-}"
+
+# ── the wiring, over ${FDEROOT}/etc ─────────────────────────────────────────
+_hook_files() {
+  # mkinitcpio's read order: the main conf, then conf.d/*.conf lexically.
+  local f
+  [[ -f "${FDEROOT}/etc/mkinitcpio.conf" ]] && printf '%s\n' "${FDEROOT}/etc/mkinitcpio.conf"
+  for f in "${FDEROOT}"/etc/mkinitcpio.conf.d/*.conf; do
+    [[ -f "$f" ]] && printf '%s\n' "$f"
+  done
+  return 0
+}
+
+_effective_hooks() {
+  # Last HOOKS= line wins, wholesale — that is mkinitcpio's own merge rule.
+  local f line=""
+  while IFS= read -r f; do
+    while IFS= read -r l; do line="$l"; done < <(grep -E '^HOOKS=' "$f" 2>/dev/null)
+  done < <(_hook_files)
+  printf '%s\n' "$line"
+}
+
+wire_hooks() {
+  # Insert the unlock hook before `filesystems` in every HOOKS line that
+  # lacks one. Returns 1 if any file that declares HOOKS could not be wired.
+  local f hook bad=0
+  while IFS= read -r f; do
+    grep -qE '^HOOKS=' "$f" || continue
+    if grep -qE '^HOOKS=.*[( ](sd-encrypt|encrypt)[ )]' "$f"; then
+      say "HOOKS already carries an unlock hook: ${f#"${FDEROOT}"}"
+      continue
+    fi
+    # Match the flavour of THAT line: systemd initramfs wants sd-encrypt.
+    if grep -qE '^HOOKS=.*[( ]systemd[ )]' "$f"; then hook="sd-encrypt"; else hook="encrypt"; fi
+    if ! grep -qE '^HOOKS=.*[( ]filesystems[ )]' "$f"; then
+      say "WARN: ${f#"${FDEROOT}"} declares HOOKS without 'filesystems' — left untouched"
+      continue
+    fi
+    sed -i -E "s/^(HOOKS=\([^)]*[( ])filesystems([ )])/\1${hook} filesystems\2/" "$f"
+    if grep -qE "^HOOKS=.*[( ]${hook}[ )]" "$f"; then
+      say "inserted '${hook}' before 'filesystems' in ${f#"${FDEROOT}"}"
+    else
+      say "ERROR: failed to insert '${hook}' into ${f#"${FDEROOT}"}"
+      bad=1
+    fi
+  done < <(_hook_files)
+  return "${bad}"
+}
+
+wire_keyfile() {
+  # Embed the Calamares keyfile in the initramfs, if (and only if) the
+  # luksbootkeyfile job created one — see the header for why its absence is
+  # the safe, expected state on an unencrypted-/boot layout.
+  local key="${FDEROOT}/crypto_keyfile.bin" f had=0
+  if [[ ! -f "$key" ]]; then
+    say "no /crypto_keyfile.bin on the target — initramfs will prompt for the passphrase (normal when /boot is unencrypted)"
+    return 0
+  fi
+  chmod 0400 "$key" 2>/dev/null || true
+  while IFS= read -r f; do
+    grep -qE '^FILES=' "$f" || continue
+    had=1
+    if grep -qE '^FILES=.*crypto_keyfile\.bin' "$f"; then
+      say "FILES already carries the keyfile: ${f#"${FDEROOT}"}"
+    else
+      sed -i -E 's|^(FILES=\()([^)]*)\)|\1\2 /crypto_keyfile.bin)|; s|^FILES=\( /|FILES=(/|' "$f"
+      grep -qE '^FILES=.*crypto_keyfile\.bin' "$f" \
+        && say "added /crypto_keyfile.bin to FILES in ${f#"${FDEROOT}"}" \
+        || { say "ERROR: failed to add the keyfile to FILES in ${f#"${FDEROOT}"}"; return 1; }
+    fi
+  done < <(_hook_files)
+  if (( ! had )); then
+    printf 'FILES=(/crypto_keyfile.bin)\n' >> "${FDEROOT}/etc/mkinitcpio.conf"
+    say "no FILES line anywhere — appended one to /etc/mkinitcpio.conf"
+  fi
+  return 0
+}
+
+verify_effective() {
+  # The check the whole script exists for: the EFFECTIVE HOOKS line (after
+  # mkinitcpio's last-wins merge) must unlock before it mounts, and before
+  # any resume. Computed from the same files mkinitcpio will read.
+  local eff inner tok i=0 p_enc=-1 p_fs=-1 p_res=-1
+  eff="$(_effective_hooks)"
+  [[ -n "$eff" ]] || { say "ERROR: no HOOKS line found at all"; return 1; }
+  inner="${eff#*(}"; inner="${inner%%)*}"
+  for tok in $inner; do
+    i=$((i + 1))
+    case "$tok" in
+      encrypt|sd-encrypt) p_enc=$i ;;
+      filesystems)        p_fs=$i ;;
+      resume)             p_res=$i ;;
+    esac
+  done
+  if (( p_enc < 0 )); then say "ERROR: effective HOOKS has no unlock hook: ${eff}"; return 1; fi
+  if (( p_fs >= 0 && p_enc > p_fs )); then say "ERROR: unlock hook sits AFTER filesystems: ${eff}"; return 1; fi
+  if (( p_res >= 0 && p_enc > p_res )); then say "ERROR: unlock hook sits AFTER resume: ${eff}"; return 1; fi
+  say "effective HOOKS verified: ${eff}"
+  return 0
+}
+
+# ── selftest (gate 13s83) ───────────────────────────────────────────────────
+if [[ "${1:-}" == "--selftest" ]]; then
+  SRC="${2:?usage: nyxus-fde-wire --selftest <airootfs-dir>}"
+  ck() { if "$@" >/dev/null 2>&1; then return 0; else return 1; fi; }
+  T="$(mktemp -d "${TMPDIR:-/tmp}/nyxfde-XXXXXXXX")" || { printf 'BAD cannot create scratch dir\n'; exit 1; }
+  trap 'rm -rf "${T}"' EXIT
+  mkdir -p "${T}/etc/mkinitcpio.conf.d"
+  cp -f "${SRC}/etc/mkinitcpio.conf" "${T}/etc/mkinitcpio.conf" 2>/dev/null \
+    || { printf 'BAD %s\n' "shipped etc/mkinitcpio.conf missing under ${SRC}"; exit 1; }
+  # The shipped drop-ins, minus archiso.conf — the install sequence deletes it
+  # before this script ever runs (shellprocess@initramfs step 1).
+  for f in "${SRC}"/etc/mkinitcpio.conf.d/*.conf; do
+    [[ -f "$f" && "$(basename "$f")" != "archiso.conf" ]] && cp -f "$f" "${T}/etc/mkinitcpio.conf.d/"
+  done
+  : > "${T}/crypto_keyfile.bin"
+  FDEROOT="${T}"
+  wire_hooks   >/dev/null 2>&1 && printf 'ok  wire_hooks ran on the shipped bytes\n' || { printf 'BAD wire_hooks failed on the shipped bytes\n'; exit 1; }
+  wire_keyfile >/dev/null 2>&1 && printf 'ok  wire_keyfile ran on the shipped bytes\n' || { printf 'BAD wire_keyfile failed on the shipped bytes\n'; exit 1; }
+  _bad=0
+  for f in "${T}/etc/mkinitcpio.conf" "${T}"/etc/mkinitcpio.conf.d/*.conf; do
+    [[ -f "$f" ]] || continue
+    grep -qE '^HOOKS=' "$f" || continue
+    rel="${f#"${T}"}"
+    if grep -qE '^HOOKS=.*[( ](encrypt|sd-encrypt) [^)]*filesystems' "$f"; then
+      printf 'ok  %s: unlock hook sits before filesystems\n' "${rel}"
+    else
+      printf 'BAD %s: unlock hook did not land before filesystems: %s\n' "${rel}" "$(grep -E '^HOOKS=' "$f" | tail -1)"; _bad=1
+    fi
+  done
+  grep -qE '^FILES=.*crypto_keyfile\.bin' "${T}/etc/mkinitcpio.conf" \
+    && printf 'ok  FILES carries /crypto_keyfile.bin\n' \
+    || { printf 'BAD FILES did not gain /crypto_keyfile.bin\n'; _bad=1; }
+  verify_effective >/dev/null 2>&1 \
+    && printf 'ok  effective HOOKS verified (unlock before filesystems, before resume)\n' \
+    || { printf 'BAD effective-HOOKS verification failed\n'; _bad=1; }
+  _sum1="$(cat "${T}/etc/mkinitcpio.conf" "${T}"/etc/mkinitcpio.conf.d/*.conf 2>/dev/null | md5sum)"
+  wire_hooks >/dev/null 2>&1; wire_keyfile >/dev/null 2>&1
+  _sum2="$(cat "${T}/etc/mkinitcpio.conf" "${T}"/etc/mkinitcpio.conf.d/*.conf 2>/dev/null | md5sum)"
+  if [[ "${_sum1}" == "${_sum2}" ]]; then
+    printf 'ok  second run is a byte-identical no-op (idempotent)\n'
+  else
+    printf 'BAD second run changed the files again — the edit is not idempotent\n'; _bad=1
+  fi
+  exit "${_bad}"
+fi
+
+# ── install mode ────────────────────────────────────────────────────────────
+# Is the root we are installing a LUKS mapper? Answered from the mounted
+# tree, never from a config: findmnt inside the chroot sees the target's
+# root mount (mount.conf binds /proc), and cryptsetup answers for the mapper.
+src="$(findmnt -no SOURCE / 2>/dev/null || true)"
+src="${src%%\[*}"          # btrfs subvols report as /dev/mapper/x[/@]
+enc=0
+if [[ "${src}" == /dev/mapper/* ]]; then
+  name="${src##*/}"
+  if command -v cryptsetup >/dev/null 2>&1 \
+     && cryptsetup status "${name}" 2>/dev/null | grep -qE '^[[:space:]]*type:[[:space:]]*LUKS'; then
+    enc=1
+  fi
+fi
+
+if (( ! enc )); then
+  say "root (${src:-unknown}) is not a LUKS mapper — nothing to wire, exiting clean"
+  exit 0
+fi
+
+say "root is LUKS (${src}) — wiring the initramfs"
+rc=0
+wire_hooks        || rc=1
+wire_keyfile      || rc=1
+verify_effective  || rc=1
+if (( rc )); then
+  say "FATAL: FDE wiring incomplete — failing the install rather than shipping a disk the initramfs cannot unlock"
+  exit 1
+fi
+say "done — mkinitcpio -P (next step) will build the unlocking initramfs"
+exit 0

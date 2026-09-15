@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+# ============================================================================
+# nyxus-fde-check — is this machine's root encrypted, and how does it unlock?
+#
+#     nyxus-fde-check                the human report
+#     nyxus-fde-check --json         the same, machine-readable
+#     nyxus-fde-check --install-log  chroot-safe variant for the Calamares
+#                                    session log: reads files, never /proc
+#                                    /cmdline (the chroot runs on the LIVE
+#                                    kernel's cmdline, which would lie),
+#                                    and always exits 0 so a report can
+#                                    never fail an install it is narrating.
+#
+# Everything is MEASURED from the machine it runs on — findmnt for what root
+# actually is, cryptsetup for what the mapper actually holds, the mkinitcpio
+# files for the effective HOOKS line (last writer wins, same merge rule
+# mkinitcpio applies), /etc/default/grub + grub.cfg for how the bootloader
+# gets in. Nothing is inferred from what the installer intended (TRK-1373).
+#
+# Exit codes (report modes): 0 — report produced (encrypted or not; this is
+# a status tool, not a policy gate). 2 — bad usage.
+#
+# Ships via airootfs only (restore-loop inversion; no nyxus-scripts twin).
+#
+# © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+# ============================================================================
+set -uo pipefail
+
+MODE="report"
+case "${1:-}" in
+  "")              MODE="report" ;;
+  --json)          MODE="json" ;;
+  --install-log)   MODE="install" ;;
+  -h|--help)       sed -n '3,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  *) printf 'nyxus-fde-check: unknown argument %s (try --help)\n' "$1" >&2; exit 2 ;;
+esac
+
+# ── measurements ────────────────────────────────────────────────────────────
+src="$(findmnt -no SOURCE / 2>/dev/null || true)"; src="${src%%\[*}"
+encrypted="no"; mapper="-"; luks_type="-"; cipher="-"
+if [[ "${src}" == /dev/mapper/* ]]; then
+  mapper="${src##*/}"
+  # PRIMARY detection is sysfs, because it needs NO privilege: the dm uuid at
+  # /sys/class/block/dm-N/dm/uuid is world-readable and starts CRYPT-LUKS2-…
+  # for a LUKS mapper. `cryptsetup status` is root-only, and the first VM
+  # proof (2026-08-22, UEFI) caught this tool reporting "encrypted root: no"
+  # to the very user sitting inside the encrypted system, because cryptsetup
+  # failed silently without root. Measured in that VM: tester@tty2 `cat
+  # /sys/class/block/dm-0/dm/uuid` → CRYPT-LUKS2-… (docs/proof/fde-vm-0822).
+  _dm="$(readlink -f "/dev/mapper/${mapper}" 2>/dev/null || true)"
+  _dmuuid=""
+  [[ -n "${_dm}" ]] && _dmuuid="$(cat "/sys/class/block/${_dm##*/}/dm/uuid" 2>/dev/null || true)"
+  case "${_dmuuid}" in
+    CRYPT-LUKS2-*) encrypted="yes"; luks_type="LUKS2" ;;
+    CRYPT-LUKS1-*) encrypted="yes"; luks_type="LUKS1" ;;
+    CRYPT-LUKS-*)  encrypted="yes"; luks_type="LUKS" ;;
+  esac
+  # cryptsetup adds the cipher when we are allowed to ask it (root).
+  if command -v cryptsetup >/dev/null 2>&1; then
+    _st="$(cryptsetup status "${mapper}" 2>/dev/null || true)"
+    if grep -qE '^[[:space:]]*type:[[:space:]]*LUKS' <<<"${_st}"; then
+      encrypted="yes"
+      luks_type="$(awk '/^[[:space:]]*type:/   {print $2; exit}' <<<"${_st}")"
+      cipher="$(awk    '/^[[:space:]]*cipher:/ {print $2; exit}' <<<"${_st}")"
+    fi
+  fi
+  [[ "${encrypted}" == "yes" && "${cipher}" == "-" ]] && cipher="run as root to read the cipher"
+fi
+
+# Effective HOOKS: mkinitcpio.conf, then conf.d/*.conf lexically, last wins.
+eff_hooks=""
+for _f in /etc/mkinitcpio.conf /etc/mkinitcpio.conf.d/*.conf; do
+  [[ -f "${_f}" ]] || continue
+  while IFS= read -r _l; do eff_hooks="${_l}"; done < <(grep -E '^HOOKS=' "${_f}" 2>/dev/null)
+done
+hook="-"
+grep -qE '[( ]sd-encrypt[ )]' <<<"${eff_hooks}" && hook="sd-encrypt"
+[[ "${hook}" == "-" ]] && grep -qE '[( ]encrypt[ )]' <<<"${eff_hooks}" && hook="encrypt"
+
+grub_cryptodisk="no"
+grep -qsE '^GRUB_ENABLE_CRYPTODISK=.?y' /etc/default/grub && grub_cryptodisk="yes"
+
+keyfile_on_root="no"
+[[ -f /crypto_keyfile.bin ]] && keyfile_on_root="yes"
+
+# Kernel cmdline: the running one, except in --install-log (chroot lies there
+# — /proc/cmdline is the LIVE stick's), where grub.cfg is the honest source.
+cmdline_src="/proc/cmdline"; [[ "${MODE}" == "install" ]] && cmdline_src="/boot/grub/grub.cfg"
+crypt_cmdline="$(grep -hoE 'cryptdevice=[^ "]+|rd\.luks\.[^ "]+' "${cmdline_src}" 2>/dev/null | sort -u | tr '\n' ' ')"
+crypt_cmdline="${crypt_cmdline% }"; [[ -z "${crypt_cmdline}" ]] && crypt_cmdline="-"
+
+cryptomount="no"
+grep -qs 'cryptomount' /boot/grub/grub.cfg && cryptomount="yes"
+
+crypttab_lines=0
+[[ -f /etc/crypttab ]] && crypttab_lines="$(grep -cE '^[^#[:space:]]' /etc/crypttab 2>/dev/null || true)"
+[[ -z "${crypttab_lines}" ]] && crypttab_lines="0"
+
+unlock="-"
+if [[ "${encrypted}" == "yes" ]]; then
+  if [[ "${grub_cryptodisk}" == "yes" && "${keyfile_on_root}" == "yes" ]]; then
+    unlock="passphrase once at GRUB (cryptodisk); initramfs auto-unlocks with the embedded keyfile"
+  elif [[ "${grub_cryptodisk}" == "yes" ]]; then
+    unlock="passphrase at GRUB (cryptodisk), and again at the initramfs prompt"
+  elif [[ "${hook}" != "-" ]]; then
+    unlock="passphrase at the initramfs prompt (Plymouth when active)"
+  else
+    unlock="UNWIRED — root is LUKS but the effective HOOKS has no unlock hook"
+  fi
+fi
+
+# ── output ──────────────────────────────────────────────────────────────────
+if [[ "${MODE}" == "json" ]]; then
+  jesc() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; printf '%s' "$s"; }
+  printf '{"encrypted_root":"%s","root_source":"%s","mapper":"%s","luks_type":"%s","cipher":"%s","unlock_method":"%s","unlock_hook":"%s","grub_cryptodisk":"%s","keyfile_on_root":"%s","crypt_cmdline":"%s","grub_cfg_cryptomount":"%s","crypttab_entries":%s}\n' \
+    "$(jesc "${encrypted}")" "$(jesc "${src:--}")" "$(jesc "${mapper}")" "$(jesc "${luks_type}")" \
+    "$(jesc "${cipher}")" "$(jesc "${unlock}")" "$(jesc "${hook}")" "$(jesc "${grub_cryptodisk}")" \
+    "$(jesc "${keyfile_on_root}")" "$(jesc "${crypt_cmdline}")" "$(jesc "${cryptomount}")" "${crypttab_lines:-0}"
+  exit 0
+fi
+
+pfx=""
+[[ "${MODE}" == "install" ]] && pfx="[nyxus-fde-check] "
+printf '%sencrypted root      : %s\n' "${pfx}" "${encrypted}"
+printf '%sroot source         : %s\n' "${pfx}" "${src:--}"
+if [[ "${encrypted}" == "yes" ]]; then
+  printf '%sLUKS                : %s (%s) on mapper %s\n' "${pfx}" "${luks_type}" "${cipher}" "${mapper}"
+  printf '%sunlock method       : %s\n' "${pfx}" "${unlock}"
+  printf '%sunlock hook (HOOKS) : %s\n' "${pfx}" "${hook}"
+  printf '%sGRUB cryptodisk     : %s   grub.cfg cryptomount: %s\n' "${pfx}" "${grub_cryptodisk}" "${cryptomount}"
+  printf '%skeyfile on root     : %s\n' "${pfx}" "${keyfile_on_root}"
+  printf '%scrypt cmdline       : %s   (from %s)\n' "${pfx}" "${crypt_cmdline}" "${cmdline_src}"
+  printf '%scrypttab entries    : %s\n' "${pfx}" "${crypttab_lines:-0}"
+else
+  printf '%sunlock method       : -   (nothing is encrypted; this is the stock install)\n' "${pfx}"
+fi
+exit 0

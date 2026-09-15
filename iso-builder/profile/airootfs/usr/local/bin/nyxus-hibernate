@@ -1,0 +1,752 @@
+#!/usr/bin/env bash
+# ════════════════════════════════════════════════════════════════════
+# nyxus-hibernate · the ONE place hibernate is wired, checked and invoked
+#
+#   nyxus-hibernate --setup [--strict]   install-time / repair: find the
+#                                        disk-backed swap the installer laid
+#                                        down, write resume= (and
+#                                        resume_offset= for a swapfile) into
+#                                        the kernel command line, make sure
+#                                        the initramfs carries the `resume`
+#                                        hook. Idempotent: re-running never
+#                                        changes a correct system. Exits 0
+#                                        unless --strict (an installer step
+#                                        that fails the install over a
+#                                        missing swap would be worse than no
+#                                        hibernate).
+#   nyxus-hibernate --check [--quiet|--json]
+#                                        report whether hibernate is POSSIBLE
+#                                        on this system, and why not if not:
+#                                        kernel support, a disk-backed swap
+#                                        (zram does not count), swap >= RAM,
+#                                        resume= on the running kernel's
+#                                        command line pointing at that swap,
+#                                        logind's own answer. Exit 0 = yes.
+#   nyxus-hibernate --status             one line for a bar/OSD.
+#   nyxus-hibernate [now] [--force]      the session entry point: run the
+#                                        check, then `systemctl hibernate`.
+#                                        A face that wants a Hibernate tile
+#                                        calls `--check --quiet` to decide
+#                                        whether to SHOW it and `now` to act.
+#   nyxus-hibernate --selftest           exercise the command-line and
+#                                        HOOKS editors on scratch files
+#                                        (both quote styles, idempotency).
+#                                        verify-profile runs this; a --check
+#                                        mode no gate runs is documentation.
+#
+# WHY A SCRIPT AND NOT THREE LINES IN THE INSTALLER (2026-08-22, CS-1059)
+#   The shipped Calamares (grubcfg module) writes resume=UUID= for a swap
+#   PARTITION on its own, and nothing for a swapfile; it also rewrites
+#   /etc/default/grub with SINGLE quotes, which a later sed that expects
+#   double quotes walks past. The TUI path (nyxus-install → nyxus-postinstall)
+#   has no grubcfg module at all. Two install paths, two quote styles, two
+#   swap shapes — one script that derives the answer from /etc/fstab and
+#   writes it the same way every time is the only version that stays true.
+#
+# NEVER uses $word shell variables in a Calamares command line: the
+# shellprocess module expands those itself. The installer calls this by a
+# bare path. Root required for --setup and for `now`; --check degrades to
+# "not verified" where it cannot read.
+# © 2026 JOSEPH A. SIERENGOWSKI · NYX-J5W-2026-SIERENGOWSKI-LOCKED
+# ════════════════════════════════════════════════════════════════════
+set -u
+
+GRUB_DEFAULT="${NYXUS_GRUB_DEFAULT:-/etc/default/grub}"
+MKINIT_CONF="${NYXUS_MKINITCPIO_CONF:-/etc/mkinitcpio.conf}"
+MKINIT_DIR="${NYXUS_MKINITCPIO_DIR:-/etc/mkinitcpio.conf.d}"
+FSTAB="${NYXUS_FSTAB:-/etc/fstab}"
+# When any of those is overridden this is a test against scratch files, so the
+# two commands that would touch the REAL system (grub-mkconfig, mkinitcpio -P)
+# are skipped and root is not demanded. On a real run nothing is overridden.
+SCRATCH=0
+[[ -n "${NYXUS_GRUB_DEFAULT:-}${NYXUS_MKINITCPIO_CONF:-}${NYXUS_MKINITCPIO_DIR:-}${NYXUS_FSTAB:-}" ]] && SCRATCH=1
+
+# ── THE SWAPFILE SIZING RULE (SUP ruling on TRK-1305, 2026-08-22) ──────────
+# "Hibernate must work on a default install where the disk can afford it. No
+# silent impossibility." So the installer's default swap choice is a SWAPFILE
+# (partition.conf), and its size is DERIVED here rather than accepted from the
+# shipped Calamares fstab module, which hardcodes `desired_size = 512MiB` —
+# a size that can never hold a hibernation image on any machine this build
+# targets. That module still CREATES the file (the fstab line and the @swap
+# subvolume are its job, not ours); this script then sizes it.
+#
+#   need = ceil(RAM to whole GiB) + SWAP_MARGIN_GIB, capped at SWAP_CAP_GIB
+#   grow only if at least FREE_FLOOR_GIB remains free AFTERWARDS
+#   otherwise: leave the small swapfile as ordinary swap, write NO resume=,
+#              and RECORD WHY in the state file, so Settings / the PowerMenu
+#              can say "hibernate unavailable: <reason>" instead of just
+#              hiding the tile.
+#
+# The cap is deliberate and has a consequence worth stating rather than
+# discovering: above (SWAP_CAP_GIB - SWAP_MARGIN_GIB) GiB of RAM the capped
+# swapfile is SMALLER than RAM, so `--check` refuses on the swap>=RAM rung.
+# That is the ruling working as written — `--check` stays the single authority
+# on whether hibernate is possible, and it says why.
+SWAP_MARGIN_GIB="${NYXUS_SWAP_MARGIN_GIB:-2}"
+SWAP_CAP_GIB="${NYXUS_SWAP_CAP_GIB:-40}"
+FREE_FLOOR_GIB="${NYXUS_FREE_FLOOR_GIB:-25}"
+STATE_FILE="${NYXUS_HIB_STATE:-/var/lib/nyxus/hibernate.state}"
+GIB=1073741824
+# TRK-2995. A live ISO has nowhere to write a hibernation image. The checker
+# must SAY that, in words a person can act on, and must never flip available
+# to true just because the kernel lists `disk` in /sys/power/state.
+LIVE_REASON="this is a live USB session; Hibernate needs an installed system with disk-backed swap"
+
+# cmdline_is_live CMDLINE
+# Pure string test so --selftest can drive it. archiso tokens only — resume=
+# on an installed box must not look live.
+cmdline_is_live() {
+  local c=" $1 "
+  [[ "$c" == *" archisobasedir="* || "$c" == *" archisolabel="* \
+     || "$c" == *" archiso="* || "$c" == *" copytoram="* ]]
+}
+
+is_live_iso() {
+  [[ -d /run/archiso ]] && return 0
+  cmdline_is_live "$(cat /proc/cmdline 2>/dev/null)"
+}
+
+# hib_plan RAM_KB CURRENT_FILE_BYTES FREE_BYTES
+# Pure arithmetic, no filesystem access — which is what makes it testable, and
+# `--selftest` is its runner. Prints: "<need_bytes> <action> <reason>"
+#   keep  the file is already >= need
+#   grow  resize to need; the free floor still holds afterwards
+#   skip  cannot afford it; the reason is words a person reads
+hib_plan() {
+  local ram_kb="$1" cur="$2" free="$3" ram_gib need_gib need after
+  ram_gib=$(( (ram_kb + 1048575) / 1048576 ))          # ceil(RAM) in GiB
+  need_gib=$(( ram_gib + SWAP_MARGIN_GIB ))
+  (( need_gib > SWAP_CAP_GIB )) && need_gib=${SWAP_CAP_GIB}
+  need=$(( need_gib * GIB ))
+  if (( cur >= need )); then
+    printf '%s keep swapfile is already %s GiB, at or above the %s GiB this machine needs\n' \
+      "${need}" "$(( cur / GIB ))" "${need_gib}"; return 0
+  fi
+  after=$(( free + cur - need ))
+  if (( after >= FREE_FLOOR_GIB * GIB )); then
+    printf '%s grow sizing the swapfile to %s GiB (RAM %s GiB + %s GiB margin, cap %s GiB); %s GiB still free afterwards\n' \
+      "${need}" "${need_gib}" "${ram_gib}" "${SWAP_MARGIN_GIB}" "${SWAP_CAP_GIB}" "$(( after / GIB ))"; return 0
+  fi
+  printf '%s skip not enough disk for a swapfile at or above RAM: %s GiB needed, %s GiB available, and this build keeps %s GiB free after the install\n' \
+    "${need}" "${need_gib}" "$(( (free + cur) / GIB ))" "${FREE_FLOOR_GIB}"; return 0
+}
+
+# Record the install-time verdict where a person — and `--check`, and therefore
+# Settings and the PowerMenu — can read it. An unavailable hibernate that says
+# WHY is the point of the ruling; a silently missing tile is not.
+state_write() {
+  local avail="$1" reason="$2" kind="${3:-}" bytes="${4:-}" need="${5:-}" dir
+  dir="$(dirname "${STATE_FILE}")"
+  mkdir -p "${dir}" 2>/dev/null || { warn "cannot create ${dir} — hibernate state not recorded"; return 1; }
+  {
+    printf '# nyxus-hibernate install-time verdict — read by `nyxus-hibernate --check`\n'
+    printf '# Rewritten by every `nyxus-hibernate --setup`. Not hand-edited.\n'
+    printf 'available=%s\n'    "${avail}"
+    printf 'reason=%s\n'       "${reason}"
+    printf 'swap_kind=%s\n'    "${kind}"
+    printf 'swap_bytes=%s\n'   "${bytes}"
+    printf 'needed_bytes=%s\n' "${need}"
+    printf 'stamp=%s\n'        "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)"
+  } > "${STATE_FILE}" 2>/dev/null || { warn "could not write ${STATE_FILE}"; return 1; }
+  chmod 0644 "${STATE_FILE}" 2>/dev/null
+  return 0
+}
+state_get() {
+  [[ -r "${STATE_FILE}" ]] || return 1
+  sed -n "s/^$1=//p" "${STATE_FILE}" | tail -1
+}
+
+# Recreate the swapfile at SIZE bytes, preserving what btrfs needs (NOCOW, no
+# compression). Recreating rather than extending is safe here and only here: at
+# install time the file has never held a page, and btrfs will not extend a
+# swapfile in place anyway.
+swapfile_resize() {
+  local f="$1" size="$2" fstype mib
+  fstype="$(findmnt -no FSTYPE -T "$f" 2>/dev/null)"
+  mib=$(( size / 1048576 ))
+  swapoff "$f" 2>/dev/null
+  rm -f "$f" || { warn "could not remove ${f} to resize it"; return 1; }
+  if [[ "$fstype" == btrfs ]] && btrfs filesystem mkswapfile --size "${mib}m" "$f" >/dev/null 2>&1; then
+    : # btrfs-progs made it NOCOW, preallocated and mkswap'd in one step
+  else
+    ( umask 077; : > "$f" ) || { warn "could not create ${f}"; return 1; }
+    [[ "$fstype" == btrfs ]] && chattr +C "$f" 2>/dev/null
+    if ! dd if=/dev/zero of="$f" bs=1M count="${mib}" status=none 2>/dev/null; then
+      warn "could not allocate ${mib} MiB for ${f}"; return 1
+    fi
+    chmod 0600 "$f"
+    mkswap "$f" >/dev/null 2>&1 || { warn "mkswap failed on ${f}"; return 1; }
+  fi
+  chmod 0600 "$f"
+  return 0
+}
+
+say()  { printf '%s\n' "$*"; }
+warn() { printf 'nyxus-hibernate: WARN %s\n' "$*" >&2; }
+die()  { printf 'nyxus-hibernate: %s\n' "$*" >&2; exit "${2:-1}"; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# ── the kernel command line editor ─────────────────────────────────────
+# Rewrites GRUB_CMDLINE_LINUX_DEFAULT in FILE so that every resume= and
+# resume_offset= token is gone and the tokens in ADD (space separated, may
+# be empty) are appended. Accepts single OR double quotes on the way in,
+# always writes double quotes on the way out (so the rest of this build's
+# tooling, which greps for ="…", sees it). Creates the line if absent. Writes
+# only when the content changes. Prints "changed" or "unchanged".
+cmdline_set_resume() {
+  local file="$1" add="${2:-}" tmp
+  [[ -f "$file" ]] || { warn "$file is missing — nothing to edit"; return 1; }
+  tmp="$(mktemp "${file}.XXXXXX")" || return 1
+  awk -v add="$add" '
+    BEGIN { done = 0 }
+    /^[[:space:]]*GRUB_CMDLINE_LINUX_DEFAULT=/ {
+      if (done) { next }                      # a second definition is a stale duplicate: drop it
+      line = $0
+      sub(/^[[:space:]]*GRUB_CMDLINE_LINUX_DEFAULT=/, "", line)
+      q = substr(line, 1, 1)
+      if (q == "\"" || q == "\047") {
+        line = substr(line, 2)
+        if (substr(line, length(line), 1) == q) line = substr(line, 1, length(line) - 1)
+      }
+      n = split(line, toks, /[ \t]+/); out = ""
+      for (i = 1; i <= n; i++) {
+        t = toks[i]
+        if (t == "") continue
+        if (t ~ /^resume=/ || t ~ /^resume_offset=/) continue
+        out = out (out == "" ? "" : " ") t
+      }
+      if (add != "") out = out (out == "" ? "" : " ") add
+      print "GRUB_CMDLINE_LINUX_DEFAULT=\"" out "\""
+      done = 1; next
+    }
+    { print }
+    END { if (!done) print "GRUB_CMDLINE_LINUX_DEFAULT=\"" add "\"" }
+  ' "$file" > "$tmp" || { rm -f "$tmp"; return 1; }
+  if cmp -s "$file" "$tmp"; then
+    rm -f "$tmp"; say "unchanged"
+  else
+    chmod --reference="$file" "$tmp" 2>/dev/null
+    mv -f "$tmp" "$file" && say "changed"
+  fi
+}
+
+# ── the initramfs HOOKS editor ─────────────────────────────────────────
+# mkinitcpio merges /etc/mkinitcpio.conf with /etc/mkinitcpio.conf.d/*.conf
+# in lexical order and the LAST HOOKS= wins, so the edit has to land in the
+# file that wins or it changes nothing (the live ISO's archiso.conf is exactly
+# that kind of override; the installer deletes it before mkinitcpio -P).
+hooks_winner() {
+  local conf="$1" dir="$2" f winner=""
+  [[ -f "$conf" ]] && grep -qE '^[[:space:]]*HOOKS=' "$conf" && winner="$conf"
+  if [[ -d "$dir" ]]; then
+    while IFS= read -r f; do
+      grep -qE '^[[:space:]]*HOOKS=' "$f" && winner="$f"
+    done < <(find "$dir" -maxdepth 1 -type f -name '*.conf' | sort)
+  fi
+  [[ -n "$winner" ]] && printf '%s\n' "$winner"
+}
+hooks_line() { sed 's/#.*//' "$1" | grep -E '^[[:space:]]*HOOKS=' | tail -1; }
+hooks_has()  { hooks_line "$1" | grep -qE "HOOKS=\(([^)]*[[:space:]])?$2([[:space:]][^)]*)?\)"; }
+# Insert `resume` into the winning HOOKS: after `filesystems` when present,
+# else before `fsck`, else last. With the `systemd` hook the resume logic is
+# built in and the hook is not needed. Prints changed/unchanged/systemd.
+hooks_add_resume() {
+  local file="$1" tmp
+  hooks_has "$file" systemd && { say "systemd"; return 0; }
+  hooks_has "$file" resume  && { say "unchanged"; return 0; }
+  tmp="$(mktemp "${file}.XXXXXX")" || return 1
+  awk '
+    /^[[:space:]]*HOOKS=\(/ && !done {
+      if ($0 ~ /[( ]filesystems[ )]/)      { sub(/filesystems/, "filesystems resume") }
+      else if ($0 ~ /[( ]fsck[ )]/)        { sub(/fsck/, "resume fsck") }
+      else                                 { sub(/\)/, " resume)") }
+      done = 1
+    }
+    { print }
+  ' "$file" > "$tmp" || { rm -f "$tmp"; return 1; }
+  chmod --reference="$file" "$tmp" 2>/dev/null
+  mv -f "$tmp" "$file" && say "changed"
+}
+
+# ── finding the swap the installer made ────────────────────────────────
+# From /etc/fstab (the target's, in the installer's chroot), never from
+# /proc/swaps (which in that chroot is the LIVE stick's table). A partition is
+# preferred over a file; zram never appears in fstab. Prints
+#   part <spec>        or    file <path>      or nothing.
+fstab_swap() {
+  local fstab="$1" spec mnt type part="" file=""
+  [[ -f "$fstab" ]] || return 1
+  while read -r spec mnt type _; do
+    [[ -z "$spec" || "$spec" == \#* ]] && continue
+    [[ "$type" == swap ]] || continue
+    case "$spec" in
+      /dev/zram*) continue ;;
+      UUID=*|PARTUUID=*|LABEL=*|PARTLABEL=*|/dev/*) [[ -z "$part" ]] && part="$spec" ;;
+      /*) [[ -z "$file" ]] && file="$spec" ;;
+    esac
+  done < <(sed 's/#.*//' "$fstab")
+  if   [[ -n "$part" ]]; then say "part $part"
+  elif [[ -n "$file" ]]; then say "file $file"
+  else return 1; fi
+}
+spec_to_dev() {
+  local spec="$1"
+  case "$spec" in
+    /dev/*) printf '%s\n' "$spec" ;;
+    *) have findfs && findfs "$spec" 2>/dev/null ;;
+  esac
+}
+dev_uuid() { have blkid && blkid -s UUID -o value "$1" 2>/dev/null; }
+# resume_offset of a swapfile: btrfs has its own mapping (map-swapfile -r
+# already answers in page units); everything else is the first physical
+# extent filefrag reports, which is in FILESYSTEM BLOCKS — the kernel wants
+# PAGES, so scale by blocksize/pagesize (equal on the common 4k/4k case, not
+# on an ext4 formatted with 1k blocks). Both need root to read the file.
+swapfile_offset() {
+  local f="$1" fstype off=""
+  fstype="$(findmnt -no FSTYPE -T "$f" 2>/dev/null)"
+  if [[ "$fstype" == btrfs ]]; then
+    have btrfs && off="$(btrfs inspect-internal map-swapfile -r "$f" 2>/dev/null | tr -dc '0-9')"
+  else
+    have filefrag && off="$(filefrag -v "$f" 2>/dev/null | awk -v ps="$(getconf PAGESIZE 2>/dev/null || echo 4096)" '
+      /blocks of [0-9]+ bytes/ { for (i = 1; i <= NF; i++) if ($i == "of") bs = $(i + 1) }
+      $1 ~ /^0:/ { gsub(/\.\./, "", $4); if (bs == "" || bs == 0) bs = 4096; printf "%d", $4 * bs / ps; exit }')"
+  fi
+  [[ -n "$off" ]] && printf '%s\n' "$off"
+}
+
+# ── --setup ────────────────────────────────────────────────────────────
+do_setup() {
+  local strict=0 rc=0 kind spec dev uuid off add="" changed hooksfile hres
+  local state_reason="" state_written=0 swap_bytes="" swap_need="" swap_kind=""
+  local _plan_ram _plan_cur _plan_free _plan_need _plan_act _plan_why
+  [[ "${1:-}" == --strict ]] && strict=1
+  [[ $EUID -eq 0 || $SCRATCH -eq 1 ]] || die "--setup needs root"
+
+  if read -r kind spec < <(fstab_swap "$FSTAB"); then
+    case "$kind" in
+      part)
+        dev="$(spec_to_dev "$spec")"
+        if [[ -z "$dev" || ! -b "$dev" ]]; then
+          warn "fstab swap '$spec' does not resolve to a block device here — resume= not written"; rc=1
+        else
+          uuid="$(dev_uuid "$dev")"
+          if [[ -n "$uuid" ]]; then
+            add="resume=UUID=${uuid}"; say "swap partition ${dev} (UUID=${uuid})"
+            swap_kind=partition
+            swap_bytes=$(( $(blockdev --getsize64 "$dev" 2>/dev/null || echo 0) ))
+          else warn "no UUID on ${dev} — resume= not written"; rc=1
+            state_reason="the swap partition ${dev} has no UUID"
+          fi
+        fi ;;
+      file)
+        if [[ ! -f "$spec" ]]; then
+          warn "fstab swapfile '$spec' is not present — resume= not written"; rc=1
+          state_reason="the installer laid down no swapfile at ${spec}"
+        else
+          # ── SIZE IT FIRST (TRK-1307, SUP ruling on TRK-1305) ───────────
+          # Calamares' fstab module made this file at its hardcoded 512 MiB.
+          # Derive what this machine actually needs and either grow it or
+          # record, in words, why hibernate cannot be offered here.
+          _plan_ram="$(awk '/^MemTotal:/{print $2}' /proc/meminfo 2>/dev/null)"; _plan_ram="${_plan_ram:-0}"
+          _plan_cur=$(stat -c %s "$spec" 2>/dev/null || echo 0)
+          _plan_free=$(( $(stat -f -c '%a' "$spec" 2>/dev/null || echo 0) * $(stat -f -c '%S' "$spec" 2>/dev/null || echo 0) ))
+          read -r _plan_need _plan_act _plan_why < <(hib_plan "${_plan_ram}" "${_plan_cur}" "${_plan_free}")
+          say "swap sizing: ${_plan_why}"
+          case "${_plan_act}" in
+            grow)
+              if (( SCRATCH )); then
+                say "scratch run — swapfile resize skipped"
+              elif swapfile_resize "$spec" "${_plan_need}"; then
+                say "swapfile resized to $(( _plan_need / GIB )) GiB"
+                _plan_cur="${_plan_need}"
+              else
+                warn "could not resize ${spec} — hibernate stays unavailable"
+                _plan_act=skip
+                _plan_why="the swapfile could not be resized to $(( _plan_need / GIB )) GiB"
+              fi ;;
+          esac
+          if [[ "${_plan_act}" == skip ]]; then
+            # Suspend-only fallback. The small swapfile stays — it is still
+            # useful as ordinary swap — but no resume= is written, and the
+            # reason is recorded rather than left for the user to guess.
+            state_reason="${_plan_why}"
+            state_write no "${_plan_why}" file "${_plan_cur}" "${_plan_need}" \
+              && say "recorded in ${STATE_FILE}: hibernate unavailable — ${_plan_why}" \
+              || warn "the fallback reason could not be recorded"
+            state_written=1
+          else
+            uuid="$(findmnt -no UUID -T "$spec" 2>/dev/null)"
+            off="$(swapfile_offset "$spec")"
+            if [[ -n "$uuid" && -n "$off" ]]; then
+              add="resume=UUID=${uuid} resume_offset=${off}"
+              say "swapfile ${spec} on UUID=${uuid} at offset ${off} ($(du -h "$spec" 2>/dev/null | cut -f1))"
+              swap_bytes="${_plan_cur}"; swap_need="${_plan_need}"
+            else
+              warn "could not derive UUID/offset for swapfile ${spec} (uuid='${uuid}' offset='${off}') — resume= not written"; rc=1
+              state_reason="the swapfile offset could not be derived"
+            fi
+          fi
+        fi ;;
+    esac
+  else
+    say "no disk-backed swap in ${FSTAB} — hibernate stays unavailable on this install; stripping any stale resume= token"
+    state_reason="this install has no disk-backed swap (the installer's No Swap choice)"
+  fi
+
+  if [[ -f "$GRUB_DEFAULT" ]]; then
+    changed="$(cmdline_set_resume "$GRUB_DEFAULT" "$add")" || rc=1
+    say "kernel command line (${GRUB_DEFAULT}): ${changed} → $(grep -E '^GRUB_CMDLINE_LINUX_DEFAULT=' "$GRUB_DEFAULT" | tail -1)"
+    # Regenerate only when a menu already exists: inside the Calamares sequence
+    # this step runs between grubcfg and bootloader, and bootloader writes the
+    # first grub.cfg from the file we just fixed. On an installed system a
+    # re-run must reach the menu, so regenerate then.
+    if [[ $SCRATCH -eq 0 && "$changed" == changed && -f /boot/grub/grub.cfg ]] && have grub-mkconfig; then
+      grub-mkconfig -o /boot/grub/grub.cfg >/dev/null 2>&1 && say "grub.cfg regenerated" || { warn "grub-mkconfig failed — the menu still carries the old command line"; rc=1; }
+    fi
+  else
+    warn "${GRUB_DEFAULT} is missing — no GRUB on this system? resume= not written"; rc=1
+  fi
+
+  hooksfile="$(hooks_winner "$MKINIT_CONF" "$MKINIT_DIR")"
+  if [[ -z "$hooksfile" ]]; then
+    warn "no HOOKS= line in ${MKINIT_CONF} or ${MKINIT_DIR} — initramfs not touched"; rc=1
+  else
+    hres="$(hooks_add_resume "$hooksfile")"
+    case "$hres" in
+      changed)   say "resume hook inserted in ${hooksfile} — rebuilding the initramfs"
+                 if (( SCRATCH )); then say "scratch run — mkinitcpio -P skipped"
+                 elif have mkinitcpio; then mkinitcpio -P >/dev/null 2>&1 && say "initramfs rebuilt" || { warn "mkinitcpio -P failed"; rc=1; }
+                 else warn "mkinitcpio not on PATH — rebuild the initramfs by hand"; rc=1; fi ;;
+      unchanged) say "resume hook already in ${hooksfile}" ;;
+      systemd)   say "${hooksfile} uses the systemd hook — resume is built in, nothing to insert" ;;
+      *)         warn "could not edit ${hooksfile}"; rc=1 ;;
+    esac
+  fi
+
+  # Every --setup ends by recording a verdict, so `--check` (and through it
+  # Settings and the PowerMenu) always has an install-time answer to quote —
+  # including the happy path, so a later regression is visible as a CHANGE
+  # rather than as an absence.
+  if (( ! state_written )); then
+    if [[ -n "${add}" ]]; then
+      state_write yes "" "${swap_kind:-file}" "${swap_bytes:-}" "${swap_need:-}" >/dev/null \
+        && say "recorded in ${STATE_FILE}: hibernate wired" \
+        || warn "the hibernate verdict could not be recorded"
+    else
+      state_write no "${state_reason:-hibernate was not wired on this install}" \
+        "${swap_kind:-}" "${swap_bytes:-}" "${swap_need:-}" >/dev/null \
+        && say "recorded in ${STATE_FILE}: hibernate unavailable — ${state_reason:-not wired}" \
+        || warn "the hibernate verdict could not be recorded"
+    fi
+  fi
+
+  (( strict )) && return "$rc"
+  return 0
+}
+
+# ── --check ────────────────────────────────────────────────────────────
+# Every line is a measurement; the verdict is derived from them.
+#   ok  <fact>      BAD <fact>      ..  <context, not a verdict>
+CHECK_BAD=0; CHECK_LINES=()
+c_ok()  { CHECK_LINES+=("ok  $*"); }
+c_bad() { CHECK_LINES+=("BAD $*"); CHECK_BAD=$((CHECK_BAD + 1)); }
+c_nb()  { CHECK_LINES+=("..  $*"); }
+CHECK_REASON=""
+INSTALL_REASON=""
+reason() { [[ -z "$CHECK_REASON" ]] && CHECK_REASON="$*"; }
+
+do_check() {
+  local mode="${1:-}" ram_kb swap_kb=0 fn ty sz used pri cmd res off rdev sdev sfile="" spart="" ftype
+  local live=0
+  # 0 · live USB / archiso (TRK-2995). First so reason() wins with the
+  #     sentence a person can act on. Later rungs still run — they are the
+  #     measurements. Never force-enable hibernate on a stick.
+  if is_live_iso; then
+    live=1
+    c_bad "live: archiso session — no persistent resume target; Hibernate stays unavailable"
+    reason "${LIVE_REASON}"
+  else
+    c_nb "live: not an archiso session"
+  fi
+  # 1 · the kernel
+  if [[ -r /sys/power/state ]] && grep -qw disk /sys/power/state; then
+    if [[ -r /sys/power/disk ]] && grep -q '\[disabled\]' /sys/power/disk; then
+      c_bad "kernel: /sys/power/disk is [disabled] (kernel lockdown / Secure Boot forbids hibernate)"; reason "the kernel forbids hibernation (lockdown)"
+    else
+      c_ok "kernel: supports suspend-to-disk ($(tr -d '\n' < /sys/power/disk 2>/dev/null))"
+    fi
+  else
+    c_bad "kernel: /sys/power/state has no 'disk' — no hibernation support"; reason "the kernel has no hibernation support"
+  fi
+  # 2 · a disk-backed swap, and how big against RAM
+  ram_kb="$(awk '/^MemTotal:/{print $2}' /proc/meminfo 2>/dev/null)"; ram_kb="${ram_kb:-0}"
+  if [[ -r /proc/swaps ]]; then
+    while read -r fn ty sz used pri; do
+      [[ "$fn" == Filename ]] && continue
+      case "$fn" in /dev/zram*) c_nb "swap: ${fn} is zram (${sz} kB) — RAM-backed, cannot hold a hibernation image"; continue ;; esac
+      swap_kb=$((swap_kb + sz))
+      [[ "$ty" == file ]] && sfile="${sfile:-$fn}" || spart="${spart:-$fn}"
+      c_nb "swap: ${fn} (${ty}, ${sz} kB, priority ${pri})"
+    done < /proc/swaps
+  fi
+  if (( swap_kb == 0 )); then
+    c_bad "swap: no disk-backed swap is active (zram does not count)"
+    reason "there is no disk-backed swap. Hibernate needs a swap file or partition on disk, at least as large as RAM"
+  elif (( swap_kb >= ram_kb )); then
+    c_ok "swap: disk-backed ${swap_kb} kB >= RAM ${ram_kb} kB"
+  else
+    c_bad "swap: disk-backed ${swap_kb} kB < RAM ${ram_kb} kB — the image may not fit"; reason "swap (${swap_kb} kB) is smaller than RAM (${ram_kb} kB)"
+  fi
+  # 3 · resume= on the running command line, pointing at that swap
+  cmd="$(cat /proc/cmdline 2>/dev/null)"
+  res="$(tr ' ' '\n' <<<"$cmd" | sed -n 's/^resume=//p' | tail -1)"
+  off="$(tr ' ' '\n' <<<"$cmd" | sed -n 's/^resume_offset=//p' | tail -1)"
+  if [[ -z "$res" ]]; then
+    c_bad "resume: no resume= on the kernel command line (run: sudo nyxus-hibernate --setup)"; reason "resume= is not on the kernel command line"
+  else
+    rdev="$(spec_to_dev "$res")"; [[ -n "$rdev" ]] && rdev="$(readlink -f "$rdev")"
+    if [[ -z "$rdev" ]]; then
+      c_bad "resume: resume=${res} does not resolve to a device"; reason "resume=${res} does not resolve"
+    elif [[ -n "$spart" && "$(readlink -f "$spart")" == "$rdev" ]]; then
+      c_ok "resume: resume=${res} is the active swap partition ${spart}"
+    elif [[ -n "$sfile" ]]; then
+      sdev="$(findmnt -no SOURCE -T "$sfile" 2>/dev/null)"; sdev="${sdev%%\[*}"; [[ -n "$sdev" ]] && sdev="$(readlink -f "$sdev")"
+      if [[ "$sdev" == "$rdev" && -n "$off" ]]; then
+        c_ok "resume: resume=${res} is the filesystem holding ${sfile}; resume_offset=${off}"
+        if [[ $EUID -eq 0 ]]; then
+          local real; real="$(swapfile_offset "$sfile")"
+          if [[ -n "$real" && "$real" != "$off" ]]; then c_bad "resume: resume_offset=${off} but ${sfile} starts at ${real} (run: sudo nyxus-hibernate --setup)"; reason "resume_offset is stale"; fi
+        else
+          c_nb "resume: offset not re-derived (needs root)"
+        fi
+      elif [[ "$sdev" == "$rdev" ]]; then
+        c_bad "resume: swapfile ${sfile} but no resume_offset= on the command line"; reason "resume_offset= is missing for the swapfile"
+      else
+        c_bad "resume: resume=${res} (${rdev}) is not where the active swap lives"; reason "resume= points at the wrong device"
+      fi
+    else
+      c_bad "resume: resume=${res} (${rdev}) is not the active swap"; reason "resume= points at the wrong device"
+    fi
+  fi
+  # 4 · logind's own answer, when there is a bus to ask
+  if have busctl && [[ -S /run/dbus/system_bus_socket ]]; then
+    local ans; ans="$(busctl --system --timeout=3 call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager CanHibernate 2>/dev/null | awk '{gsub(/"/,"",$2); print $2}')"
+    case "$ans" in
+      yes)       c_ok "logind: CanHibernate = yes" ;;
+      challenge) c_ok "logind: CanHibernate = challenge (authentication will be asked)" ;;
+      "")        c_nb "logind: not reachable (chroot or no session bus)" ;;
+      *)         c_bad "logind: CanHibernate = ${ans}"; reason "logind says hibernate is '${ans}'" ;;
+    esac
+  else
+    c_nb "logind: no system bus here (chroot?) — not asked"
+  fi
+  # 5 · the installer's own verdict, so an unavailable hibernate can SAY why
+  #     (SUP ruling on TRK-1305: no silent impossibility). The live rungs above
+  #     stay authoritative — this adds the sentence a person can act on, and it
+  #     is quoted verbatim into --json for Settings and the PowerMenu.
+  local st_avail st_reason
+  st_avail="$(state_get available 2>/dev/null)"
+  st_reason="$(state_get reason 2>/dev/null)"
+  INSTALL_REASON="${st_reason:-}"
+  if [[ -z "${st_avail}" ]]; then
+    c_nb "installer: no verdict recorded at ${STATE_FILE} (pre-TRK-1307 install, or --setup never ran)"
+  elif [[ "${st_avail}" == yes ]]; then
+    c_nb "installer: recorded hibernate as wired at install time"
+  else
+    c_nb "installer: recorded hibernate as UNAVAILABLE — ${st_reason:-no reason recorded}"
+    reason "${st_reason:-the installer did not wire hibernate}"
+  fi
+
+  local verdict="yes"; (( CHECK_BAD > 0 )) && verdict="no"
+  case "$mode" in
+    --json)
+      local r="${CHECK_REASON//\"/\\\"}"
+      local ir="${INSTALL_REASON//\"/\\\"}"
+      printf '{"available": %s, "live": %s, "swap_kb": %s, "ram_kb": %s, "resume": "%s", "reason": "%s", "install_reason": "%s"}\n' \
+        "$([[ $verdict == yes ]] && echo true || echo false)" \
+        "$([[ $live -eq 1 ]] && echo true || echo false)" \
+        "$swap_kb" "$ram_kb" "${res:-}" "$r" "$ir" ;;
+    --quiet) ;;
+    *)
+      printf '%s\n' "${CHECK_LINES[@]}"
+      if [[ $verdict == yes ]]; then say "hibernate: available"; else say "hibernate: not available — ${CHECK_REASON}"; fi ;;
+  esac
+  [[ $verdict == yes ]]
+}
+
+do_status() {
+  if do_check --quiet; then say "hibernate: available"; else say "hibernate: unavailable (${CHECK_REASON})"; return 1; fi
+}
+
+do_now() {
+  local force=0; [[ "${1:-}" == --force ]] && force=1
+  if (( ! force )) && ! do_check --quiet; then
+    die "not hibernating — ${CHECK_REASON}. Details: nyxus-hibernate --check" 1
+  fi
+  exec systemctl hibernate
+}
+
+# ── --selftest ─────────────────────────────────────────────────────────
+# Drives the two editors on scratch files and prints ok/BAD per property.
+# verify-profile 13s21 is its runner.
+do_selftest() {
+  local d f g r bad=0
+  st_ok()  { say "ok  $*"; }
+  st_bad() { say "BAD $*"; bad=$((bad + 1)); }
+  d="$(mktemp -d)" || die "selftest: no scratch dir"
+  f="$d/grub"
+  # Calamares writes single quotes and its own resume=UUID=
+  printf "GRUB_TIMEOUT='5'\nGRUB_CMDLINE_LINUX_DEFAULT='quiet splash resume=UUID=old-uuid loglevel=3'\nGRUB_DISTRIBUTOR='NYXUS'\n" > "$f"
+  r="$(cmdline_set_resume "$f" "resume=UUID=new-uuid resume_offset=533760")"
+  g="$(grep '^GRUB_CMDLINE_LINUX_DEFAULT=' "$f")"
+  [[ "$r" == changed ]] && st_ok "cmdline: single-quoted Calamares line is rewritten ($r)" || st_bad "cmdline: expected 'changed', got '$r'"
+  [[ "$g" == 'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash loglevel=3 resume=UUID=new-uuid resume_offset=533760"' ]] \
+    && st_ok "cmdline: old resume= stripped, new resume=/resume_offset= appended, other tokens kept, double quotes out: $g" \
+    || st_bad "cmdline: unexpected result: $g"
+  [[ "$(grep -c '^GRUB_CMDLINE_LINUX_DEFAULT=' "$f")" == 1 ]] && st_ok "cmdline: exactly one GRUB_CMDLINE_LINUX_DEFAULT line" || st_bad "cmdline: duplicate GRUB_CMDLINE_LINUX_DEFAULT lines"
+  grep -q "^GRUB_TIMEOUT='5'$" "$f" && grep -q "^GRUB_DISTRIBUTOR='NYXUS'$" "$f" && st_ok "cmdline: neighbouring keys untouched" || st_bad "cmdline: a neighbouring key was altered"
+  r="$(cmdline_set_resume "$f" "resume=UUID=new-uuid resume_offset=533760")"
+  [[ "$r" == unchanged ]] && st_ok "cmdline: second run with the same tokens is a no-op (idempotent)" || st_bad "cmdline: second run reported '$r', not 'unchanged'"
+  r="$(cmdline_set_resume "$f" "")"
+  g="$(grep '^GRUB_CMDLINE_LINUX_DEFAULT=' "$f")"
+  [[ "$g" == 'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash loglevel=3"' ]] && st_ok "cmdline: empty add strips every resume token: $g" || st_bad "cmdline: strip failed: $g"
+  printf 'GRUB_TIMEOUT=5\n' > "$f"
+  cmdline_set_resume "$f" "resume=UUID=x" >/dev/null
+  grep -q '^GRUB_CMDLINE_LINUX_DEFAULT="resume=UUID=x"$' "$f" && st_ok "cmdline: line is created when absent" || st_bad "cmdline: missing line was not created"
+  # HOOKS editor
+  f="$d/mkinitcpio.conf"; mkdir -p "$d/conf.d"
+  printf 'HOOKS=(base udev autodetect microcode modconf kms keyboard keymap consolefont block filesystems fsck)\n' > "$f"
+  printf 'HOOKS=(base udev autodetect microcode modconf kms plymouth keyboard keymap consolefont block filesystems fsck)\n' > "$d/conf.d/10-plymouth.conf"
+  g="$(hooks_winner "$f" "$d/conf.d")"
+  [[ "$g" == "$d/conf.d/10-plymouth.conf" ]] && st_ok "hooks: the lexically-last conf.d HOOKS= wins ($(basename "$g"))" || st_bad "hooks: winner was '$g'"
+  r="$(hooks_add_resume "$g")"
+  [[ "$r" == changed ]] && grep -q 'block filesystems resume fsck)' "$g" && st_ok "hooks: resume inserted after filesystems, before fsck: $(hooks_line "$g")" || st_bad "hooks: insertion wrong ($r): $(hooks_line "$g")"
+  r="$(hooks_add_resume "$g")"
+  [[ "$r" == unchanged ]] && st_ok "hooks: second run is a no-op (idempotent)" || st_bad "hooks: second run reported '$r'"
+  printf 'HOOKS=(base systemd autodetect modconf kms keyboard block filesystems fsck)\n' > "$f"
+  r="$(hooks_add_resume "$f")"
+  [[ "$r" == systemd ]] && ! grep -q resume "$f" && st_ok "hooks: a systemd-hook HOOKS line is left alone (resume is built in)" || st_bad "hooks: systemd line was edited ($r)"
+  printf 'HOOKS=(base udev block fsck)\n' > "$f"
+  hooks_add_resume "$f" >/dev/null
+  grep -q 'block resume fsck)' "$f" && st_ok "hooks: without filesystems, resume lands before fsck" || st_bad "hooks: fallback placement wrong: $(hooks_line "$f")"
+  # fstab reader
+  f="$d/fstab"
+  printf '# comment\nUUID=root-uuid / btrfs defaults 0 0\n/dev/zram0 none swap defaults 0 0\n/swap/swapfile none swap sw 0 0\nUUID=swap-uuid none swap sw 0 0\n' > "$f"
+  r="$(fstab_swap "$f")"
+  [[ "$r" == "part UUID=swap-uuid" ]] && st_ok "fstab: a swap partition is preferred over a swapfile, zram ignored ($r)" || st_bad "fstab: picked '$r'"
+  printf 'UUID=root-uuid / btrfs defaults 0 0\n/swap/swapfile none swap sw 0 0\n' > "$f"
+  r="$(fstab_swap "$f")"
+  [[ "$r" == "file /swap/swapfile" ]] && st_ok "fstab: the Calamares btrfs swapfile path is found ($r)" || st_bad "fstab: swapfile not found: '$r'"
+  printf 'UUID=root-uuid / ext4 defaults 0 1\n' > "$f"
+  if fstab_swap "$f" >/dev/null; then st_bad "fstab: found swap where there is none"; else st_ok "fstab: no swap → no swap (nothing invented)"; fi
+
+  # ── the sizing rule (TRK-1307 / SUP ruling on TRK-1305) ────────────────
+  # A table, so the ruling's arithmetic is asserted rather than described:
+  # need = ceil(RAM) + margin, capped; grow only if the free floor survives.
+  # Every expectation here is recomputed from SWAP_MARGIN_GIB / SWAP_CAP_GIB /
+  # FREE_FLOOR_GIB rather than typed as a literal — a gate that names a number
+  # becomes a lock holding the old number the day the ruling moves.
+  local _r _cur _free _exp_need _exp_act _got_need _got_act _got_why _ram_gib _cap
+  # 16 GiB RAM, Calamares' 512 MiB file, 200 GiB free → grow to 18 GiB
+  _r=$(( 16 * 1048576 )); _cur=$(( 512 * 1048576 )); _free=$(( 200 * GIB ))
+  read -r _got_need _got_act _got_why < <(hib_plan "$_r" "$_cur" "$_free")
+  _exp_need=$(( (16 + SWAP_MARGIN_GIB) * GIB ))
+  [[ "$_got_act" == grow && "$_got_need" == "$_exp_need" ]] \
+    && st_ok "sizing: 16 GiB RAM + ${SWAP_MARGIN_GIB} GiB margin on a 200 GiB disk → grow to $(( _got_need / GIB )) GiB" \
+    || st_bad "sizing: expected grow/${_exp_need}, got ${_got_act}/${_got_need}"
+  # the 512 MiB the shipped fstab module hardcodes is never accepted as enough
+  [[ "$_got_need" -gt "$_cur" ]] \
+    && st_ok "sizing: Calamares' hardcoded 512 MiB is not the source of truth (need $(( _got_need / GIB )) GiB > 0 GiB)" \
+    || st_bad "sizing: the 512 MiB default was treated as sufficient"
+  # the cap binds above (cap - margin) GiB of RAM
+  _cap=$(( SWAP_CAP_GIB * GIB )); _r=$(( (SWAP_CAP_GIB + 24) * 1048576 ))
+  read -r _got_need _got_act _got_why < <(hib_plan "$_r" 0 $(( 400 * GIB )))
+  [[ "$_got_need" == "$_cap" ]] \
+    && st_ok "sizing: RAM above the cap clamps to ${SWAP_CAP_GIB} GiB (and --check then refuses on swap>=RAM, by design)" \
+    || st_bad "sizing: cap not applied — got $(( _got_need / GIB )) GiB for $(( _r / 1048576 )) GiB of RAM"
+  # a small disk falls back rather than filling the machine
+  read -r _got_need _got_act _got_why < <(hib_plan $(( 16 * 1048576 )) 0 $(( (FREE_FLOOR_GIB + 4) * GIB )))
+  [[ "$_got_act" == skip ]] \
+    && st_ok "sizing: a disk that cannot keep ${FREE_FLOOR_GIB} GiB free afterwards falls back — ${_got_why}" \
+    || st_bad "sizing: expected skip on a small disk, got ${_got_act}"
+  # exactly at the floor is affordable (boundary, not an off-by-one)
+  read -r _got_need _got_act _got_why < <(hib_plan $(( 16 * 1048576 )) 0 $(( (16 + SWAP_MARGIN_GIB + FREE_FLOOR_GIB) * GIB )))
+  [[ "$_got_act" == grow ]] \
+    && st_ok "sizing: exactly ${FREE_FLOOR_GIB} GiB left over still counts as affordable (boundary)" \
+    || st_bad "sizing: the floor boundary rejected an affordable disk (${_got_act})"
+  # an already-large file is left alone
+  read -r _got_need _got_act _got_why < <(hib_plan $(( 8 * 1048576 )) $(( 64 * GIB )) $(( 100 * GIB )))
+  [[ "$_got_act" == keep ]] \
+    && st_ok "sizing: an already-large swapfile is left alone (no pointless rewrite)" \
+    || st_bad "sizing: expected keep, got ${_got_act}"
+
+  # ── live ISO detector (TRK-2995) — words, not a hidden tile ─────────────
+  if cmdline_is_live "quiet splash archisobasedir=arch"; then
+    st_ok "live: archisobasedir= on the command line is a live ISO"
+  else
+    st_bad "live: missed archisobasedir= (the live-USB case the owner hit)"
+  fi
+  if cmdline_is_live "quiet splash archisolabel=NYXUS_SUXYN"; then
+    st_ok "live: archisolabel= is a live ISO"
+  else
+    st_bad "live: missed archisolabel="
+  fi
+  if cmdline_is_live "quiet splash resume=UUID=deadbeef loglevel=3"; then
+    st_bad "live: an installed resume= cmdline was treated as a live ISO — that would grey a working install"
+  else
+    st_ok "live: an installed resume= cmdline is not a live ISO"
+  fi
+  if cmdline_is_live ""; then
+    st_bad "live: an empty cmdline was treated as live"
+  else
+    st_ok "live: empty cmdline is not live"
+  fi
+
+  # ── the fallback RECORDS why, which is the whole point of the ruling ────
+  local _sf_old="${STATE_FILE}"
+  STATE_FILE="$d/hibernate.state"
+  if state_write no "not enough disk for a swapfile at or above RAM" file 536870912 19327352832; then
+    [[ "$(state_get available)" == no ]] \
+      && st_ok "state: the fallback writes available=no to ${STATE_FILE##*/}" \
+      || st_bad "state: available was not recorded as no"
+    [[ -n "$(state_get reason)" ]] \
+      && st_ok "state: the reason is recorded in words a person reads: $(state_get reason)" \
+      || st_bad "state: no reason recorded — a hidden tile with no explanation is what the ruling forbids"
+    [[ "$(state_get needed_bytes)" == 19327352832 ]] \
+      && st_ok "state: the size it wanted is recorded too, so Settings can say how much disk is short" \
+      || st_bad "state: needed_bytes not recorded"
+  else
+    st_bad "state: state_write failed on a writable scratch path"
+  fi
+  STATE_FILE="$_sf_old"
+  rm -rf "$d"
+  (( bad == 0 )) && { say "selftest: all green"; return 0; }
+  say "selftest: ${bad} BAD"; return 1
+}
+
+usage() {
+  sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+# ── sourcing this file as a library, for gates and tests ───────────────────
+# `NYXUS_HIBERNATE_LIB=1 source /usr/local/bin/nyxus-hibernate` stops here and
+# leaves the pure functions (hib_plan, state_write, the two editors) defined
+# without running a command. Gate 13s25 uses it to drive the sizing rule over
+# real inputs — a size rule that can only be grepped for is a size rule nobody
+# has actually executed. The `return` is a no-op guard when the file is EXECUTED
+# rather than sourced, where `return` at top level is an error.
+if [[ -n "${NYXUS_HIBERNATE_LIB:-}" ]]; then
+  return 0 2>/dev/null || true
+fi
+
+case "${1:-now}" in
+  --setup)    shift; do_setup "$@" ;;
+  --check)    shift; do_check "${1:-}" ;;
+  --status)   do_status ;;
+  --selftest) do_selftest ;;
+  now)        shift; do_now "$@" ;;
+  --force)    do_now --force ;;
+  -h|--help)  usage ;;
+  *)          usage >&2; exit 2 ;;
+esac

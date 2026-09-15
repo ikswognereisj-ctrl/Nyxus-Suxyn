@@ -171,6 +171,39 @@ fi
 [[ -x "${STAGE}/airootfs/etc/nyxus-firstboot.d/03-hardware-initramfs.sh" ]] \
     || die "missing 03-hardware-initramfs.sh"
 
+# ══ THE REFERENCED-BINARY GUARD ════════════════════════════ TRK-4129 ══
+#
+# Audit 2026-09-14: three binaries — nyxus-fde-wire, nyxus-fde-check and
+# nyxus-hibernate — were named by Calamares module configs but were never
+# staged into the profile and were never copied by this script. They only
+# worked because they happened to exist in /usr/local/bin ON THIS ONE
+# MACHINE. Baked anywhere else, the ISO still built and still installed;
+# full-disk-encryption wiring and hibernate setup just quietly did not
+# happen. The FDE shellprocess ends in `|| true`, so there was not even
+# an installer error to notice. They are now committed to the profile.
+#
+# This guard exists so that cannot come back. Every /usr/local/{bin,sbin}
+# nyxus-* path mentioned ANYWHERE under iso-builder/ must resolve to a
+# file staged in the image. Adding a new module config that calls a tool
+# you only have locally now fails the bake instead of shipping a silently
+# broken installer.
+#
+# Deliberately scans the SOURCE tree, not the stage: the point is to
+# catch a reference the moment it is written, and the reference is what
+# defines the requirement.
+missing_refs=()
+while read -r ref; do
+    [[ -z "${ref}" ]] && continue
+    [[ -e "${STAGE}/airootfs/usr/local/bin/${ref}"  ]] && continue
+    [[ -e "${STAGE}/airootfs/usr/local/sbin/${ref}" ]] && continue
+    missing_refs+=("${ref}")
+done < <(grep -rhoE '/usr/local/(bin|sbin)/nyxus-[a-zA-Z0-9-]+' \
+             "${REPO_ROOT}/iso-builder" 2>/dev/null | sed 's|.*/||' | sort -u)
+if (( ${#missing_refs[@]} )); then
+    die "iso-builder references binaries that are not staged in the image: ${missing_refs[*]}"
+fi
+log "referenced-binary guard: all /usr/local nyxus-* references are staged"
+
 # Desktop overlay from THIS REPO, never ~/.config (no gowski, no 165 Hz pin).
 install -d "${STAGE}/airootfs/etc/skel/.config"
 if [[ -d "${REPO_ROOT}/quickshell" ]]; then
