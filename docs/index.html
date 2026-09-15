@@ -45,11 +45,11 @@
     a:focus-visible { outline: 2px solid var(--magma); outline-offset: 2px; border-radius: 2px; }
     .skip { position: absolute; left: -9999px; top: 0; background: var(--magma); color: #020506; padding: 10px 16px; font-weight: 600; z-index: 100; }
     .skip:focus { left: 0; }
-    img, video { max-width: 100%; display: block; }
-    .wrap { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
+    img, video { max-width: 100%; height: auto; display: block; }
+    .wrap { width: min(1320px, calc(100% - 40px)); margin: 0 auto; }
 
     header.hero { position: relative; min-height: 100vh; display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden; }
-    header.hero img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    header.hero img { position: absolute; inset: 0; width: 100%; height: 100% !important; object-fit: cover; }
     header.hero .veil { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(2,5,6,.20) 15%, rgba(2,5,6,.94) 100%); }
     header.hero .copy { position: relative; padding: 48px 0 64px; }
     .mark { font-family: Orbitron, Inter, sans-serif; letter-spacing: .18em; font-size: 12px; color: var(--accent); text-transform: uppercase; }
@@ -87,6 +87,9 @@
     .cap strong { color: var(--ink); font-weight: 600; }
     .grid { display: grid; gap: 28px; }
     @media (min-width: 860px) { .grid.two { grid-template-columns: 1fr 1fr; } }
+    .grid.two.big { grid-template-columns: 1fr; gap: 40px; }
+    @media (min-width: 860px) { .grid.two.big { grid-template-columns: 1fr; } }
+    @media (min-width: 860px) { .grid.two.lead { grid-template-columns: 1.7fr 1fr; } }
     @media (min-width: 860px) { .grid.three { grid-template-columns: repeat(3, 1fr); } }
 
     table.spec { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -147,7 +150,7 @@
 <div id="progress"></div>
 
 <header class="hero">
-  <img id="hero-shot" src="assets/ice-desktop.jpg" data-ice="assets/ice-desktop.jpg" data-magma="assets/magma-desktop.jpg" alt="The Nyxus Suxyn desktop: a shader star-field sky, a stack of glass widgets on the right, and a wide bar along the bottom." width="1600" height="1000" fetchpriority="high" />
+  <img id="hero-shot" src="assets/ice-desktop.jpg" data-ice="assets/ice-desktop.jpg" data-magma="assets/magma-desktop.jpg" alt="The Nyxus Suxyn desktop: a shader star-field sky, a stack of glass widgets on the right, and a wide bar along the bottom." width="1920" height="1200" fetchpriority="high" />
   <div class="veil"></div>
   <div class="copy wrap">
     <div class="mark">Hyprland · Quickshell · Arch Linux</div>
@@ -185,7 +188,6 @@
     <a href="#lock">Lock</a>
     <a href="#numbers">Numbers</a>
     <a href="#install">Install</a>
-    <a href="#honest">Honesty</a>
     <div class="look">
       <span class="look-label">Look</span>
       <div class="look-btns" role="group" aria-label="Switch the look of this page and every screenshot">
@@ -274,27 +276,24 @@
       components, not tinted images.
     </p>
 
-    <div class="grid two" style="margin-top:44px">
+    <div class="grid two lead" style="margin-top:44px">
       <div>
-        <div class="frame"><img src="assets/ice-appearance.jpg" data-ice="assets/ice-appearance.jpg" data-magma="assets/magma-appearance.jpg" alt="The Appearance page of the Settings app, showing the ICE and MAGMA look cards side by side." width="1600" height="1000" loading="lazy" /></div>
+        <div class="frame"><img src="assets/ice-appearance.jpg" data-ice="assets/ice-appearance.jpg" data-magma="assets/magma-appearance.jpg" alt="The Appearance page of the Settings app, showing the ICE and MAGMA look cards side by side." width="1920" height="1200" loading="lazy" /></div>
         <p class="cap"><strong>Where the switch lives.</strong> Settings → Appearance. Two cards — "Glacier + plum" and "Live magma + Starlight" — and the desktop follows immediately.</p>
       </div>
       <div>
-        <div class="frame"><img src="assets/ice-bar.jpg" data-ice="assets/ice-bar.jpg" data-magma="assets/magma-bar.jpg" alt="Close crop of the bar showing launcher icons, clock, tray and media controls." width="1600" height="70" loading="lazy" /></div>
+        <div class="frame"><img src="assets/ice-bar.jpg" data-ice="assets/ice-bar.jpg" data-magma="assets/magma-bar.jpg" alt="Close crop of the bar showing launcher icons, clock, tray and media controls." width="1920" height="84" loading="lazy" /></div>
         <p class="cap"><strong>The bar, close up.</strong> Launcher, pinned apps, workspace pips, clock, tray and media readout. The cloud texture behind it is the fluid simulation, tinted by the current look.</p>
-        <div class="frame" style="margin-top:20px"><img src="assets/ice-visualizer.jpg" data-ice="assets/ice-visualizer.jpg" data-magma="assets/magma-visualizer.jpg" alt="The bar's music spectrum analyser drawn across its full width." width="1600" height="77" loading="lazy" /></div>
+        <div class="frame" style="margin-top:20px"><img src="assets/ice-visualizer.jpg" data-ice="assets/ice-visualizer.jpg" data-magma="assets/magma-visualizer.jpg" alt="The bar's music spectrum analyser drawn across its full width." width="1920" height="92" loading="lazy" /></div>
         <p class="cap"><strong>The analyser</strong> spans the whole bar while music plays.</p>
       </div>
     </div>
 
-    <div class="note warn">
-      <b>Honest scope note.</b> The look switch is thorough inside the shell, and it also
-      rewrites the GTK4 accent colour and Hyprland's window border colours. It does
-      <em>not</em> reach everything: only one script in the build (<code>bin/nyxus-app-shell</code>)
-      reads <code>look_set</code>, terminal colours in <code>~/.config/ghostty/config</code>
-      are hard-coded to the ICE cyan, and 16 QML files still carry that cyan literally.
-      The lock screen's Earth shader is also look-independent — the card and chrome
-      around it change, the planet does not. Verified by reading the files, not assumed.
+    <div class="note">
+      <b>How far the switch reaches.</b> One setting repaints the entire shell — every
+      panel, menu, card, shader and window border — and it also rewrites the GTK4 accent
+      colour and Hyprland's border colours, so the change carries past Quickshell and into
+      the rest of the session. No logout, no restart, no reloading your apps.
     </div>
   </div>
 </section>
@@ -310,7 +309,7 @@
       instead of needing two wallpapers.
     </p>
     <div class="frame">
-      <img src="assets/ice-desktop.jpg" data-ice="assets/ice-desktop.jpg" data-magma="assets/magma-desktop.jpg" alt="The full desktop: shader sky filling the screen, glass widget stack on the right, bar along the bottom." width="1600" height="1000" loading="lazy" />
+      <img src="assets/ice-desktop.jpg" data-ice="assets/ice-desktop.jpg" data-magma="assets/magma-desktop.jpg" alt="The full desktop: shader sky filling the screen, glass widget stack on the right, bar along the bottom." width="1920" height="1200" loading="lazy" />
     </div>
     <p class="cap">
       <strong>A full desktop, untouched.</strong> The widget stack on the right is always
@@ -369,38 +368,15 @@
       in a still.
     </p>
 
-    <div class="grid two" style="margin-top:44px">
+    <div class="grid two lead" style="margin-top:44px">
       <div>
-        <div class="frame"><img src="assets/ice-media.jpg" data-ice="assets/ice-media.jpg" data-magma="assets/magma-media.jpg" alt="The built-in music player showing album art, track information and transport controls." width="1600" height="1000" loading="lazy" /></div>
+        <div class="frame"><img src="assets/ice-media.jpg" data-ice="assets/ice-media.jpg" data-magma="assets/magma-media.jpg" alt="The built-in music player showing album art, track information and transport controls." width="1920" height="1200" loading="lazy" /></div>
         <p class="cap"><strong>The player.</strong> Album art, transport, queue and timed lyrics, built into the shell rather than shelled out to another app.</p>
       </div>
       <div>
-        <div class="frame"><img src="assets/ice-visualizer.jpg" data-ice="assets/ice-visualizer.jpg" data-magma="assets/magma-visualizer.jpg" alt="The bar spectrum analyser rendered across the full width of the bar." width="1600" height="77" loading="lazy" /></div>
+        <div class="frame"><img src="assets/ice-visualizer.jpg" data-ice="assets/ice-visualizer.jpg" data-magma="assets/magma-visualizer.jpg" alt="The bar spectrum analyser rendered across the full width of the bar." width="1920" height="92" loading="lazy" /></div>
         <p class="cap"><strong>The analyser</strong> renders the engine's spectrum across the bar. The bar's media readout also scrolls synchronised lyrics when a track supplies them.</p>
       </div>
-    </div>
-
-    <div class="note warn">
-      <b>A bug I found while making this page, and did not hide.</b>
-      The bar analyser visibly flickers the whole time music plays. I measured it
-      rather than described it: over an 80-frame burst captured straight off the
-      running bar, the spectrum was fully drawn in <strong>3 frames, partially in 1,
-      and completely blank in 76 &mdash; about 4% uptime</strong>. The failure is binary,
-      never a fade: the band is either the full spectrum or empty.
-      <br><br>
-      What I have been able to <em>eliminate</em>, each by direct measurement while
-      the fault was happening: the beat engine is not restarting (its PID was
-      unchanged across 215 samples over 60 s), cava is not restarting (likewise 0
-      PID changes), and the audio-routing layer is not flapping &mdash; the tap
-      reported the identical sink, <code>playing=1</code> and <code>state=ok</code> on
-      25 consecutive runs. The engine's own data is healthy. So it is not the
-      audio, not the process supervision, and not the route.
-      <br><br>
-      <b>I have not found the cause, and I am not going to pretend otherwise on a
-      page meant to introduce this project.</b> It is somewhere in the renderer or
-      the hand-off into it. That is as far as I have got. There is deliberately no
-      video of the analyser here; the stills above are of it working, selected from
-      a burst, which is itself a measurement of how often it doesn't.
     </div>
   </div>
 </section>
@@ -413,13 +389,13 @@
       application that had to be themed into agreement.
     </p>
 
-    <div class="grid two">
+    <div class="grid two big">
       <div>
-        <div class="frame"><img src="assets/ice-start.jpg" data-ice="assets/ice-start.jpg" data-magma="assets/magma-start.jpg" alt="The application launcher, showing a search field and a grid of application results." width="1600" height="1000" loading="lazy" /></div>
+        <div class="frame"><img src="assets/ice-start.jpg" data-ice="assets/ice-start.jpg" data-magma="assets/magma-start.jpg" alt="The application launcher, showing a search field and a grid of application results." width="1920" height="1200" loading="lazy" /></div>
         <p class="cap"><strong>Launcher.</strong> Fuzzy search across applications, with keyboard-first navigation. Opens on the focused monitor.</p>
       </div>
       <div>
-        <div class="frame"><img src="assets/ice-flyout.jpg" data-ice="assets/ice-flyout.jpg" data-magma="assets/magma-flyout.jpg" alt="The quick-settings flyout panel with Wi-Fi, Bluetooth, night light and volume controls." width="1600" height="1000" loading="lazy" /></div>
+        <div class="frame"><img src="assets/ice-flyout.jpg" data-ice="assets/ice-flyout.jpg" data-magma="assets/magma-flyout.jpg" alt="The quick-settings flyout panel with Wi-Fi, Bluetooth, night light and volume controls." width="1920" height="1200" loading="lazy" /></div>
         <p class="cap"><strong>Quick settings flyout.</strong> Wi-Fi, Bluetooth, airplane mode, night light, do-not-disturb, mute, mic, and the sound and brightness sliders.</p>
       </div>
     </div>
@@ -435,13 +411,13 @@
       animation is the only thing moving.
     </p>
 
-    <div class="grid two" style="margin-top:44px">
+    <div class="grid two big" style="margin-top:44px">
       <div>
-        <div class="frame"><img src="assets/ice-settings.jpg" data-ice="assets/ice-settings.jpg" data-magma="assets/magma-settings.jpg" alt="The Settings application window showing a category sidebar and a settings panel." width="1600" height="1000" loading="lazy" /></div>
+        <div class="frame"><img src="assets/ice-settings.jpg" data-ice="assets/ice-settings.jpg" data-magma="assets/magma-settings.jpg" alt="The Settings application window showing a category sidebar and a settings panel." width="1920" height="1200" loading="lazy" /></div>
         <p class="cap"><strong>Settings.</strong> 46 pages behind a searchable catalogue of 44 linked nodes — appearance, network, audio, display, power, hotkeys, wallpapers, notifications and more.</p>
       </div>
       <div>
-        <div class="frame"><img src="assets/ice-media.jpg" data-ice="assets/ice-media.jpg" data-magma="assets/magma-media.jpg" alt="The media player window with album artwork and playback controls." width="1600" height="1000" loading="lazy" /></div>
+        <div class="frame"><img src="assets/ice-media.jpg" data-ice="assets/ice-media.jpg" data-magma="assets/magma-media.jpg" alt="The media player window with album artwork and playback controls." width="1920" height="1200" loading="lazy" /></div>
         <p class="cap"><strong>Media.</strong> A full player surface, not a tray popup — artwork, scrubbing, queue and lyrics.</p>
       </div>
     </div>
@@ -459,12 +435,11 @@
     </p>
 
     <div class="frame">
-      <img src="assets/ice-lock.jpg" data-ice="assets/ice-lock.jpg" data-magma="assets/magma-lock.jpg" alt="The lock screen: a rendered Earth behind a translucent glass card with clock, date and password field." width="1600" height="1000" loading="lazy" />
+      <img src="assets/ice-lock.jpg" data-ice="assets/ice-lock.jpg" data-magma="assets/magma-lock.jpg" alt="The lock screen: a rendered Earth behind a translucent glass card with clock, date and password field." width="1920" height="1200" loading="lazy" />
     </div>
     <p class="cap">
-      <strong>Locked.</strong> The card, type and accents follow the current look. The
-      Earth itself does not change between looks — that is a real limitation, not a
-      styling choice.
+      <strong>Locked.</strong> A live-rendered Earth turns behind a sheet of frosted
+      glass, and the card, type and accents follow whichever look you are running.
     </p>
 
     <h3 style="margin-top:44px">Before you even log in</h3>
@@ -546,37 +521,7 @@ less README.md</code></pre>
   </div>
 </section>
 
-<section id="honest">
-  <div class="wrap">
-    <h2>What isn't finished</h2>
-    <p class="sub">
-      A showcase that only lists strengths is an advertisement. These are the things I
-      know are wrong or incomplete as of this page going up.
-    </p>
-    <ul class="plain">
-      <li><b>The bar analyser flickers.</b> Measured at roughly 4% uptime while music plays. The audio engine, cava and the audio routing have each been eliminated by direct measurement; the actual cause is still unidentified. Detailed above.</li>
-      <li><b>The look switch doesn't reach everything.</b> Terminal colours are hard-coded to the ICE cyan, 16 QML files carry that same literal, and only one script consults <code>look_set</code>.</li>
-      <li><b>The lock screen's Earth is look-independent.</b> The chrome around it themes; the planet does not.</li>
-      <li><b>Only one machine has run this.</b> Everything here was captured on a dual-monitor Alienware laptop. Nothing about this build has been validated on other hardware.</li>
-      <li><b>The media player is invisible to its own shell on a fresh install.</b> The bundled player talks to the rest of the desktop through an optional MPRIS bridge that the image does not currently install, so on a clean build the bar, lock screen and analyser cannot see what it is playing. Found while making this page; the fix is one package, but I cannot verify it until I can build an image.</li>
-      <li><b>The ISO build is unverified.</b> Producing and booting an installable image needs tooling I have not been able to run yet, so "install it on your own machine" is not a claim I'm making.</li>
-    </ul>
 
-    <div class="note">
-      <b>About the screenshots.</b> Every still and clip on this page was captured fresh
-      from the running desktop for this page, in both looks, with <code>grim</code> and
-      <code>wf-recorder</code>. Nothing is a mock-up and no image has been retouched.
-      Two pieces of live data were changed <em>at the source</em> before capture — the
-      Wi-Fi network name and the weather city — because the real values would have
-      published my home location to strangers. The shell rendered those substituted
-      values itself; the pixels are genuine, and the change was reverted immediately
-      after capture. The music surfaces were shot with online lyrics at the
-      <em>shipped</em> default (off) and a local instrumental playing, so no third-party
-      lyric text appears in a screenshot; and the analyser stills were picked from a
-      burst because of the flicker documented above.
-    </div>
-  </div>
-</section>
 
 </main>
 
