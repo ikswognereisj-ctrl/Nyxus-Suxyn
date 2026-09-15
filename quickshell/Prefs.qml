@@ -681,6 +681,10 @@ Singleton {
     // of `sky_mode`. True is what shipped.
     readonly property bool nearPlate: adapter.magma_planet
 
+    // TRK-4170. True means every settings card shows its whole note at rest.
+    // False (shipped) means each shows one sentence with the rest behind `?`.
+    readonly property bool settingsHelp: adapter.settings_help
+
     // ── the idle chain (owner commission, 2026-08-17) ────────────────────
     // "set a screensaver as well that really works and then goes to login
     // after so long after that as well."
@@ -1019,6 +1023,29 @@ Singleton {
             // Default true, which is byte-for-byte the behaviour that shipped
             // — nobody's desktop changes until they touch the new switch.
             property bool magma_planet: true
+
+            // TRK-4170. How much of a settings card's note is on screen.
+            //
+            // Owner, looking at Settings ▸ Appearance: "i dont remember all
+            // the texts under everything i thought i got rid of that and made
+            // it look more professnla". He had not got rid of it — there was
+            // never a switch to get rid of it with. 103 cards across the 46
+            // pages carry a `note:` and every one of them rendered in full,
+            // always. Appearance alone put three paragraphs on screen, one of
+            // them four sentences long carrying an internal measurement date.
+            //
+            // The writing is not the problem and is NOT being deleted: it is
+            // the only place several of these consequences are written down,
+            // and `SettingsIndex.qml` searches it. The problem is that all of
+            // it is on screen at rest. So a card now shows its FIRST SENTENCE
+            // and keeps the rest behind a `?` next to the heading — the shape
+            // every shipping settings window uses, and the reason theirs read
+            // as calm and this one did not.
+            //
+            // False is the new default on purpose: the owner's complaint IS
+            // that the full text is showing. Anyone who wants the old
+            // behaviour back turns this on and every card expands at once.
+            property bool settings_help: false
 
             // The idle chain, mirroring `nyxus_settings.py`'s
             // HYPRIDLE_DEFAULTS exactly — 5 minutes to the screensaver,

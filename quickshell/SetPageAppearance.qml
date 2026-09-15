@@ -131,6 +131,7 @@ SetPage {
     SetCard {
         heading: qsTr("Mark")
         tone: page.tone
+        brief: qsTr("Moves the mark on the bar, the lock fallback, the login screen, system sounds, and the password mask.")
         note: qsTr("NYXUS is the default. This switch moves five things only: the mark on the bar, the lock fallback, the login screen, system sounds, and the password mask. Desktop paint and widgets are the Desktop theme below.")
 
         RowLayout {
@@ -725,6 +726,34 @@ SetPage {
         }
     }
 
+    // TRK-4170 — the only control over how much of ITSELF this window says.
+    //
+    // Owner: "i dont remember all the texts under everything i thought i got
+    // rid of that and made it look more professnla". He was right that it was
+    // too much and wrong that a switch existed — there wasn't one, so 103
+    // cards showed their whole note forever. `SetCard` now shows one sentence
+    // and hangs the rest off a `?` beside the heading. This row is the way
+    // back for anyone who wants all of it at once, and it lives on Appearance
+    // because how dense a window reads IS an appearance decision.
+    SetCard {
+        heading: qsTr("Help text")
+        tone: page.tone
+        note: qsTr("Every settings card can explain itself. Off, a card shows one line and keeps the rest behind the ? beside its heading; on, every card on every page shows its full note at once.")
+
+        SetRow {
+            title: qsTr("Full help text")
+            sub: Prefs.settingsHelp
+                 ? qsTr("On — every card shows its whole note.")
+                 : qsTr("One line per card. Tap ? beside a heading for the rest.")
+
+            SetSwitch {
+                key: "settings_help"
+                defaultValue: false
+                tone: page.tone
+            }
+        }
+    }
+
     // TRK-1261 — every key this page writes, and ONLY this page's keys:
     // `sky_mode` and `launcher_style` left with their pickers (TRK-3424/25).
     // ⚠ `mark_theme` IS IN THIS LIST NOW, AND THE `onCleared` HANDLER IS WHY.
@@ -754,7 +783,7 @@ SetPage {
                "swirl_enabled", "swirl_motion", "swirl_music", "swirl_mode",
                "swirl_intensity", "bar_spectrum", "lyrics_online",
                "swirl_controls", "swirl_control_speed",
-               "media_bar_pop"]
+               "media_bar_pop", "settings_help"]
         onCleared: {
             soundTheme.command = ["env", page.execPath, "nyxus-sound",
                                   "set-theme", "nyxus"];

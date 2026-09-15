@@ -2098,6 +2098,17 @@ Singleton {
           sub: qsTranslate("SetPageFirewall", "App confinement, encrypted DNS, and MAC randomisation live on Security") },
         { key: "secboot", kind: "control",
           label: qsTranslate("SetPageSecboot", "Firmware type"),
+          sub: "" },
+
+        // ── TRK-4170 · the Help text card ────────────────────────────────
+        // Appended by hand from `check-settings-index.py --emit`, which is
+        // the supported route now that the generator this file's header
+        // names has been gone since TRK-4137.
+        { key: "appearance", kind: "section",
+          label: qsTranslate("SetPageAppearance", "Help text"),
+          sub: qsTranslate("SetPageAppearance", "Every settings card can explain itself. Off, a card shows one line and keeps the rest behind the ? beside its heading; on, every card on every page shows its full note at once.") },
+        { key: "appearance", kind: "control",
+          label: qsTranslate("SetPageAppearance", "Full help text"),
           sub: "" }
     ]
 

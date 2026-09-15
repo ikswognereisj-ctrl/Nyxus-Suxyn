@@ -33,6 +33,52 @@ Item {
 
     property string heading: ""
     property string note: ""
+    // TRK-4170. An explicit one-line summary. Cards that want to choose their
+    // own opening line set this; everything else gets `firstSentence(note)`,
+    // which is why 103 existing cards needed no edit to calm down.
+    property string brief: ""
+    // Is this card's full note pulled open by hand? Per-card and not sticky:
+    // the `?` answers one question and the page is quiet again next visit.
+    property bool noteOpen: false
+
+    // The short form. Sentences are taken until there are at least 60
+    // characters, so a card whose note opens "Two complete themes." keeps the
+    // sentence that actually says what they ARE instead of stopping on a
+    // fragment.
+    readonly property string noteBrief: {
+        if (card.brief !== "")
+            return card.brief;
+        var t = card.note;
+        if (t === "")
+            return "";
+        var cut = -1;
+        for (var i = 0; i < t.length - 1; ++i) {
+            if (t.charAt(i) !== "." || t.charAt(i + 1) !== " ")
+                continue;
+            // Don't break on "e.g." / "i.e." / an initial: a period whose
+            // preceding run of letters is one or two long is an abbreviation,
+            // not the end of a sentence.
+            var j = i - 1;
+            while (j >= 0 && /[A-Za-z]/.test(t.charAt(j)))
+                --j;
+            if (i - j <= 2)
+                continue;
+            // Adding this sentence would overshoot into a paragraph again.
+            // Keep what we have — the `?` is right there for the rest.
+            if (cut >= 0 && i + 1 > 120)
+                break;
+            cut = i;
+            if (cut + 1 >= 60)
+                break;
+        }
+        if (cut < 0)
+            return t;
+        return t.substring(0, cut + 1);
+    }
+    // Only offer the `?` when it would actually reveal something.
+    readonly property bool noteHasMore: card.note !== "" && card.note !== card.noteBrief
+    readonly property bool noteFull: Prefs.settingsHelp || card.noteOpen
+
     property real tone: 0.35
     // Kept so pages can still pass `tone: page.tone`. The card body is
     // uncoloured glass — key-place colour lives on the controls, not a
@@ -61,16 +107,67 @@ Item {
         // ── the heading ─────────────────────────────────────────────────
         // The system's own voice: uppercase, wide-tracked, quiet — Theme's
         // `trackMicro` exists for exactly this and nothing else.
-        Text {
+        //
+        // TRK-4170 put a `?` on the end of this line. It sits with the
+        // heading rather than with the note because at rest there may be no
+        // note on screen to hang it off, and a reveal you can only find by
+        // already seeing the thing it reveals is not a reveal.
+        RowLayout {
             visible: card.heading !== ""
             Layout.fillWidth: true
             Layout.leftMargin: Theme.s2
-            text: card.heading.toUpperCase()
-            color: Theme.textDim
-            font.family: Theme.fUi
-            font.pixelSize: Theme.tMicro
-            font.weight: Font.DemiBold
-            font.letterSpacing: Theme.trackMicro
+            spacing: Theme.s2
+
+            Text {
+                text: card.heading.toUpperCase()
+                color: Theme.textDim
+                font.family: Theme.fUi
+                font.pixelSize: Theme.tMicro
+                font.weight: Font.DemiBold
+                font.letterSpacing: Theme.trackMicro
+            }
+
+            Rectangle {
+                id: moreDot
+                visible: card.noteHasMore && !Prefs.settingsHelp
+                implicitWidth: Theme.tMicro + 7
+                implicitHeight: Theme.tMicro + 7
+                radius: width / 2
+                color: card.noteOpen ? Theme.soften(Theme.accent, 0.22)
+                                     : (moreTap.containsMouse ? Theme.soften(Theme.accent, 0.13)
+                                                              : "transparent")
+                border.width: 1
+                border.color: card.noteOpen || moreTap.containsMouse
+                              ? Theme.soften(Theme.accent, 0.75)
+                              : Theme.soften(card.iceHairline, 0.9)
+
+                Behavior on color {
+                    ColorAnimation { duration: 110 }
+                }
+
+                Text {
+                    anchors.centerIn: parent
+                    // The glyph turns into a minus once the note is open, so
+                    // the control says what the NEXT tap does, not what the
+                    // last one did.
+                    text: card.noteOpen ? "\u2212" : "?"
+                    color: card.noteOpen || moreTap.containsMouse ? Theme.text : Theme.textDim
+                    font.family: Theme.fUi
+                    font.pixelSize: Theme.tMicro
+                    font.weight: Font.DemiBold
+                }
+
+                MouseArea {
+                    id: moreTap
+                    anchors.fill: parent
+                    anchors.margins: -4
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: card.noteOpen = !card.noteOpen
+                }
+            }
+
+            Item { Layout.fillWidth: true }
         }
 
         // ── the slab ────────────────────────────────────────────────────
@@ -147,12 +244,15 @@ Item {
         // Under the card, not inside it: this is the sentence that explains a
         // consequence ("changing this signs you out"), and a consequence
         // belongs after the control, where a person reads it before acting.
+        //
+        // TRK-4170 — ONE sentence of it at rest. See `noteBrief` above, and
+        // the `settings_help` note in `Prefs.qml` for why the default moved.
         Text {
             visible: card.note !== ""
             Layout.fillWidth: true
             Layout.leftMargin: Theme.s2
             Layout.rightMargin: Theme.s2
-            text: card.note
+            text: card.noteFull ? card.note : card.noteBrief
             color: Theme.textDim
             font.family: Theme.fUi
             font.pixelSize: Theme.tCaption

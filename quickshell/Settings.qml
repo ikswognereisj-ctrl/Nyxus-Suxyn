@@ -1965,10 +1965,10 @@ FloatingWindow {
 
             // ══ THE FOOT · the action bar ══════════════════════════════
             // TRK-3215. Three buttons, and all three DO something:
-            //   Restore Defaults  opens the Reset page, where the per-section
+            //   Reset by Section… opens the Reset page, where the per-section
             //                     restores live (one per page, each with its
             //                     own consequence written beside it).
-            //   Reset to Defaults calls SettingsStore.resetAll() — the real
+            //   Reset Everything  calls SettingsStore.resetAll() — the real
             //                     whole-document reset, behind SetButton's
             //                     two-tap arm, which backs the file up first
             //                     and refuses to proceed if that backup did
@@ -1978,6 +1978,15 @@ FloatingWindow {
             //                     control in this window already saves on
             //                     change, so a permanently-live Save button
             //                     would be a lie about what it does.
+            //
+            // TRK-4170 renamed the first two. They read "Restore Defaults"
+            // and "Reset to Defaults" — two buttons side by side, near
+            // anagrams of each other, and the one that SOUNDS gentler was the
+            // navigational one while its neighbour wiped the document. Names
+            // that close together are a trap no amount of confirm dialog
+            // fixes. Now one says where it goes and the other says how much
+            // it takes, and the ellipsis carries its usual meaning: this one
+            // opens something, it does not act.
             Item {
                 Layout.fillWidth: true
                 // The mockup's action row measures 32 px of button in a 56 px
@@ -2023,7 +2032,7 @@ FloatingWindow {
                     }
 
                     SetButton {
-                        text: qsTr("Restore Defaults")
+                        text: qsTr("Reset by Section\u2026")
                         implicitHeight: 32
                         glyph: "\uf0e2"
                         tone: win.tone
@@ -2032,7 +2041,7 @@ FloatingWindow {
                     }
 
                     SetButton {
-                        text: qsTr("Reset to Defaults")
+                        text: qsTr("Reset Everything")
                         implicitHeight: 32
                         glyph: "\uf2ea"
                         danger: true
