@@ -142,7 +142,23 @@ Item {
                 Rectangle {
                     anchors.fill: parent
                     radius: 3
-                    color: Theme.soften(Theme.void_, 0.50)
+                    // TRK-4149 — was `soften(void_, 0.50)`. void_ is darker
+                    // than the card this sits on, so at half alpha the unfilled
+                    // run came out BELOW its own background: measured #0E0A0C
+                    // of track against #151210 of card. A meter track that is
+                    // darker than the surface around it does not read as the
+                    // channel the fill runs in, it reads as a scuff on the
+                    // card -- which is exactly what the owner saw and called
+                    // "darker spots, looks like a line going through it". The
+                    // bar looked like a floating stick with a smear trailing
+                    // off it instead of a bar sitting in a groove.
+                    // The channel is the accent at low alpha now, so the empty
+                    // run quietly shows the colour it is going to become. It
+                    // reads as part of the instrument, it cannot fall below
+                    // the card the way a fixed dark did because it is keyed to
+                    // the same accent as the fill, and it follows both looks
+                    // for free instead of being a hardcoded near-black.
+                    color: Theme.soften(Theme.tokenAccentPrimary, 0.14)
                     Rectangle {
                         height: parent.height
                         width: parent.width * Math.max(0, Math.min(1, card.fill))
