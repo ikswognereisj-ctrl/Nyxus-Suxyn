@@ -588,6 +588,10 @@ Singleton {
     // implemented style; Launcher.qml states this where it decides it.
     readonly property string launcherStyle: adapter.launcher_style
 
+    // TRK-4150 — gate for THE FLOOR, the ten-foot browser that claims an
+    // HDMI screen whole. Ships false; see the adapter property for why.
+    readonly property bool floorEnabled: adapter.floor_enabled
+
     // ── desktop ground source (WIP-555) ─────────────────────────────────
     // shell.qml's `voyageSky` picks Starlight vs Starlight Voyage and stays
     // the owner's call, default unchanged by this. This is the escape
@@ -949,6 +953,27 @@ Singleton {
             // "daily" is the shipped default since WIP-199; "classic" keeps
             // the Atrium for anyone who prefers it
             property string launcher_style: "daily"
+
+            // TRK-4150 — THE FLOOR is opt-in and ships OFF.
+            //
+            // `Floor.qml` used to decide for itself with
+            // `visible: onTv || arcadeMode`, where `onTv` is simply "this
+            // screen's name starts with HDMI". On the owner's desk that is
+            // the television and the behaviour is exactly right. On a release
+            // it is not: the ISO rsyncs the whole `quickshell/` directory, so
+            // every one of the 24 Floor files ships, and the first time any
+            // user plugged a monitor into HDMI the ten-foot Games/Movies/
+            // Music browser would take the entire screen, unasked, with no
+            // setting anywhere to turn it off. `arcadeMode` was no help as a
+            // switch -- it reads NYXUS_ARCADE from the environment, so it is
+            // a developer's lever, not something a user can reach.
+            //
+            // The owner's words: "that was a personal thing not going to be
+            // shipped". So it defaults false and the automatic HDMI trigger
+            // now has to be enabled first. His own machine has it set true,
+            // which reproduces precisely the behaviour he has today. The env
+            // override is left alone so a developer can still force it.
+            property bool floor_enabled: false
 
             // Owner 08-20: keep Starlight. "headliner" is the shipped
             // ground (WIP-874). "voyage" is the 3D sky pick. "wallpaper"
