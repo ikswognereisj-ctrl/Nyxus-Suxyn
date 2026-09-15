@@ -167,10 +167,26 @@ Pool          1.0 Pool.qml
 Rail          1.0 Rail.qml
 ReactiveEdge  1.0 ReactiveEdge.qml
 Reflection    1.0 Reflection.qml
-# TRK-3830 — the tape's on/off lamp. Two instances on the bar (one per
-# face). A FILE, not an inline component: see TapeLamp.qml's header for
-# the capture that made that necessary.
-TapeLamp      1.0 TapeLamp.qml
+# audit-0914 · TRK-4122 — `TapeLamp 1.0 TapeLamp.qml` stood here with no
+# TapeLamp.qml beside it in the repository, so a clean clone loaded a qmldir
+# naming a type it did not have and Quickshell warned on every start. The
+# file existed only in the owner's live ~/.config/quickshell, which is why it
+# was never noticed: the running machine resolved an entry that no fresh
+# checkout could.
+#
+# It is not restored, because it is not used. TRK-3830 added the lamp as a
+# file so the bar could instantiate it once per face; MediaCrest.qml later
+# absorbed the same four-state derivation inline (see its TRK-3959 block,
+# `TapeState.phase` → hot/warm), and the bar's right-click menu carries the
+# control. Nothing has written `TapeLamp {` since. An orphan type declared
+# in qmldir is a promise the build cannot keep, so the promise goes.
+# audit-0914 · TRK-4123 — MagmaSlab.qml shipped in the tree, compiled
+# against a shader that is built and present (shaders/magma.frag.qsb), and
+# docs/FLOOR-BUILD.md names it as half of what a kiosk or a marquee is made
+# of — but it was never listed here, so `MagmaSlab { }` was "not a type" and
+# no surface could ever have used it. A component that only a document knows
+# about is not a component. Listed, so the design note is true.
+MagmaSlab     1.0 MagmaSlab.qml
 Sigil         1.0 Sigil.qml
 GlassEdge     1.0 GlassEdge.qml
 MirrorEdge    1.0 MirrorEdge.qml

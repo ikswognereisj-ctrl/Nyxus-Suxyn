@@ -90,8 +90,18 @@ Scope {
     // ── the map ──────────────────────────────────────────────────────────
     PanelWindow {
         id: mapWin
+        // Pinned to the internal panel. An explicit screen stops Quickshell
+        // reassigning `screen` on map/unmap — the old HDMI guard read
+        // mapWin.screen from this window's own `visible` binding and looped.
+        // An HDMI-only machine falls back to its first screen rather than
+        // losing the map.
+        screen: {
+            const ss = Quickshell.screens;
+            for (let i = 0; i < ss.length; i++)
+                if (String(ss[i].name || "").indexOf("HDMI") !== 0) return ss[i];
+            return ss.length > 0 ? ss[0] : null;
+        }
         visible: hud.enabled && (mapWin.v > 0.001)
-                 && !(mapWin.screen && String(mapWin.screen.name || "").indexOf("HDMI") === 0)
                  && !Prefs.arcadeMode
         anchors {
             right: hud.corner.indexOf("right") >= 0
@@ -228,7 +238,13 @@ Scope {
     // ── the arrival nameplate ────────────────────────────────────────────
     PanelWindow {
         id: plateWin
-        visible: hud.enabled && hud.plateOn && (plate.opacity > 0.001)
+        // The fade lives on the window, not on the child Text: reading
+        // plate.opacity back into `visible` looped (the child re-evaluates
+        // when the window maps/unmaps). plateV animates 1→0 after the text
+        // clears and only then does the window unmap — same fade as before.
+        property real plateV: hud.plateText !== "" ? 1 : 0
+        Behavior on plateV { NumberAnimation { duration: Theme.durBase; easing.type: Easing.OutCubic } }
+        visible: hud.enabled && hud.plateOn && (plateV > 0.001)
         // NOT the top edge — that edge is spoken for, and both top corners
         // are already taken (the recording card top-right, widgets
         // top-left). With left+right anchored and neither top nor bottom,
@@ -253,9 +269,8 @@ Scope {
             font.letterSpacing: 8
             font.weight: Font.DemiBold
             renderType: Text.NativeRendering
-            opacity: hud.plateText !== "" ? 1 : 0
+            opacity: plateWin.plateV
             scale: hud.plateText !== "" ? 1 : 0.96
-            Behavior on opacity { NumberAnimation { duration: Theme.durBase; easing.type: Easing.OutCubic } }
             Behavior on scale { NumberAnimation { duration: Theme.durBase; easing.type: Easing.OutCubic } }
         }
     }

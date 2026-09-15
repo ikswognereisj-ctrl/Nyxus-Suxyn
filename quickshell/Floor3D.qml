@@ -1,7 +1,7 @@
 pragma ComponentBehavior: Bound
+import Quickshell
 import QtQuick
 import QtQuick3D
-
 // Rocket Lobby 3D. Far cinematic view, 360 orbit until you walk.
 // WASD move, arrows look. Neon tubes + signs — nothing flat.
 Item {
@@ -129,9 +129,19 @@ Item {
     FloorPosterArt { id: post3; title: "SHOWS"; neon: "#ffea00"; x: -6400; visible: true }
     FloorPosterArt { id: post4; title: "CONTINUE"; neon: "#9b5cff"; x: -6800; visible: true }
     FloorPosterArt { id: post5; title: "FEATURE"; neon: "#ff2bd6"; x: -7200; visible: true }
-    Image { id: showGoose; visible: false; source: "file:///home/gowski/ToonCabinet/posters/goosebumps.jpg" }
-    Image { id: showDino; visible: false; source: "file:///home/gowski/ToonCabinet/posters/dinosaurs.jpg" }
-    Image { id: showSonic; visible: false; source: "file:///home/gowski/ToonCabinet/posters/sonic.jpg" }
+    // ── audit-0914 · TRK-4121 · the cabinet is not on one machine ────────
+    // These three were `file:///home/gowski/ToonCabinet/posters/...`, a path
+    // that exists on exactly one account. `FloorPageMovies.qml` already
+    // resolves the same cabinet through `Quickshell.env("HOME")`; a second
+    // surface reading the same art must resolve it the same way or the
+    // lobby renders three empty planes on every other machine, silently,
+    // because a missing Image source is not an error.
+    readonly property string cabinetPosters:
+        "file://" + (Quickshell.env("HOME") || "") + "/ToonCabinet/posters/"
+
+    Image { id: showGoose; visible: false; source: root.cabinetPosters + "goosebumps.jpg" }
+    Image { id: showDino; visible: false; source: root.cabinetPosters + "dinosaurs.jpg" }
+    Image { id: showSonic; visible: false; source: root.cabinetPosters + "sonic.jpg" }
 
     component Tube: Model {
         source: "#Cube"

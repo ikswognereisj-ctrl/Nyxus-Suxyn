@@ -274,6 +274,14 @@ Singleton {
     function openSysmon() { sysmonOpen = true; }
     function toggleSysmon() { sysmonOpen = !sysmonOpen; }
 
+    // Brain.qml binds `open` here and its IPC target writes here. This flag
+    // was missing: the binding read undefined (the "Unable to assign
+    // [undefined] to bool" warning) and the writes landed on a JS expando,
+    // so Brain could never actually be opened through the bus.
+    property bool brainOpen: false
+    function openBrain() { brainOpen = true; }
+    function toggleBrain() { brainOpen = !brainOpen; }
+
     // Which subject to show. Emitted rather than stored, because it is an
     // INSTRUCTION and not a state: storing it would mean the next plain
     // "open Settings" silently reopened whatever was last deep-linked.

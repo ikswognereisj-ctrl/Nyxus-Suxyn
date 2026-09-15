@@ -8,7 +8,7 @@ Item {
     id: page
     focus: visible
 
-    readonly property string cabinetRoot: (Quickshell.env("HOME") || "/home/gowski") + "/ToonCabinet"
+    readonly property string cabinetRoot: (Quickshell.env("HOME") || "") + "/ToonCabinet"
     readonly property string kioskPath: page.cabinetRoot + "/index.html"
     readonly property string stillRoot: "file://" + page.cabinetRoot + "/posters/"
     readonly property int posterW: 200

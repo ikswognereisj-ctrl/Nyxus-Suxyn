@@ -121,6 +121,42 @@ Item {
 
     default property alias content: flip.data
 
+    // ══ MIRRORING A LIVE ITEM ══════════════════════════ TRK-4124 · 09-14 ══
+    // Owner, 2026-09-14: "ive been trying to get the icons on the bottom bar
+    // the reflections back but no agent can seem to be able to bring them
+    // back for me for whatever reason".
+    //
+    // ── why the copy recipe could not do it for the dock ──────────────────
+    // Everything else on this bar mirrors a COPY: a second Text bound to the
+    // same string, a second Image bound to the same source. That works
+    // because those things ARE their source. A dock icon is not — what the
+    // eye sees is a CrystalGem, a ShaderEffect that etches the app mark into
+    // ember stone, and a ShaderEffect placed inside `srcBox` below draws
+    // NOTHING (probed live 2026-09-14: a plain Rectangle in the same slot
+    // shows, the gem does not; the hidden layer never gets the shader pass).
+    //
+    // So the dock mirrored the raw theme icon instead. Measured on the
+    // owner's bar the same day: the mirror band under every dock icon sat at
+    // a mean luminance of 71/255 against a 66/255 seam — the shipped app
+    // icons are dark maroon, colorisation preserves luminance, and 35% alpha
+    // over a dark seam turned a correct reflection into an invisible one.
+    // The reflection was never absent. It was black on black, which is the
+    // same thing to the person looking at the bar.
+    //
+    // ── what this does instead ────────────────────────────────────────────
+    // `mirrorOf` captures the REAL, ALREADY-RENDERED item — gem, shader,
+    // etch, glow and all — through a ShaderEffectSource, and pours that
+    // texture through the identical flip, squash and mask every other
+    // reflection in the build uses. One recipe still, so the dock cannot
+    // drift from the sigil again.
+    //
+    // ⚠ `live: true` is not optional. The source is a shader animating on a
+    // frame timer; a one-shot capture freezes the ember mid-flicker and the
+    // fall stops matching the stone above it. `recursive` stays false — the
+    // captured item must never contain this reflection or the texture feeds
+    // itself.
+    property Item mirrorOf: null
+
     // Clamped once, here, so a call site cannot push a gradient stop past
     // 1.0 and silently invert the mask.
     readonly property real _d: Math.max(0.05, Math.min(0.98, m.depth))
@@ -148,7 +184,52 @@ Item {
                     yScale: Math.max(0.2, Math.min(1.0, m.squash))
                 }
             ]
+
+            // (Copy content only. A live capture cannot be nested here —
+            // see `liveSrc` below for the measurement.)
         }
+    }
+
+    // ⚠ A ShaderEffectSource CANNOT LIVE INSIDE `srcBox`. Probed on the
+    // owner's bar, 2026-09-14: a capture of the dock gem placed inside that
+    // hidden, layered Item renders nothing at all, exactly as a bare
+    // ShaderEffect does — the hidden layer is composited without ever
+    // running the child's own render pass. The IDENTICAL capture, made
+    // visible beside the dock, showed all five gems perfectly. So the
+    // capture is sound and the NESTING is what fails, and the fix is to stop
+    // nesting it: this feeds the mask directly, as a peer of `srcBox`, and
+    // the MultiEffect below picks whichever of the two the call site asked
+    // for.
+    //
+    // The flip is `MirrorVertically` — a texture flip, free, and it happens
+    // before the mask, so the mask stays in screen space where it belongs.
+    //
+    // ⚠ NO `squash` ON THIS PATH, AND DO NOT ADD IT BACK WITH `sourceRect`.
+    // The obvious way to foreshorten a captured texture is to grab a rect
+    // TALLER than the item with the extra height above it (negative `y`).
+    // That was written, shipped to the live config, and photographed: it
+    // produces an EMPTY TEXTURE — the reflection stayed invisible through
+    // four restarts and cost most of the debugging of TRK-4124, because it
+    // fails silently and looks identical to the bug it was meant to fix.
+    // Removing the sourceRect, changing nothing else, brought all five
+    // reflections back in the next frame.
+    //
+    // Losing the compression costs nothing MEASURABLE here and that is why
+    // it is acceptable rather than merely tolerated: the call site that uses
+    // this is the dock, whose fall is masked to 0.40 of a 54 px box because
+    // the screen ends 22 px below the contact line. At 0.88 squash the
+    // difference across the visible band is under three pixels, and the mask
+    // — not the geometry — is what the eye reads as the length of a
+    // reflection. A copy-content Reflection still squashes normally.
+    ShaderEffectSource {
+        id: liveSrc
+        anchors.fill: parent
+        visible: false
+        live: m.mirrorOf !== null
+        hideSource: false
+        recursive: false
+        sourceItem: m.mirrorOf
+        textureMirroring: ShaderEffectSource.MirrorVertically
     }
     Item {
         id: maskBox
@@ -173,7 +254,7 @@ Item {
     }
     MultiEffect {
         anchors.fill: parent
-        source: srcBox
+        source: m.mirrorOf ? liveSrc : srcBox
         maskEnabled: true
         maskSource: maskBox
         opacity: Theme.reflectAlpha * m.gain * m.strength

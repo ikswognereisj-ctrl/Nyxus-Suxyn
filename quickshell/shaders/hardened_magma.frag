@@ -192,8 +192,45 @@ void main(){
 
     float rim = pow(max(1.0 - abs(sampleSdf(hp.xy).x) * 3.4, 0.0), 2.0);
     // Hot metal on the cube edge — the pale-ice line was the glacier read.
-    vec3 rimHot = vec3(1.00, 0.40, 0.10);
+    // Green pulled 0.40 -> 0.34: this rim is the brightest warm value on
+    // the tile and it is multiplied by 1.35 before a tonemap that pushes
+    // saturated channels together, so it was the single largest source of
+    // the "more yellow-ish" the owner read at bar size.
+    vec3 rimHot = vec3(1.00, 0.34, 0.075);
     col += rimHot * rim * 1.35;
+
+    // ══ THE GLACIER CATCH-LIGHT ════════════════════════════ TRK-4127 ══
+    //
+    // Owner, 2026-09-14: "can we get them to be more magama and maybe add
+    // pal glicer as well to give it defintion".
+    //
+    // Two asks and they are the same ask. A tile lit by ONE colour family
+    // has no cool reference anywhere on it, so every edge is warm-on-warm
+    // and the eye has nothing to measure the form against — which is the
+    // condition that makes a hot palette read as a flat yellow blob at
+    // 54 px instead of as faceted stone. Adding pale glacier is not
+    // decoration here; it is the second light a solid needs to be read as
+    // a solid.
+    //
+    // ⚠ IT IS A LIGHT, NOT A HUE SHIFT, and that distinction is the whole
+    // reason this does not undo TRK-4120's warm-up. It is gated on
+    // `max(N.y, 0.0)` — geometry facing the SKY — so it lands on the top
+    // chamfer and the upper facets and nowhere else. The face, the etched
+    // recess and every downward facet stay pure ember. The build's own
+    // rule for this is already written on the bar: glacier is for what
+    // things ARE (the form), magma for what MATTERS (the heat).
+    //
+    // Two terms, because a rim alone reads as a sticker:
+    //   · the EDGE, so the silhouette separates from the dark seam
+    //   · the SPECULAR, so the top facet has a hard cool glint — this is
+    //     what sells volcanic GLASS rather than painted clay
+    // Both are small. Measured against the ember rim above, the cool
+    // contribution peaks at roughly a fifth of it, which is enough for the
+    // eye to find an edge and far too little to cool the stone.
+    float sky     = max(N.y, 0.0);
+    vec3  glacier = vec3(0.62, 0.86, 1.00);
+    col += glacier * rim * pow(sky, 1.6) * 0.30;
+    col += glacier * spec * sky * 0.22;
 
     // The glyph keeps its own chroma where it runs WARM; where it runs
     // cold (the NYXUS-Dark palette's ice/plum/violet all carry b > r)
@@ -210,7 +247,10 @@ void main(){
     // over g) re-hue fully onto the ladder — no sage survivors.
     float coolness = smoothstep(-0.005, 0.06, ic.b - ic.g);
     vec3 boosted  = clamp(ic.rgb + chroma * 1.6, 0.0, 1.25);
-    vec3 ladder   = mix(vec3(0.30, 0.05, 0.02), vec3(1.00, 0.70, 0.40),
+    // Ladder top pulled 0.70 -> 0.56 green: the top rung is where a lit
+    // glyph spends most of its pixels, and gold there was the etch reading
+    // yellow independently of the rim.
+    vec3 ladder   = mix(vec3(0.30, 0.05, 0.02), vec3(1.00, 0.56, 0.28),
                         smoothstep(0.06, 0.80, lum));
     vec3 coreEtch = mix(boosted, ladder, coolness) * (0.90 + 0.20 * eb);
     // Verbatim marks get a small lift so the art's whites stay white and
@@ -223,6 +263,43 @@ void main(){
     col += core * ink * fres * 0.28;
     // Ember halo hugging the silhouette, so the etch reads lit from below.
     col += ember * outline * 0.55;
+
+    // ══ THE HOT-HUE GUARD ══════════════════════════════════ TRK-4128 ══
+    //
+    // This is the real source of the yellow, and it is why pulling the
+    // green out of each individual term kept not being enough.
+    //
+    // The warm terms STACK. Crust, lava, the crack boost, the env
+    // reflection and the rim all add into `col`, and on the crust frame —
+    // where the cracks live, because etchZone deliberately clears them out
+    // of the centre — they land on top of each other. Measured at full
+    // crack the pre-tonemap value is about (4.3, 1.40, 0.22): a completely
+    // correct ember RATIO, roughly 3:1 red over green.
+    //
+    // Then `1 - exp(-col * 1.4)` runs. Red at 4.3 maps to 0.998 and red at
+    // 40.0 would also map to 1.000 — it is pinned and cannot go anywhere.
+    // Green at 1.40 maps to 0.859 and is still climbing freely. The ratio
+    // that went in at 3:1 comes out at 1.1:1, and 1.1:1 red over green IS
+    // YELLOW. The tonemap did not tint anything; it ran the red out of
+    // headroom and let the green catch up. Every hot pixel on the tile
+    // walks to gold no matter what colour it started as, which is exactly
+    // what the owner was looking at.
+    //
+    // So the correction belongs HERE, after the stack and before the
+    // curve, not in the individual terms. Green is pulled back in
+    // proportion to how far red has already run past the point where the
+    // tonemap stops rewarding it. Below 1.0 nothing happens at all, so the
+    // crust, the etched face and every mid-tone are untouched and keep the
+    // warmth they were authored with; the correction only exists where the
+    // hue would otherwise have been destroyed. Same value now resolves to
+    // roughly (254, 116, 46) — magma, all the way to the top of its range.
+    //
+    // Blue gets a lighter hand (0.35 vs 0.85) on purpose: it is the
+    // glacier catch-light's channel, and the point of that light is to
+    // survive on the bright top facets where it does its work.
+    float over = max(col.r - 1.0, 0.0);
+    col.g /= (1.0 + over * 0.85);
+    col.b /= (1.0 + over * 0.35);
 
     col = 1.0 - exp(-col * 1.40);
     col = pow(max(col, 0.0), vec3(0.86));

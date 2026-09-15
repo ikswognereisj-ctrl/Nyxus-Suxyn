@@ -29,7 +29,13 @@ PanelWindow {
     exclusionMode: ExclusionMode.Ignore
     exclusiveZone: 0
     color: "transparent"
-    visible: Prefs.swirlEnabled && !Prefs.arcadeMode && !(seam.screen && String(seam.screen.name || "").indexOf("HDMI") === 0)
+    // HDMI snapshot, taken once at creation: reading seam.screen from this
+    // window's own `visible` binding loops (unmapping re-evaluates screen).
+    // shell.qml's Variants recreates this delegate whenever the screen set
+    // changes, so the snapshot cannot go stale.
+    property bool onHdmiScreen: false
+    Component.onCompleted: onHdmiScreen = !!(seam.screen && String(seam.screen.name || "").indexOf("HDMI") === 0)
+    visible: Prefs.swirlEnabled && !Prefs.arcadeMode && !seam.onHdmiScreen
     WlrLayershell.layer: WlrLayer.Bottom
     WlrLayershell.namespace: "nyxus-bar-seam"
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None

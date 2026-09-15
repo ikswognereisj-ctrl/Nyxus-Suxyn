@@ -110,7 +110,10 @@ PanelWindow {
     readonly property int captionAir: 22
     // Same air between every icon and its fall. s4 (8px) is the gap the
     // ICE bar shipped with — s5 butted the fall into the stone.
-    readonly property int reflectGap: Theme.s4
+    // TRK-4125 — s4 (8) -> 6. The bar bottom is the screen bottom, so every
+    // pixel between an object's base and the edge is fall the reflection can
+    // actually use. Two of them back is two more of the mirror.
+    readonly property int reflectGap: 6
     readonly property bool barMirrors: true
     // How much of the fall has to land ON the chrome. 48px gems in an 84px
     // strip clip a full-height Reflection off the bottom of the window;
@@ -1398,7 +1401,24 @@ PanelWindow {
                         id: icon
                         clip: false
                         anchors.horizontalCenter: parent.horizontalCenter
-                        y: slot.height - 22 - height - (slot.hovered ? Theme.dockLift : 0)
+                        // ── TRK-4125 · ONE CONTACT LINE FOR THE WHOLE BAR ──
+                        // Owner, 2026-09-14: "either the icons are too high
+                        // up or the sigil is too low but they all need to
+                        // sit the right height".
+                        //
+                        // Measured on his bar the same day, in a 106 px
+                        // window: the sigil disc's base sat at y=78 and the
+                        // dock gems' at y=84. Six pixels, and they are the
+                        // only two things on the left half that cast a
+                        // reflection — so they were standing on two floors,
+                        // which is exactly what the eye picks up even when
+                        // it cannot name the number.
+                        //
+                        // 28 = 106 - 78. Both bases are now the same line,
+                        // and both falls start from it. That is also what
+                        // buys the reflection the room it needs: see the
+                        // `depth` note on the Reflection below.
+                        y: slot.height - 28 - height - (slot.hovered ? Theme.dockLift : 0)
                         width: bar.barIconPx + 12
                         height: bar.barIconPx + 12
                         CrystalGem {
@@ -1477,33 +1497,43 @@ PanelWindow {
                             xScale: slot.mag
                             yScale: slot.mag
                         }
-                        // Mirrored APP MARK, not a second CrystalGem: a
-                        // ShaderEffect inside Reflection's hidden capture
-                        // box renders nothing on this stack (probed live
-                        // 2026-09-14 — a plain Rectangle shows, the gem does
-                        // not), which is why the dock's falls went dark.
-                        // Every other Reflection in the build mirrors plain
-                        // content (sigil Image, clock Text, tray Images);
-                        // the dock now does the same.
-                        Image {
-                            anchors.fill: parent
-                            source: Quickshell.iconPath(slot.modelData.icon, "application-x-executable")
-                            sourceSize.width: 128
-                            sourceSize.height: 128
-                            fillMode: Image.PreserveAspectFit
-                            mipmap: false
-                            asynchronous: true
-                            // The mirror is the RAW theme icon — glacier
-                            // palette and all. Under MAGMA that would throw
-                            // ice light onto the floor under ember stone, so
-                            // the fall is re-lit amber (luminance kept, hue
-                            // forced). ICE mirrors the icon untouched.
-                            layer.enabled: Theme.lookMagma
-                            layer.effect: MultiEffect {
-                                colorization: 1.0
-                                colorizationColor: Theme.magmaEmber
-                            }
-                        }
+                        // ── TRK-4124 · the fall is the STONE, not the file ──
+                        // This mirrored `Quickshell.iconPath(...)` — the raw
+                        // theme PNG — because a ShaderEffect draws nothing
+                        // inside a Reflection's hidden capture. It rendered,
+                        // and it was invisible: the shipped app marks are
+                        // dark maroon, colorisation keeps luminance, and the
+                        // band measured 71/255 against a 66/255 seam. The
+                        // owner read that as "the reflections are gone", and
+                        // for every purpose that matters they were.
+                        //
+                        // `mirrorOf` captures the gem that is actually on
+                        // screen, so the fall carries the ember etch, the
+                        // rim and the hover lift — and needs no tint, because
+                        // it is already the right colour by construction.
+                        // Under ICE it is the ice gem, for the same reason.
+                        mirrorOf: icon
+
+                        // ⚠ THE FALL MUST DIE BEFORE THE SCREEN DOES.
+                        // This is the other half of why the dock looked as
+                        // though it had no reflection at all. The bar window
+                        // is 106 px and its bottom edge IS the bottom edge of
+                        // the monitor — there is no floor below it to fall
+                        // onto. A 54 px box starting at the contact line runs
+                        // to y=138, so thirty-odd pixels of the fall were
+                        // being asked for in a place that cannot be drawn.
+                        //
+                        // `depth` is a fraction of the box, and the box has
+                        // to stay 54 so the mirrored gem keeps the gem's
+                        // proportions. 0.40 x 54 = 21.6 px, and there are 22
+                        // between the contact line and the screen edge: the
+                        // fall reaches nothing exactly where the world ends,
+                        // so nothing is cut — it is finished. In absolute
+                        // pixels that is the same ~20 px fall the sigil's
+                        // reflection makes (0.667 x 28 = 18.7), which is what
+                        // "part of the same build" means on a bar where the
+                        // two objects are different sizes.
+                        depth: 0.40
                     }
 
                     // ── the Root · state in the seam ─────────────────────

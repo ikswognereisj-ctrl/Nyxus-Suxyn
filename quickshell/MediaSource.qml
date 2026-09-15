@@ -191,6 +191,156 @@ QtObject {
         player.position = c * lengthSec;
     }
 
+    // ══ REPEAT AND RESUME ═══════════════════════════════════ TRK-4120 ══
+    //
+    // ── the defect this block exists for ─────────────────────────────────
+    // Settings ▸ System ▸ Media shipped two rows — "Repeat" (Off/All/One)
+    // and "Resume where playback stopped" — and a grep for either key
+    // across the whole shell, `/usr/local/bin` and `~/.config/hypr` found
+    // exactly ONE file: `SetPageMedia.qml`, the page that WRITES them.
+    // Nothing read them back. Both rows moved, both rows saved, and the
+    // machine did the same thing either way. A settings row that persists
+    // its own switch position and nothing else is worse than no row: it
+    // reports a state the audio pipeline has never heard of.
+    //
+    // ── why repeat lives on the player and resume lives here ─────────────
+    // Repeat IS an MPRIS property (`LoopStatus`), so the player owns it and
+    // we must not keep a second copy that can disagree. `repeatMode` READS
+    // the player whenever a player supports loop, so flipping repeat inside
+    // the player's own window shows up on our card instead of leaving the
+    // card stale; the stored key is the WANT, pushed onto each player that
+    // wins the pick so the choice survives closing the player and the
+    // session. When nothing supports loop we fall back to reporting the
+    // want, because that is the only honest thing left to report.
+    //
+    // Resume has no MPRIS equivalent at all — the spec has no notion of a
+    // previous session. So the position is ours to keep, and the rule is
+    // deliberately narrow: seek back exactly once, and only when a player
+    // appears holding the SAME track, still sitting at the start, able to
+    // seek. A different track, an already-scrubbed position, or a player
+    // that cannot seek is left alone. Dropping someone into the middle of a
+    // track they did not leave there is a worse failure than not resuming.
+
+    readonly property bool loopSupported: hasPlayer && player.loopSupported === true
+    readonly property bool shuffleSupported: hasPlayer && player.shuffleSupported === true
+
+    // The want, as the Settings page stores it. Reactive: `stringValue`
+    // reads `SettingsStore.doc`, which is reassigned (not mutated) on write.
+    readonly property string repeatWanted: SettingsStore.stringValue("app_media_repeat", "Off")
+    readonly property bool resumeWanted: SettingsStore.boolValue("app_media_resume", true)
+
+    readonly property string repeatMode: {
+        if (!src.loopSupported)
+            return src.repeatWanted;
+        switch (src.player.loopState) {
+        case MprisLoopState.Track:    return "One";
+        case MprisLoopState.Playlist: return "All";
+        default:                      return "Off";
+        }
+    }
+
+    function setRepeat(mode) {
+        const m = (mode === "One" || mode === "All") ? mode : "Off";
+        SettingsStore.setValue("app_media_repeat", m);
+        src._pushRepeat();
+    }
+
+    function cycleRepeat() {
+        src.setRepeat(src.repeatMode === "Off" ? "All"
+                    : src.repeatMode === "All" ? "One" : "Off");
+    }
+
+    function _pushRepeat() {
+        // ⚠ Reads `src.player` DIRECTLY, not the `loopSupported` property.
+        // This runs from `onPlayerChanged`, and a QML property binding that
+        // depends on `player` has NOT necessarily re-evaluated by the time
+        // that handler runs — `src.loopSupported` still held the OUTGOING
+        // player's answer, so the first push after a hand-off was skipped
+        // against a player that did support loop. Measured: pausing a
+        // titled Chromium handed the pick to a playing VLC and the want
+        // never landed. A handler that fires on a change must read the
+        // source of that change, never a derived property of it.
+        const p = src.player;
+        if (!p || p.loopSupported !== true)
+            return;
+        const want = src.repeatWanted;
+        const target = want === "One" ? MprisLoopState.Track
+                     : want === "All" ? MprisLoopState.Playlist
+                                      : MprisLoopState.None;
+        if (p.loopState !== target)
+            p.loopState = target;
+    }
+
+    // Identity of a track across sessions. MPRIS track ids are per-player
+    // object paths and do not survive the player closing, so the human
+    // fields are what can be compared tomorrow.
+    readonly property string trackSig: src.hasPlayer
+        ? ((src.title || "") + "\u241f" + (src.album || "") + "\u241f" + (src.artist || ""))
+        : ""
+
+    // Set once a signature has been offered its resume, so a paused track
+    // the owner deliberately rewound is never yanked forward a second time.
+    property string _resumedSig: ""
+
+    function _saveResume() {
+        if (!src.resumeWanted || !src.hasPlayer || !src.positionSupported)
+            return;
+        if (src.trackSig.length === 0 || src.lengthSec <= 0)
+            return;
+        const p = src.positionSec();
+        // Near the end is a finished track, not a bookmark.
+        if (p < 5 || p > src.lengthSec - 10)
+            return;
+        SettingsStore.setValues({
+            "media_resume_sig": src.trackSig,
+            "media_resume_pos": Math.round(p)
+        });
+    }
+
+    function _tryResume() {
+        if (!src.resumeWanted || !src.hasPlayer || !src.canSeek)
+            return;
+        const sig = src.trackSig;
+        if (sig.length === 0 || sig === src._resumedSig)
+            return;
+        if (SettingsStore.stringValue("media_resume_sig", "") !== sig)
+            return;
+        const at = SettingsStore.numberValue("media_resume_pos", 0);
+        if (at < 5 || at > src.lengthSec - 10)
+            return;
+        // Only from the start. Anything else is a position the owner chose.
+        if (src.positionSec() > 3)
+            return;
+        src._resumedSig = sig;
+        src.player.position = at;
+    }
+
+    onPlayerChanged: {
+        src._pushRepeat();
+        src._resumedSig = "";
+        resumeSettle.restart();
+    }
+    onTrackSigChanged: resumeSettle.restart()
+    onRepeatWantedChanged: src._pushRepeat()
+    // A player registers on the bus before it has answered for every
+    // property, so `loopSupported` can flip true a beat after the player
+    // object appears. This is the late-arrival push the hand-off missed.
+    onLoopSupportedChanged: if (src.loopSupported) src._pushRepeat()
+
+    // A player publishes its track and its length in separate D-Bus
+    // property changes, so the first frame after a track appears often has
+    // a signature and no length yet. Seeking then is a seek to nowhere.
+    property Timer resumeSettle: Timer {
+        interval: 900; repeat: false
+        onTriggered: src._tryResume()
+    }
+
+    property Timer resumeSave: Timer {
+        running: src.resumeWanted && src.playing && src.positionSupported
+        interval: 5000; repeat: true
+        onTriggered: src._saveResume()
+    }
+
     // ══ SYNCED LYRICS, A FEW WORDS AT A TIME ════════════════ TRK-3812 ══
     //
     // The bar shows a SHORT PHRASE: it pops up, fades, the next takes its

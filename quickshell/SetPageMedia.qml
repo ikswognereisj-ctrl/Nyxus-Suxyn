@@ -19,10 +19,12 @@ SetPage {
         }
         SetRow {
             title: qsTr("Resume where playback stopped")
+            sub: qsTr("Seeks back to the saved spot when the same track opens at the start")
             SetSwitch { key: "app_media_resume"; defaultValue: true }
         }
         SetRow {
             title: qsTr("Repeat")
+            sub: qsTr("Applied to the playing source as MPRIS LoopStatus")
             SetChoice {
                 key: "app_media_repeat"
                 defaultValue: "Off"

@@ -235,6 +235,43 @@ Item {
     readonly property real _pkDecay: 0.965
     readonly property real _pkFloor: 0.004
 
+    // ══ THE ATTACK RAMP ════════════════════════════════════ TRK-4126 ══
+    //
+    // Owner, 2026-09-14: "the music visulizer seems like its different like
+    // its jitters quickly or something i dont know but something changed".
+    //
+    // ── what actually changed, and it was not this file ──────────────────
+    // Nothing here. `nyxus-beat-engine` applies a release ramp
+    // (SP_RELEASE 0.62, lowered from 0.72 on the owner's own "less damping"
+    // ruling) and NO ATTACK RAMP AT ALL — a rising column is written
+    // straight in, `np.where(v > sp, v, ...)`. Instant attack was correct
+    // while SP_DRIFT carried movement across the field and smoothed the eye's
+    // impression for free. TRK-3715 then set SP_DRIFT to 0.0, correctly, so
+    // that columns would "hit at different times with the sounds" — and that
+    // removed the only thing damping a single-frame spike. What is left is
+    // 64 independent columns, each free to jump full-scale and back inside
+    // two frames. That is the jitter, and it arrived as a side effect of a
+    // change that was right about the thing it was aimed at.
+    //
+    // ⚠ THE FIX IS NOT MORE RELEASE AND IT IS NOT COUPLING. Raising
+    // SP_RELEASE damps the FALL, which is the part he likes ("liquid"), and
+    // re-enabling drift re-breaks "hit at different times" — the exact
+    // complaint TRK-3715 exists to answer. The missing term is the RISE, and
+    // a rise ramp is per-column, so it costs nothing in independence: a kick
+    // on the left and a hi-hat on the right still fire at their own instants.
+    //
+    // 0.55 reaches 55% of a new peak on the first update and ~93% by the
+    // third. At the engine's 46.9 updates/s that is a 43 ms rise — inside
+    // the ~60 ms the eye integrates as "instant", so a hit still reads as a
+    // hit, while a lone spike that is gone next frame never gets to full
+    // height and stops strobing.
+    //
+    // It lives HERE and not in the engine on purpose: this is a DISPLAY
+    // property. `levels` stays raw for the note-picker below, which wants
+    // the transient it is choosing a glyph from.
+    readonly property real _spAttack: 0.55
+    property var _disp: []
+
     Canvas {
         id: specTex
         x: -width - 16
@@ -252,8 +289,10 @@ Item {
             const n = root.levels.length;
             const g = root._greys;
             const pk = root._peaks;
+            const ds = root._disp;
             for (let i = 0; i < n; i++) {
-                const v = Math.min(1, Math.max(0, root.levels[i]));
+                const raw = i < ds.length ? ds[i] : root.levels[i];
+                const v = Math.min(1, Math.max(0, raw));
                 ctx.fillStyle = g[Math.round(v * 255)];
                 ctx.fillRect(i, 0, 1, 1);
                 const p = i < pk.length ? pk[i] : 0;
@@ -280,11 +319,24 @@ Item {
             for (let i = 0; i < n; i++)
                 pk[i] = 0;
         }
+        // The rise ramp. One pass, in the loop that was already walking
+        // every column, so the damping is free. A FALL is passed straight
+        // through — the engine's release is the fall and it is the part the
+        // owner asked to keep liquid.
+        let ds = root._disp;
+        if (ds.length !== n) {
+            ds = new Array(n);
+            for (let i = 0; i < n; i++)
+                ds[i] = 0;
+        }
+        const a = root._spAttack;
         for (let i = 0; i < n; i++) {
             const v = root.levels[i];
+            ds[i] = v > ds[i] ? ds[i] + (v - ds[i]) * a : v;
             const d = pk[i] * root._pkDecay - root._pkFloor;
             pk[i] = v > d ? v : (d > 0 ? d : 0);
         }
+        root._disp = ds;
         root._peaks = pk;
         if (n === 0 || (root._paintGate++ & 1) === 0)
             specTex.requestPaint();
