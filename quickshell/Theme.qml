@@ -2077,6 +2077,19 @@ Singleton {
     // side and mask their input back to the surface.
     readonly property int bloomPad: 24
 
+    // ── THE OSD'S GAP FROM THE SCREEN EDGE ──────────────────── TRK-4133 ──
+    // The volume/brightness card now pins to a screen edge instead of dead
+    // centre. This is the gap from that edge to the CARD, not to the window:
+    // the window is the card plus `bloomPad` on every free side, so the
+    // margin below is measured on top of that padding and the card's own
+    // glass lands `osdEdgeGap` in from the bezel.
+    //
+    // 20 rather than a token like s6 because this is a bezel offset, not
+    // layout rhythm — it wants to read as "just off the edge", close enough
+    // to feel anchored to the side of the screen rather than floating in the
+    // left third of it.
+    readonly property int osdEdgeGap: 20
+
     // ── reactive swirl (AUDIT-PLAN item 5's living light) ────────────
     // The liquid paint inside panels is Swirl.qml; its user-facing knobs
     // (enable / intensity / music pulse) are REAL settings in the control

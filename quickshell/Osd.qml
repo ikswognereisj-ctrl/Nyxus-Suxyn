@@ -42,6 +42,10 @@
 // Owner 2026-08-19: keep the bar's short notification flash; do NOT add ten
 // more bar flashes. This overlay is the volume/brightness/mic feedback, like
 // Windows, centred. Bar.qml is BQ and is not opened.
+//
+// ⚠ "centred" above was SUPERSEDED on 2026-09-14 — see the TRK-4133 block on
+// the anchors below. The rest of that instruction stands: this is still the
+// one overlay, and the bar still does not grow more flashes.
 pragma ComponentBehavior: Bound
 import Quickshell
 import Quickshell.Wayland
@@ -57,6 +61,32 @@ PanelWindow {
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
     exclusionMode: ExclusionMode.Ignore
     color: "transparent"
+
+    // ── WHERE THIS SITS ───────────────────────────────────────── TRK-4133 ──
+    // Owner, 2026-09-14: "instead of that popping up dead center could we make
+    // it show at one of the far edges to the left or right on the screen so
+    // its not dead center and so its not like any other system".
+    //
+    // The header above still says "like Windows, centred" — that was the 08-19
+    // instruction and it has now been superseded. Centre survives as a choice,
+    // not as the default: it is the one placement every other desktop already
+    // uses, and it parks the card over the middle of whatever you are looking
+    // at, which is the worst available spot for something that fires while you
+    // are working.
+    //
+    // A layer-shell surface with NO anchors is centred by the compositor, which
+    // is how this got centred without anyone writing "centre" anywhere. Anchor
+    // one edge and it pins there, still centred on the other axis — so `left`
+    // alone gives left edge, vertically centred, which is exactly the ask.
+    //
+    // ⚠ Anchoring BOTH left and right would stretch the surface across the
+    // whole screen instead of pinning it, and `card` is `centerIn: parent` —
+    // it would land dead centre again, which is the thing being fixed.
+    readonly property string place: Prefs.osdPosition
+    anchors.left: root.place === "left"
+    anchors.right: root.place === "right"
+    margins.left: root.place === "left" ? Theme.osdEdgeGap : 0
+    margins.right: root.place === "right" ? Theme.osdEdgeGap : 0
 
     implicitWidth: 260 + Theme.bloomPad * 2
     // TRK-2912: the window is the card plus its bloom, not a second fixed 64

@@ -156,6 +156,24 @@ Singleton {
     readonly property bool uiSoundKnock: adapter.ui_sound_knock !== false
     readonly property bool uiSoundLock: adapter.ui_sound_lock !== false
 
+    // ── WHERE THE OSD SITS (TRK-4133; Settings ▸ Notifications) ──────────
+    // Owner, 2026-09-14: "instead of that popping up dead center could we
+    // make it show at one of the far edges to the left or right on the
+    // screen so its not dead center and so its not like any other system".
+    //
+    // Osd.qml used to carry a header line reading "like Windows, centred".
+    // That was the goal in 2026-08 and it is not the goal now — centre is
+    // the one placement every other desktop already uses, and it lands the
+    // card straight over whatever you are looking at.
+    //
+    // Three positions. Centre is kept because removing a placement someone
+    // may have got used to is not an improvement, but it is no longer the
+    // default.
+    readonly property string osdPosition: {
+        const v = adapter.osd_position;
+        return (v === "left" || v === "right" || v === "center") ? v : "left";
+    }
+
     // ── THE ROOMS (TRK-1700..1703; Settings ▸ System ▸ Rooms) ──
     // Off = Rooms.qml answers the binds with "off" and nyxus-house reads the
     // same key, so the keys do nothing and no surface is built at all.
@@ -764,6 +782,8 @@ Singleton {
             property bool ui_sound_notify: true
             property bool ui_sound_knock: true
             property bool ui_sound_lock: true
+            // TRK-4133 — left | center | right. See Prefs.osdPosition.
+            property string osd_position: "left"
             // TRK-1700 — THE ROOMS ship ON: this is the owner's headline ask
             // and a navigation feature nobody switches on is a navigation
             // feature nobody has. The toggle stays, and OFF still costs

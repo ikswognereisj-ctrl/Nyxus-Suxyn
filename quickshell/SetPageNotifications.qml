@@ -32,6 +32,8 @@ SetPage {
 
     readonly property int toastSecs: Math.round(SettingsStore.numberValue("toast_seconds", 6))
     readonly property string corner: SettingsStore.stringValue("toast_corner", "bottom-right")
+    // TRK-4133 — where the volume/brightness OSD pins. See Prefs.osdPosition.
+    readonly property string osdPlace: SettingsStore.stringValue("osd_position", "left")
     readonly property bool soundOn: Prefs.uiSoundNotify
     readonly property bool usbOn: SettingsStore.boolValue("usb_notify", true)
     readonly property bool battOn: SettingsStore.boolValue("notify_battery", true)
@@ -90,6 +92,36 @@ SetPage {
     SetCard {
         heading: qsTr("How they appear")
         tone: page.tone
+
+        // ── TRK-4133 · where the volume/brightness card lands ───────────
+        // Owner, 2026-09-14: "instead of that popping up dead center could
+        // we make it show at one of the far edges to the left or right on
+        // the screen so its not dead center and so its not like any other
+        // system".
+        //
+        // This is the OSD, not a toast — it is the feedback that fires when
+        // you turn the volume or brightness knob. It lives on this page
+        // because this is where "things that appear on their own" are set,
+        // and it had no setting anywhere before now.
+        SetRow {
+            title: qsTr("Volume and brightness popup")
+            sub: page.osdPlace === "center"
+                 ? qsTr("Dead centre, over whatever you are looking at — where every other desktop puts it")
+                 : page.osdPlace === "right"
+                   ? qsTr("Pinned to the right edge, halfway up, clear of your work")
+                   : qsTr("Pinned to the left edge, halfway up, clear of your work")
+
+            SetChoice {
+                key: "osd_position"
+                defaultValue: "left"
+                tone: page.tone
+                options: [
+                    { value: "left", label: qsTr("Left edge") },
+                    { value: "center", label: qsTr("Centre") },
+                    { value: "right", label: qsTr("Right edge") }
+                ]
+            }
+        }
 
         SetRow {
             title: qsTr("How long they stay")
