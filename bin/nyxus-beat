@@ -31,7 +31,43 @@ STATE="${STATE_DIR}/beat-border"
 
 remember() { mkdir -p "${STATE_DIR}" 2>/dev/null; printf '%s\n' "$1" >"${STATE}"; }
 
-running() { [[ -r "${PIDFILE}" ]] && kill -0 "$(cat "${PIDFILE}")" 2>/dev/null; }
+# TRK-4174, 2026-09-15 — the pidfile is not the whole truth.
+#
+# `running()` used to test the pidfile and nothing else, and `start()` never
+# wrote one; nyxus-beatd is expected to write it itself. When that write did
+# not happen -- daemon killed hard, tmpfs cleared under it, runtime dir
+# swapped -- the consequences were bad in both directions:
+#
+#   `nyxus-beat off` printed "beat: off" and killed nothing, because
+#   running() was false so stop() returned at its guard. Observed live: the
+#   daemon kept writing col.active_border afterwards.
+#
+#   `nyxus-beat on` then started ANOTHER daemon, because running() was still
+#   false. Observed live: two nyxus-beatd processes, both writing the border,
+#   fighting each other and BorderPulse for the same hyprctl keyword.
+#
+# So process truth is consulted as well as the pidfile. beatd_pids lists
+# every live daemon so `off` can sweep orphans the pidfile never knew about
+# and `on` refuses when one is already up. The pidfile stays authoritative
+# when it is valid -- it is still the cheapest check.
+#
+# ⚠ `pgrep -x` (match the process NAME exactly), never `pgrep -f` (match the
+# whole command line). This was written with -f first and it was dangerous:
+# -f matches ANY process whose arguments merely contain the string, so
+# `journalctl -u nyxus-beatd`, an editor holding the file open, or a wrapper
+# script naming the daemon all become kill targets. It was caught when a
+# test harness whose own command line mentioned nyxus-beatd was terminated
+# by the sweep. -x matched 1 process where -f matched 2. beatd is a bash
+# script and "nyxus-beatd" is 11 chars, comfortably inside the 15-char comm
+# limit, so the name match is reliable here.
+beatd_pids() {
+  pgrep -x nyxus-beatd 2>/dev/null | grep -vx "$$" || true
+}
+
+running() {
+  [[ -r "${PIDFILE}" ]] && kill -0 "$(cat "${PIDFILE}")" 2>/dev/null && return 0
+  [[ -n "$(beatd_pids)" ]]
+}
 
 start() {
   running && { echo "beat: already on"; return; }
@@ -42,12 +78,31 @@ start() {
 
 stop() {
   running || { echo "beat: already off"; return; }
-  local pid; pid="$(cat "${PIDFILE}")"
-  # bash defers the TERM trap while it waits on the cava pipeline, so
-  # signal the children first — cava's exit unblocks the daemon, which
-  # then runs its restore trap and exits.
-  pkill -P "${pid}" 2>/dev/null
-  kill "${pid}" 2>/dev/null
+
+  # The pidfile first, when it is still good. bash defers the TERM trap while
+  # it waits on the cava pipeline, so signal the children first — cava's exit
+  # unblocks the daemon, which then runs its restore trap and exits.
+  local pid=""
+  [[ -r "${PIDFILE}" ]] && pid="$(cat "${PIDFILE}")"
+  if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
+    pkill -P "${pid}" 2>/dev/null
+    kill "${pid}" 2>/dev/null
+  fi
+
+  # Then anything the pidfile missed. Without this an orphaned daemon keeps
+  # writing the border forever and no subcommand can reach it.
+  local orphan
+  for orphan in $(beatd_pids); do
+    pkill -P "${orphan}" 2>/dev/null
+    kill "${orphan}" 2>/dev/null
+  done
+
+  # Give the restore traps a moment, then insist.
+  local waited=0
+  while [[ -n "$(beatd_pids)" && ${waited} -lt 20 ]]; do sleep 0.1; waited=$((waited + 1)); done
+  for orphan in $(beatd_pids); do kill -9 "${orphan}" 2>/dev/null; done
+
+  rm -f "${PIDFILE}" 2>/dev/null
   notify-send -u low -t 2200 "◤ NYXUS ◥ BEAT" "border ring at rest" 2>/dev/null
   echo "beat: off"
 }
