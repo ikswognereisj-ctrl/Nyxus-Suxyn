@@ -427,7 +427,31 @@ Singleton {
     // MPRIS, but an OFF default keeps the count at five, not six empty.
     // Settings owns the writes; the shell reads.
     readonly property bool widgetsEnabled: adapter.widgets_enabled
-    function widgetOn(slug)  { return adapter["widget_" + slug] === true; }
+    // ── THE TOGGLE THAT DID NOT SUBSCRIBE ─────────────── TRK-4130 ──
+    // Audit 2026-09-14. This was a bracket lookup, `adapter["widget_" +
+    // slug]`, sitting two lines above the comment that explains why a
+    // bracket lookup is wrong — the fix was made for _x, _y and _placed
+    // and the on/off switch itself was left behind.
+    //
+    // The consequence is worse here than it was for position. Widgets.qml
+    // binds `visible: widgetsEnabled && widgetOn(slug) && !arcadeMode`.
+    // A non-subscribing read means the binding never re-evaluated when the
+    // key changed, so toggling a widget in Settings wrote the file and
+    // nothing appeared or disappeared. It looked like the switch was dead.
+    // It was not — the switch worked and the view was not listening.
+    //
+    // It seemed to work whenever something ELSE in the same binding
+    // changed and dragged a re-evaluation along with it, which is exactly
+    // the kind of intermittent that makes a bug hard to pin down.
+    function widgetOn(slug) {
+        if (slug === "clock")      return adapter.widget_clock === true;
+        if (slug === "vitals")     return adapter.widget_vitals === true;
+        if (slug === "sticky")     return adapter.widget_sticky === true;
+        if (slug === "calendar")   return adapter.widget_calendar === true;
+        if (slug === "weather")    return adapter.widget_weather === true;
+        if (slug === "nowplaying") return adapter.widget_nowplaying === true;
+        return adapter["widget_" + slug] === true;
+    }
     // Named adapter reads (not `adapter["widget_"+slug+"_x"]`) so a QML
     // binding that calls widgetX() actually tracks the JsonAdapter. Bracket
     // lookup does not subscribe, which is why FileView could load new x
