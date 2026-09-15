@@ -207,12 +207,26 @@ SetPage {
                 interactive: true
                 onActivated: {
                     const home = Quickshell.env("HOME") || "";
+                    // TRK-4164 — this named `suxyn-magma-open`, and the repo
+                    // carries only `suxyn-magma-open-fg.png`: the `-bg` half
+                    // was never committed. It worked here because THIS machine
+                    // had both halves staged from before, so the miss could
+                    // only ever have shown up on somebody else's first boot,
+                    // as a layered wall with no ground. The two stems are
+                    // byte-identical anyway (md5 matched on both halves), so
+                    // `-open` was a second name for `-world` and not a second
+                    // picture. Naming the complete, committed, picker-listed
+                    // stem fixes the missing half, drops a 1.1 MB duplicate,
+                    // and makes the wall this button applies one the Background
+                    // page can actually show as selected — `-open` was in no
+                    // keepSlugs list, so wearing it left the grid with nothing
+                    // marked.
                     SettingsStore.setValues({
                         look_set: "magma",
                         swirl_preview: "glacier",
                         swirl_mode: "paint",
                         sky_mode: "headliner",
-                        layered_wall_base: home + "/.local/share/nyxus/walls/suxyn-magma-open"
+                        layered_wall_base: home + "/.local/share/nyxus/walls/suxyn-magma-world"
                     });
                 }
             }

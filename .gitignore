@@ -18,3 +18,9 @@ crashes/
 *.pem
 id_rsa*
 github_pat_*
+
+# nyxus-gen-wall intermediates: shader presses and star plates are
+# regenerated on demand by bin/nyxus-gen-wall and are not source.
+tools/wallgen/*.png
+tools/wallgen/out/
+tools/wallgen/run.qml

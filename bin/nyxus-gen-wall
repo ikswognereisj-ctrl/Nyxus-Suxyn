@@ -1,0 +1,118 @@
+#!/usr/bin/env python3
+"""nyxus-gen-wall — regenerate the layered wallpapers from the build's own shaders.
+
+`quickshell/SetPageBackground.qml` names this script in its `keepSlugs`
+comment as the thing that made the generated walls, so it has to exist and
+it has to actually make them. It does both.
+
+WHAT A LAYERED WALL IS
+Three files per slug, and the picker will not show the wall without all
+three (SetPageBackground.qml probes for them by name):
+
+    <slug>.png       flat composite — the thumbnail and the plain still
+    <slug>-bg.png    RGB, opaque    — the far half, on WlrLayer.Background
+    <slug>-fg.png    RGBA, cut out  — the near half, on WlrLayer.Bottom
+
+The desktop widgets sit BETWEEN those two, which is the whole point of the
+mode, and the live Starlight sky shows through the -fg's transparency.
+
+WHAT IT IS MADE OF
+Everything here is rendered from shaders already in this repo — magma.frag
+for the material, headliner.frag for the stars — so the walls are the same
+substance as the rest of the desktop rather than stock photographs.
+
+SIX SUBJECTS, NOT SIX POSITIONS
+The first cut of this set was one sphere moved around and recoloured. The
+owner rejected it in those words, and he was right: at thumbnail size the
+eye sorts on silhouette, so six placements of one shape is one wallpaper
+shown six times. Each wall now has its own silhouette — a crescent, a
+ringed world, a ground plane with no sphere in it at all, a split world, a
+pair of bodies, and an eclipse.
+
+A pass at graffiti figures (an astronaut and an alien, drawn as signed
+distance fields) was built for two of these walls and cut by the owner on
+sight — "that image of ehstever thst is wont cut it". It is not disabled
+or left behind a flag, it is deleted, because a switch that turns on work
+nobody accepted is just a slower way of shipping it.
+
+NO FOG, EVER
+The star plates come from headliner.frag, which contains no fog, haze,
+nebula or galaxy term of any kind — checked, not assumed. The owner ruled
+that look out by name. The first cut reused the two shipped cosmic stills
+as backgrounds and inherited their nebula haze, and it also mirrored them
+to make them unique, which produced visible Rorschach symmetry. Both are
+gone: one oversized render, six non-overlapping crops, no flips.
+
+Requires a GPU and `cage` — see scripts/render-starlight-headliner.py for
+why offscreen rendering is not an option on this class of host.
+
+Usage:
+    bin/nyxus-gen-wall [--out DIR] [--install]
+
+    --install  also copy into ~/.local/share/nyxus/walls so the running
+               shell's Background picker can see them immediately.
+"""
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+GEN = os.path.join(ROOT, "tools", "wallgen")
+sys.path.insert(0, GEN)
+
+SLUGS = ["suxyn-magma-forge", "suxyn-magma-ember", "suxyn-magma-crucible",
+         "suxyn-plum-geode", "suxyn-plum-cryo", "suxyn-plum-halo"]
+
+# Which crop of the oversized starfield each wall gets. Six windows of a
+# 3x2 grid over one 5760x2400 render: every wall gets a genuinely different
+# patch of sky, and none of them is a transform of another.
+CROPS = {"forge": (0, 0), "ember": (1920, 0), "crucible": (3840, 0),
+         "geode": (0, 1200), "cryo": (1920, 1200), "halo": (3840, 1200)}
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--out", default=os.path.join(ROOT, "hypr", "walls"))
+    ap.add_argument("--install", action="store_true")
+    a = ap.parse_args()
+
+    if not shutil.which("cage"):
+        print("nyxus-gen-wall: needs `cage` (a GPU context). Install it and "
+              "re-run; see scripts/render-starlight-headliner.py.",
+              file=sys.stderr)
+        return 2
+
+    os.makedirs(a.out, exist_ok=True)
+    print(f"nyxus-gen-wall: rendering into {a.out}")
+    r = subprocess.run([sys.executable, os.path.join(GEN, "recipes.py"),
+                        "--out", a.out], cwd=GEN)
+    if r.returncode != 0:
+        return r.returncode
+
+    missing = [f"{s}{suf}.png" for s in SLUGS for suf in ("", "-bg", "-fg")
+               if not os.path.exists(os.path.join(a.out, f"{s}{suf}.png"))]
+    if missing:
+        print("nyxus-gen-wall: INCOMPLETE — the picker hides a wall that is "
+              "missing any of its three files:", file=sys.stderr)
+        for m in missing:
+            print("   ", m, file=sys.stderr)
+        return 1
+
+    if a.install:
+        dest = os.path.expanduser("~/.local/share/nyxus/walls")
+        os.makedirs(dest, exist_ok=True)
+        n = 0
+        for s in SLUGS:
+            for suf in ("", "-bg", "-fg"):
+                shutil.copy2(os.path.join(a.out, f"{s}{suf}.png"), dest)
+                n += 1
+        print(f"nyxus-gen-wall: installed {n} files to {dest}")
+
+    print(f"nyxus-gen-wall: {len(SLUGS)} walls, {len(SLUGS) * 3} files, OK")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
